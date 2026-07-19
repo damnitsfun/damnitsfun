@@ -16,6 +16,8 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+# vendored engine build output (packages/engine/vendor-dist)
+vendor-dist/
 
 # SQLite data
 *.sqlite

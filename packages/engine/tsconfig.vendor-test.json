@@ -1,0 +1,8 @@
+{
+  "//": "Used by the 'vendor-uno' Jest project to run the vendored test suite unmodified. Same non-strict options as the vendor build, but includes vendored test/ and adds jest globals. ts-jest transforms in memory (no emit).",
+  "extends": "./tsconfig.vendor.json",
+  "compilerOptions": {
+    "types": ["node", "jest"]
+  },
+  "include": ["vendor/uno/src/**/*", "vendor/uno/test/**/*"]
+}

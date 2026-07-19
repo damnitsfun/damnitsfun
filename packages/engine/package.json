@@ -5,8 +5,15 @@
   "description": "Vendored + patched danguilherme/uno, house rules, and product vocabulary. Pure rules logic — no HTTP/DB.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -b",
+    "build:vendor": "tsc -p tsconfig.vendor.json",
+    "build": "yarn build:vendor && tsc -p tsconfig.json",
+    "pretest": "yarn build:vendor",
     "test": "jest",
-    "lint": "tsc --noEmit"
+    "prelint": "yarn build:vendor",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "events": "^3.3.0",
+    "shuffle": "^0.2.5"
   }
 }

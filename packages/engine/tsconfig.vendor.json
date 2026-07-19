@@ -1,0 +1,19 @@
+{
+  "//": "Builds the vendored (non-strict) uno source to CJS + .d.ts in vendor-dist/. Our strict engine src consumes the built output, so vendored code is never type-checked under our strict config. This config lives OUTSIDE vendor/uno so the vendored diff stays confined to deck.ts.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "strict": false,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": false,
+    "isolatedModules": false,
+    "target": "ES2019",
+    "lib": ["ES2019"],
+    "types": ["node"],
+    "declaration": true,
+    "sourceMap": false,
+    "outDir": "vendor-dist",
+    "rootDir": "vendor/uno/src"
+  },
+  "include": ["vendor/uno/src/**/*"]
+}
