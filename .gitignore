@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# SQLite data
+*.sqlite
+*.sqlite3
+*.db
+data/
+
+# Foundry (packages/contracts)
+packages/contracts/cache/
+packages/contracts/out/
+packages/contracts/broadcast/
+!packages/contracts/broadcast/**/dry-run/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Test / coverage
+coverage/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/

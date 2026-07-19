@@ -1,0 +1,57 @@
+# damnits.fun — Sub-Spec Index & Build Order
+
+**Parent documents:** `technical-spec-damnits-fun.md` (the full spec) and `requirements-ai-card-arena.md` (the PRD). This folder breaks the full technical spec into **7 focused sub-specs** that can be built and handed off one at a time. Nothing here changes scope or decisions — it only reorganizes the same T1–T18 tasks into buildable, dependency-ordered units.
+
+## Why split it
+The full spec is one 18-task document spanning five silos. Handing an agent the whole thing at once invites it to interleave silos and lose track of what "done" means for each. These sub-specs each have (a) a single clear owner-silo, (b) an explicit list of which parent tasks they cover, (c) their own Definition of Done, and (d) a named **handoff artifact** the next spec depends on. Build them in the numbered order.
+
+## The 7 sub-specs
+
+| # | Sub-spec | Silo(s) | Parent tasks | Depends on |
+|---|---|---|---|---|
+| 01 | Foundation & Monorepo Setup | (cross-cutting) | env/config (§9), repo scaffold (§3), CI lint skeleton | nothing |
+| 02 | Game Engine (vendor, patch, wrap) | `engine` | T1, T2, T3, T4, T5 | 01 |
+| 03 | Live Session Adapter & Event Log | `engine` → `api` seam | T6, T7 | 02 |
+| 04 | Backend: Data, API & Orchestration | `api` | T8, T9, T10, T11 | 03 |
+| 05 | Smart Contracts & On-Chain Settlement | `contracts` + `api` seam | T12, T13 | 04 (for T13 wiring); T12 alone can start after 01 |
+| 06 | Frontend, Skill File & Reference Agent | `web` + `reference-agent` | T14, T15, T16, T17 | 04 (needs a live API) |
+| 07 | Integration & Demo Rehearsal | (all) | T18 | 05 + 06 |
+
+## Build order (linear, with one allowed parallelization)
+
+```
+01 Foundation
+      │
+      ▼
+02 Engine ──► 03 Session Adapter ──► 04 Backend ──┬──► 06 Frontend/Agent ──┐
+                                                  │                        ├──► 07 Integration & Demo
+                                    05 Contracts ─┘ (T12 early, T13 here) ──┘
+```
+
+**The critical path is 01 → 02 → 03 → 04 → 06 → 07.** This is the spine; do not reorder it. Each link is a hard dependency: the backend can't derive legal moves without the adapter (03), the adapter can't exist without the patched engine (02), and nothing runs without the monorepo (01).
+
+**The one safe parallelization:** sub-spec **05 (contracts)** splits in two. Its first half — **T12, writing and testing `DamnitsEscrow.sol` in isolation with Foundry** — has *no* dependency on the backend and can be built any time after 01, even in parallel with 02–04 if a second person/agent is available. Its second half — **T13, wiring commit-reveal into the API's session lifecycle** — depends on 04 being done and must slot in after it. If you're a solo builder going strictly linear, just do all of 05 in its numbered position after 04; if you have a second agent, start T12 early.
+
+**Why frontend (06) comes after backend (04), not in parallel:** the spectator UI and the reference agent both consume the live API and event log. Building them against a non-existent API means building against guesses. The frontend evolves an existing asset (`ai_uno_replay.html`) so it's not from-scratch, but its *live* mode needs real endpoints. Wait for 04.
+
+## Handoff artifacts (what each spec must produce for the next)
+
+| After spec | The next spec relies on this existing and working |
+|---|---|
+| 01 | A `yarn install`-able monorepo with all 5 empty package workspaces, the env/config table wired to a `.env` loader, and a CI lint stub that runs (even if it checks nothing yet). |
+| 02 | `packages/engine` exporting a wrapped, patched, typed, product-vocabulary engine — but NOT yet the live `GameSession` class. Its own tests (vendored suite + patch tests + house-rule fuzz + vocab round-trip) all pass. |
+| 03 | The `GameSession` class (live-drivable, real-delay-proven) and event-log persistence, exported from `packages/engine` and writing to the `session_events` shape. This is the single most important handoff — FR-1.6 is closed here. |
+| 04 | A running Fastify server exposing every §5 endpoint, backed by SQLite and openskill ranking, with orchestration/timeout/idempotency working. Two scripted agents can play a full game through it. |
+| 05 | A deployed `DamnitsEscrow` on BSC testnet (address recorded), and (T13) the API committing/revealing seeds and result hashes on-chain per session. |
+| 06 | A live-watchable spectator UI, a public `skill.md`, and a reference agent that a fresh AI instance can run from the skill URL alone. |
+| 07 | One rehearsed, end-to-end, no-manual-intervention demo run with captured BscScan links. |
+
+## Global rules that apply to every sub-spec (do not restate, do not violate)
+1. **Never re-implement rules outside `packages/engine`.** All legal-move logic flows through `GameSession.getLegalMoves` (Requirements NFR-2). This is the number-one integrity rule.
+2. **Never leak vendored UNO vocabulary past the engine boundary** (trademark; §6 + the CI lint from T14/sub-spec 06).
+3. **Simulate/measure, don't guess** (Requirements NFR-1) — the engine precedent is hundreds-to-thousands of fuzzed games; hold new code to the same bar where it makes sense.
+4. **Verify from a clean install** — each sub-spec's DoD should be reproducible via a fresh `yarn install` (and `foundryup` for contracts), not just "works on my machine."
+5. **Stack versions are pinned in the parent spec §2** and were fact-checked as of July 2026 — use those, not remembered defaults (notably Node 24 not 20, and openskill not ts-trueskill).
+
+## How to use this folder with a coding agent
+Hand the agent **one sub-spec file at a time**, in order, along with the parent `technical-spec-damnits-fun.md` as background context. When a sub-spec's DoD is met and its handoff artifact exists, move to the next. Do not hand over the whole folder at once — the point of the split is to keep the agent's working scope bounded to one silo and one clear finish line at a time.
