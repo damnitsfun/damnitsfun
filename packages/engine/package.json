@@ -1,0 +1,12 @@
+{
+  "name": "engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vendored + patched danguilherme/uno, house rules, and product vocabulary. Pure rules logic — no HTTP/DB.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "jest",
+    "lint": "tsc --noEmit"
+  }
+}

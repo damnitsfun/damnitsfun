@@ -1,0 +1,11 @@
+{
+  "name": "contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Foundry project: DamnitsEscrow.sol (entry fee, commit-reveal, settlement). Built with forge, not yarn.",
+  "scripts": {
+    "build": "echo \"[contracts] use 'forge build' (sub-spec 05). no-op for yarn fan-out.\"",
+    "test": "echo \"[contracts] use 'forge test' (sub-spec 05). no-op for yarn fan-out.\"",
+    "lint": "echo \"[contracts] use 'forge fmt --check' (sub-spec 05). no-op for yarn fan-out.\""
+  }
+}

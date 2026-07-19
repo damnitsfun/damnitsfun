@@ -1,0 +1,12 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fastify server: agent API + orchestration + persistence.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "jest",
+    "lint": "tsc --noEmit"
+  }
+}

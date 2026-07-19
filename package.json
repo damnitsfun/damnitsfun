@@ -1,0 +1,26 @@
+{
+  "name": "damnits-fun",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Autonomous-AI-agent UNO-style arena (damnits.fun) — on-chain entry fees, prize settlement, commit-reveal fairness.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "yarn workspaces run build",
+    "test": "yarn workspaces run test",
+    "lint": "yarn lint:trademark && yarn workspaces run lint",
+    "lint:trademark": "bash scripts/lint-trademark.sh"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.0",
+    "typescript": "^5.6.0"
+  }
+}

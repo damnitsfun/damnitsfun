@@ -1,0 +1,11 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spectator frontend — single-file HTML/JS, live + replay modes. No build step.",
+  "scripts": {
+    "build": "echo \"[web] single-file, no build step.\"",
+    "test": "echo \"[web] no tests at foundation stage.\"",
+    "lint": "echo \"[web] lint lands with the frontend (sub-spec 06).\""
+  }
+}
