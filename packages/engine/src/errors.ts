@@ -65,6 +65,18 @@ export class SessionNotFoundError extends EngineError {
   }
 }
 
+/**
+ * The move is well-formed and it is the agent's turn, but the move is not
+ * currently legal (e.g. drawing a second time in one turn). Adapter-enforced:
+ * `getLegalMoves` is the sole authority, and `applyMove` rejects anything it did
+ * not offer. Maps to HTTP 400 (illegal move) in the API layer.
+ */
+export class IllegalMoveError extends EngineError {
+  constructor(message = 'That move is not legal right now') {
+    super(message, 'ILLEGAL_MOVE');
+  }
+}
+
 type Matcher = { test: RegExp; make: (msg: string) => EngineError };
 
 /**

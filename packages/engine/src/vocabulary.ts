@@ -39,8 +39,12 @@ export type CardSymbol =
   | 'MEGARAINBOW'
   | 'RAINBOWSTORM';
 
-/** Public color name. Colors are generic (not trademark-sensitive) but routed here for one translation point. */
-export type ColorName = 'RED' | 'BLUE' | 'GREEN' | 'YELLOW';
+/**
+ * Public color name. Lowercase to match the §5 API `Move` contract
+ * (`color: "red"|"blue"|"green"|"yellow"|null`). Colors are generic (not
+ * trademark-sensitive) but routed here to keep one translation point.
+ */
+export type ColorName = 'red' | 'blue' | 'green' | 'yellow';
 
 /** A card as it appears on the public surface. `color` is null for un-colored wilds. */
 export interface PublicCard {
@@ -73,10 +77,10 @@ const SYMBOL_TO_VALUE: ReadonlyMap<CardSymbol, Value> = new Map(
 );
 
 const COLOR_TO_NAME: Record<Color, ColorName> = {
-  [Color.RED]: 'RED',
-  [Color.BLUE]: 'BLUE',
-  [Color.GREEN]: 'GREEN',
-  [Color.YELLOW]: 'YELLOW',
+  [Color.RED]: 'red',
+  [Color.BLUE]: 'blue',
+  [Color.GREEN]: 'green',
+  [Color.YELLOW]: 'yellow',
 };
 
 const NAME_TO_COLOR: ReadonlyMap<ColorName, Color> = new Map(
@@ -144,8 +148,20 @@ export function nameToColor(name: ColorName): Color {
   return color;
 }
 
-/** Translate a vendored `Card` to its public representation. */
+/**
+ * Translate a vendored `Card` to its public representation.
+ *
+ * A wild always reports `color: null`. Playing a wild mutates the card instance's
+ * colour in place (the vendored engine requires it), and the vendored deck
+ * re-mints the SAME `Card` instances when the draw pile is exhausted — so a wild
+ * that was once played as red can come back around still carrying that colour.
+ * A wild's identity is its symbol; the colour a player *chose* when playing one
+ * is carried separately (the `chosenColor` field on CARD_PLAYED), never by the
+ * card itself. Without this normalisation the log self-contradicts, reporting the
+ * same physical card drawn as RAINBOW:red and later played as RAINBOW:blue.
+ */
 export function cardToPublic(card: Card): PublicCard {
+  if (card.isWildCard()) return { symbol: valueToSymbol(card.value), color: null };
   return {
     symbol: valueToSymbol(card.value),
     color: card.color === undefined ? null : colorToName(card.color),

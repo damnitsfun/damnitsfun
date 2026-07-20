@@ -65,9 +65,9 @@ describe('color <-> name round-trip', () => {
 
 describe('card <-> public round-trip', () => {
   it('round-trips a colored card', () => {
-    const card = publicToCard('GRAB2', 'BLUE');
+    const card = publicToCard('GRAB2', 'blue');
     const pub = cardToPublic(card);
-    expect(pub).toEqual({ symbol: 'GRAB2', color: 'BLUE' });
+    expect(pub).toEqual({ symbol: 'GRAB2', color: 'blue' });
     expect(cardToPublic(publicToCard(pub.symbol, pub.color))).toEqual(pub);
   });
 
