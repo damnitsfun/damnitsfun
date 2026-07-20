@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { seedCommitment } from './commit';
 import { loadConfig, type Config } from './config';
 import { openDatabase, type Db } from './db/index';
 import { Orchestrator } from './orchestrator';
@@ -305,7 +305,7 @@ describe('T9 — agent API endpoints', () => {
     expect(session.status).toBe('settled');
     expect(session.winner_agent_id).not.toBeNull();
     expect(session.result_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(session.seed_commit_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(session.seed_commit_hash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(session.ended_at).not.toBeNull();
 
     // The event log persisted to session_events, contiguously.
@@ -571,7 +571,7 @@ describe('handoff to sub-spec 05 — lifecycle hooks are observable', () => {
     // Commit fires before any move — that is when commitSeed() must be sent.
     expect(started).toHaveLength(1);
     expect(started[0]!.sessionId).toBe(sessionId);
-    expect(started[0]!.seedCommitHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(started[0]!.seedCommitHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(started[0]!.seatAgentIds).toHaveLength(4);
 
     await playOverHttp(h, agents, sessionId);
@@ -581,8 +581,9 @@ describe('handoff to sub-spec 05 — lifecycle hooks are observable', () => {
     expect(settled[0]!.resultHash).toMatch(/^[0-9a-f]{64}$/);
     expect(settled[0]!.seedReveal).toBeTruthy();
     // The reveal must match the commitment published before play.
-    const commit = createHash('sha256').update(settled[0]!.seedReveal!).digest('hex');
-    expect(commit).toBe(started[0]!.seedCommitHash);
+    // The commitment must use the SAME scheme the escrow verifies (keccak256),
+    // or the on-chain and off-chain records could never be checked against each other.
+    expect(seedCommitment(settled[0]!.seedReveal!)).toBe(started[0]!.seedCommitHash);
   });
 
   it('a throwing hook cannot break a session', async () => {

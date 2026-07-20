@@ -2,10 +2,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
+import { createSettlementChain } from './chain';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { openDatabase, type Db } from './db/index';
 import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
+import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
 import { getSession, listSessions, readEvents } from './routes/spectate';
 import {
@@ -186,7 +188,16 @@ export function buildServer(options: BuildOptions): BuiltServer {
 export async function start(): Promise<void> {
   const config = loadConfig();
   const db = openDatabase(config.databasePath);
-  const { app, orchestrator } = buildServer({ db, config, logger: true });
+
+  // On-chain commit-reveal (T13). Absent an operator key / escrow address this is
+  // a no-op, so the arena runs perfectly well with no chain at all.
+  const log = (message: string) => process.stdout.write(`${message}\n`);
+  const chain = createSettlementChain(config, log);
+  const orchestrator = new Orchestrator(db, config, {
+    hooks: createChainHooks(db, chain, log),
+  });
+
+  const { app } = buildServer({ db, config, orchestrator, logger: true });
 
   // Sweep decision deadlines even when nobody is polling, so a table with an
   // unresponsive agent still progresses (T10).

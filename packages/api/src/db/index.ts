@@ -12,6 +12,17 @@ export function migrate(db: Db): void {
   // Sits next to this module in both src/ (ts-jest) and dist/ (copied by build).
   const schema = readFileSync(join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
+
+  // CREATE TABLE IF NOT EXISTS won't add columns to a table that already exists,
+  // so columns introduced after a database was first created are applied here.
+  addColumnIfMissing(db, 'sessions', 'commit_tx_hash', 'TEXT');
+  addColumnIfMissing(db, 'sessions', 'settle_tx_hash', 'TEXT');
+}
+
+function addColumnIfMissing(db: Db, table: string, column: string, type: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 export interface OpenOptions {

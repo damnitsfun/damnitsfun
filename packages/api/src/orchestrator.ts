@@ -6,6 +6,7 @@ import {
   type Move,
   type SessionEvent,
 } from 'engine';
+import { seedCommitment } from './commit';
 import type { Config } from './config';
 import type { Db } from './db/index';
 import { SqliteSessionEventStore } from './db/event-store';
@@ -102,6 +103,12 @@ export interface SessionLifecycleHooks {
     sessionId: string;
     seatAgentIds: string[];
     seedCommitHash: string;
+    /**
+     * The raw seed, for the commit call. Server-internal only — it must not
+     * reach any public surface until the session settles, or the deck could be
+     * derived mid-game (the spectator feed redacts it for exactly this reason).
+     */
+    seed: string;
   }): void;
   onSessionSettled?(info: {
     sessionId: string;
@@ -341,10 +348,12 @@ export class Orchestrator {
   /** Deal the table: commit a seed, construct the GameSession, start the clock. */
   private startSession(sessionId: string): void {
     const seats = this.seatsOf(sessionId);
-    // Commit-reveal (spec 05): the hash is published before play; the seed itself
-    // is only exposed once the session is settled.
+    // Commit-reveal (spec 05): the commitment is published before play; the seed
+    // itself is only exposed once the session is settled. The commitment uses the
+    // SAME scheme the escrow verifies (keccak256), so the recorded value and the
+    // on-chain one are the same number and can be checked against each other.
     const seed = newApiKey();
-    const seedCommitHash = createHash('sha256').update(seed).digest('hex');
+    const seedCommitHash = seedCommitment(seed);
 
     const game = new GameSession(seats, {
       sessionId,
@@ -368,7 +377,7 @@ export class Orchestrator {
     // Attach point for sub-spec 05 (T13): publish the seed commitment on-chain
     // here, before any move is applied.
     this.fire(() =>
-      this.hooks.onSessionStarted?.({ sessionId, seatAgentIds: seats, seedCommitHash }),
+      this.hooks.onSessionStarted?.({ sessionId, seatAgentIds: seats, seedCommitHash, seed }),
     );
   }
 

@@ -86,6 +86,9 @@ export interface SessionSummary {
   /** Only once settled — see redaction note above. */
   seedReveal: string | null;
   resultHash: string | null;
+  /** On-chain transactions, for independent verification on a block explorer. */
+  commitTxHash: string | null;
+  settleTxHash: string | null;
   startedAt: string | null;
   endedAt: string | null;
   eventCount: number;
@@ -141,6 +144,9 @@ function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
     seedCommitHash: (row.seed_commit_hash as string | null) ?? null,
     seedReveal: settled ? ((row.seed_reveal as string | null) ?? null) : null,
     resultHash: settled ? ((row.result_hash as string | null) ?? null) : null,
+    // The commit tx is public from the moment it lands — that IS the commitment.
+    commitTxHash: (row.commit_tx_hash as string | null) ?? null,
+    settleTxHash: settled ? ((row.settle_tx_hash as string | null) ?? null) : null,
     startedAt: (row.started_at as string | null) ?? null,
     endedAt: (row.ended_at as string | null) ?? null,
     eventCount,

@@ -2,7 +2,18 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // `node16` so package.json "exports" maps are honoured. Plain "node"
+    // resolution ignores them and resolves viem's transitive `ox` deep subpaths
+    // to its raw .ts sources — which skipLibCheck does not cover, leaking that
+    // dependency's own type errors into our lint. This package has no
+    // "type": "module", so it stays CommonJS and relative imports need no
+    // extensions.
+    "module": "node16",
+    "moduleResolution": "node16",
+    // ox's type declarations reference DOM types (WebAuthn credentials). The
+    // server never touches the DOM; these are declarations only.
+    "lib": ["ES2023", "DOM"]
   },
   "include": ["src/**/*.ts"]
 }

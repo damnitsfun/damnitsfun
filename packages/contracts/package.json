@@ -4,8 +4,12 @@
   "private": true,
   "description": "Foundry project: DamnitsEscrow.sol (entry fee, commit-reveal, settlement). Built with forge, not yarn.",
   "scripts": {
-    "build": "echo \"[contracts] use 'forge build' (sub-spec 05). no-op for yarn fan-out.\"",
-    "test": "echo \"[contracts] use 'forge test' (sub-spec 05). no-op for yarn fan-out.\"",
-    "lint": "echo \"[contracts] use 'forge fmt --check' (sub-spec 05). no-op for yarn fan-out.\""
+    "setup": "forge install --no-git OpenZeppelin/openzeppelin-contracts@v5.6.1 && forge install --no-git foundry-rs/forge-std",
+    "build": "forge build",
+    "test": "forge test",
+    "lint": "forge fmt --check",
+    "fmt": "forge fmt",
+    "gas": "forge test --gas-report",
+    "deploy:testnet": "forge script script/Deploy.s.sol:Deploy --rpc-url \"$BSC_TESTNET_RPC_URL\" --broadcast"
   }
 }

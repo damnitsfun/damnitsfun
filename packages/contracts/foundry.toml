@@ -1,0 +1,34 @@
+# Foundry project for DamnitsEscrow (parent spec §2, §8).
+#
+# Foundry itself is rolling-release (run `foundryup`), but the compiler is pinned:
+# floating solc across machines would change bytecode and make a deployed contract
+# harder to verify.
+
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+
+# Pinned: solc 0.8.36. OpenZeppelin 5.6.1 requires a >=0.8.24 pragma floor, so the
+# sources declare ^0.8.24 while compiling with this newer pinned release.
+solc_version = "0.8.36"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+
+verbosity = 2
+
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+
+[rpc_endpoints]
+bsc_testnet = "${BSC_TESTNET_RPC_URL}"

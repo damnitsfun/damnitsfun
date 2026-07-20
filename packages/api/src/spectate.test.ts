@@ -118,7 +118,7 @@ describe('spectator feed — live redaction', () => {
     expect(summaryLive.json().seedReveal).toBeNull();
     expect(summaryLive.json().resultHash).toBeNull();
     // The commitment IS public before play — that is the point of commit-reveal.
-    expect(summaryLive.json().seedCommitHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(summaryLive.json().seedCommitHash).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
   it('redacts drawn card faces but keeps the count', async () => {

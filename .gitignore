@@ -30,6 +30,9 @@ packages/contracts/cache/
 packages/contracts/out/
 packages/contracts/broadcast/
 !packages/contracts/broadcast/**/dry-run/
+# Vendored solidity deps (~15MB). Restore with `yarn workspace contracts setup`,
+# which pins OpenZeppelin to the exact version the deployed bytecode was built with.
+packages/contracts/lib/
 
 # Logs
 npm-debug.log*

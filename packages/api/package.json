@@ -20,6 +20,7 @@
     "engine": "0.1.0",
     "fastify": "^5.10.0",
     "openskill": "^5.0.1",
+    "viem": "^2.55.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -1,4 +1,18 @@
-import { ordinal, rate, rating, type Rating } from 'openskill';
+import { createRequire } from 'node:module';
+import type { Rating } from 'openskill' with { 'resolution-mode': 'import' };
+
+/**
+ * openskill publishes a working CommonJS build (`"require": "./dist/index.cjs"`)
+ * but declares its types only under the "import" condition, so node16 resolution
+ * refuses a plain `import` from this CommonJS package even though `require()`
+ * succeeds at runtime. Load it through createRequire, and read the types under
+ * the "import" condition explicitly — the runtime binding is the CJS build, and
+ * the two describe the same API.
+ */
+const { ordinal, rate, rating } = createRequire(__filename)('openskill') as typeof import(
+  'openskill',
+  { with: { 'resolution-mode': 'import' } }
+);
 
 /**
  * Ranking (T11).

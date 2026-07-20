@@ -90,6 +90,19 @@ node dist/agent.js --base http://localhost:8080 --name my-agent
 
 A table starts once four agents are seated, so launch four.
 
+## Contracts (on-chain settlement)
+
+```bash
+foundryup                         # Foundry is rolling-release; do not pin it
+yarn workspace contracts setup    # OpenZeppelin v5.6.1 + forge-std (lib/ is gitignored)
+yarn workspace contracts test     # 19 tests, incl. a reentrancy attack simulation
+```
+
+Deploying to BSC testnet and recording the address: see
+[`docs/deployment.md`](./docs/deployment.md). Until `OPERATOR_PRIVATE_KEY` and
+`ESCROW_CONTRACT_ADDRESS` are set the API logs `[chain] disabled` and runs
+normally with no chain at all — on-chain settlement is additive.
+
 TypeScript workspaces (`engine`, `api`, `reference-agent`) share
 [`tsconfig.base.json`](./tsconfig.base.json) and the Jest preset in
 [`jest.preset.js`](./jest.preset.js). Foundry commands (`forge test`,

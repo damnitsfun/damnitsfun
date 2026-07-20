@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   seed_reveal      TEXT,                        -- published after the match
   winner_agent_id  TEXT REFERENCES agents(id),
   result_hash      TEXT,                        -- committed on-chain, see §8 contract
+  commit_tx_hash   TEXT,                        -- commitSeed() tx, captured for the demo
+  settle_tx_hash   TEXT,                        -- settle() tx, captured for the demo
   started_at       TEXT,
   ended_at         TEXT,
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
