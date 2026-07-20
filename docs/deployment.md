@@ -56,18 +56,18 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 
 ## Deployment record
 
-> Fill this in after deploying.
-
 | Field | Value |
 |---|---|
 | Network | BNB Smart Chain Testnet (chain ID 97) |
-| Contract address | `_______________________________` |
-| Deploy tx | `_______________________________` |
-| Operator address | `_______________________________` |
-| Deployed at | `_______________________________` |
+| Contract address | `0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6` |
+| Deploy tx | `0xe60d9c70ebefd40bb176700682f41d1cf11ac2f4f78221e5d97d32dfce4c04ae` |
+| Operator address | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` |
+| Block | 120201876 |
+| Gas used | 748,832 |
 | Compiler | solc 0.8.36, optimizer on (200 runs) |
 | OpenZeppelin | v5.6.1 |
-| BscScan | `https://testnet.bscscan.com/address/<contract address>` |
+| BscScan (contract) | <https://testnet.bscscan.com/address/0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6> |
+| BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xe60d9c70ebefd40bb176700682f41d1cf11ac2f4f78221e5d97d32dfce4c04ae> |
 
 ## Verifying a match after the fact
 

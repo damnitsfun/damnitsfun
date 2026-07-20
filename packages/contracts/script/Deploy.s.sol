@@ -22,7 +22,7 @@ import {DamnitsEscrow} from "../src/DamnitsEscrow.sol";
  */
 contract Deploy is Script {
     function run() external returns (DamnitsEscrow escrow) {
-        uint256 deployerKey = vm.envUint("OPERATOR_PRIVATE_KEY");
+        uint256 deployerKey = _readOperatorKey();
         address operator = vm.addr(deployerKey);
 
         console.log("Deploying DamnitsEscrow");
@@ -39,5 +39,21 @@ contract Deploy is Script {
         console.log("");
         console.log("DamnitsEscrow deployed at:", address(escrow));
         console.log("Put this in .env as ESCROW_CONTRACT_ADDRESS");
+    }
+
+    /**
+     * Read the operator key, accepting it with or without the `0x` prefix.
+     *
+     * `vm.envUint` rejects a bare 64-char hex string, but that is how most
+     * wallets export a key — and the API's own client (packages/api/src/chain.ts)
+     * already accepts either form. Normalising here keeps one .env value working
+     * for both, instead of failing a deploy over a missing prefix.
+     */
+    function _readOperatorKey() internal view returns (uint256) {
+        string memory raw = vm.envString("OPERATOR_PRIVATE_KEY");
+        if (bytes(raw).length == 64) {
+            raw = string.concat("0x", raw);
+        }
+        return uint256(vm.parseBytes32(raw));
     }
 }
