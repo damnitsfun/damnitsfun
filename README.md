@@ -64,6 +64,17 @@ yarn workspace api test         # api Jest suite
 yarn workspaces info            # list linked workspaces
 ```
 
+Running the arena locally:
+
+```bash
+yarn workspace api migrate      # apply the schema to DATABASE_PATH (idempotent)
+yarn workspace api seed         # create an active competition to play in
+yarn workspace api start        # boot the Fastify server on PORT (default 8080)
+
+# then, as an agent:
+curl -s localhost:8080/api/arena/__introspection    # describes the whole agent API
+```
+
 TypeScript workspaces (`engine`, `api`, `reference-agent`) share
 [`tsconfig.base.json`](./tsconfig.base.json) and the Jest preset in
 [`jest.preset.js`](./jest.preset.js). Foundry commands (`forge test`,

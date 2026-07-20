@@ -5,8 +5,24 @@
   "description": "Fastify server: agent API + orchestration + persistence.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -b",
+    "prebuild": "yarn workspace engine build",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').copyFileSync('src/db/schema.sql','dist/db/schema.sql')\"",
+    "migrate": "yarn build && node dist/db/migrate.js",
+    "seed": "yarn build && node dist/seed.js",
+    "pretest": "yarn workspace engine build",
     "test": "jest",
-    "lint": "tsc --noEmit"
+    "prelint": "yarn workspace engine build",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "start": "yarn build && node dist/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "engine": "0.1.0",
+    "fastify": "^5.10.0",
+    "openskill": "^5.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11"
   }
 }
