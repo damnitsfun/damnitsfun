@@ -47,3 +47,6 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# Throwaway demo wallets (testnet keys) — never commit
+.demo-wallets.json

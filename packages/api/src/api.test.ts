@@ -226,7 +226,7 @@ describe('T9 — agent API endpoints', () => {
     expect(bad.statusCode).toBe(400);
   });
 
-  it('402s with the payment shape when an entry fee is unpaid, then admits on retry with txHash', async () => {
+  it('402s with the payment shape, naming the table to pay into', async () => {
     const h = boot();
     const competitionId = h.orchestrator.createCompetition('Paid Cup', '1000000000000000', '0xescrow');
     const agent = await register(h.app, 'Payer');
@@ -238,20 +238,33 @@ describe('T9 — agent API endpoints', () => {
       payload: { competitionId },
     });
     expect(unpaid.statusCode).toBe(402);
-    expect(unpaid.json().paymentRequired).toEqual({
+    const required = unpaid.json().paymentRequired;
+    expect(required).toMatchObject({
       chainId: h.config.bscChainId,
       contractAddress: '0xescrow',
       amountWei: '1000000000000000',
     });
+    // The escrow holds a pot per session, so the agent must be told WHICH table
+    // to pay into — without this it cannot call payEntryFee(sessionId).
+    expect(required.sessionId).toMatch(/^sess_/);
+  });
 
-    const paid = await h.app.inject({
+  it('refuses an unverifiable entry fee rather than trusting the txHash', async () => {
+    // No chain is configured here, so nothing can be verified — and a paid
+    // competition must not admit anyone on an unchecked claim. (A real payment is
+    // covered by the chain-backed test in settlement.test.ts.)
+    const h = boot();
+    const competitionId = h.orchestrator.createCompetition('Paid Cup', '1000000000000000', '0xescrow');
+    const agent = await register(h.app, 'Payer');
+
+    const claimed = await h.app.inject({
       method: 'POST',
       url: '/api/arena/session/join',
       headers: authed(agent),
       payload: { competitionId, txHash: '0xdeadbeef' },
     });
-    expect(paid.statusCode).toBe(200);
-    expect(paid.json().status).toBe('lobby');
+    expect(claimed.statusCode).toBe(402);
+    expect(claimed.json().error).toBe('PAYMENT_NOT_VERIFIED');
   });
 
   it('409s when an agent is already seated in an active session', async () => {

@@ -6,6 +6,7 @@ import {
   type Move,
   type SessionEvent,
 } from 'engine';
+import { DISABLED_CHAIN, type SettlementChain } from './chain';
 import { seedCommitment } from './commit';
 import type { Config } from './config';
 import type { Db } from './db/index';
@@ -143,17 +144,24 @@ export class Orchestrator {
   private readonly config: Config;
   private readonly clock: () => number;
   private readonly hooks: SessionLifecycleHooks;
+  private readonly chain: SettlementChain;
   private readonly live = new Map<string, LiveSession>();
 
   constructor(
     db: Db,
     config: Config,
-    options: { clock?: () => number; hooks?: SessionLifecycleHooks } = {},
+    options: {
+      clock?: () => number;
+      hooks?: SessionLifecycleHooks;
+      /** Used to open tables and verify entry fees. Defaults to no chain at all. */
+      chain?: SettlementChain;
+    } = {},
   ) {
     this.db = db;
     this.config = config;
     this.clock = options.clock ?? (() => Date.now());
     this.hooks = options.hooks ?? {};
+    this.chain = options.chain ?? DISABLED_CHAIN;
   }
 
   /** Run a lifecycle hook without letting its failure affect the game. */
@@ -242,11 +250,11 @@ export class Orchestrator {
    * Seat an agent at a table for `competitionId`, creating a lobby if none is
    * open. When the table reaches TABLE_SIZE the match starts immediately.
    */
-  joinSession(
+  async joinSession(
     agentId: string,
     competitionId: string,
     txHash?: string,
-  ): { sessionId: string; status: 'lobby' | 'seated'; seatIndex: number | null } {
+  ): Promise<{ sessionId: string; status: 'lobby' | 'seated'; seatIndex: number | null }> {
     const competition = this.db
       .prepare(`SELECT * FROM competitions WHERE id = ? AND status = 'active'`)
       .get(competitionId) as CompetitionRow | undefined;
@@ -265,9 +273,12 @@ export class Orchestrator {
       throw new ApiError(409, 'ALREADY_IN_SESSION', `Agent is already in session ${existing.id}`);
     }
 
-    this.requireEntryFee(agentId, competition, txHash);
-
+    // The table must exist before the fee can be paid: the escrow holds a pot per
+    // session, so an agent needs a sessionId to pay into. The lobby is therefore
+    // allocated first, and the 402 names it.
     const session = this.findOrCreateLobby(competition);
+    await this.requireEntryFee(agentId, competition, session, txHash);
+
     const seatIndex = this.db
       .prepare(`SELECT COUNT(*) AS n FROM session_players WHERE session_id = ?`)
       .get(session.id) as { n: number };
@@ -289,39 +300,73 @@ export class Orchestrator {
   }
 
   /**
-   * Entry-fee gate (§5). The on-chain verification lands in sub-spec 05 (T13);
-   * here the endpoint, its 402 shape and the payment row already exist, so the
-   * contract wiring has a defined place to attach.
+   * Entry-fee gate (§5), enforced against the chain.
+   *
+   * The escrow holds a pot per session, so the 402 names the exact table to pay
+   * into — `paymentRequired.sessionId` — in addition to the §5 fields. Without it
+   * an agent has no way to call `payEntryFee(sessionId)`.
+   *
+   * A claimed txHash is never taken on trust: it is read back from the chain and
+   * must be a successful call to OUR escrow that emitted `EntryFeePaid` for THIS
+   * table with the right amount. Otherwise any transaction hash would buy a seat.
    */
-  private requireEntryFee(agentId: string, competition: CompetitionRow, txHash?: string): void {
+  private async requireEntryFee(
+    agentId: string,
+    competition: CompetitionRow,
+    session: SessionRow,
+    txHash?: string,
+  ): Promise<void> {
     if (competition.entry_fee_wei === '0') return;
 
     const paid = this.db
       .prepare(
         `SELECT id FROM payments
           WHERE agent_id = ? AND direction = 'entry_fee' AND status = 'confirmed'
-            AND session_id IS NULL`,
+            AND session_id = ?`,
       )
-      .get(agentId) as { id: string } | undefined;
+      .get(agentId, session.id) as { id: string } | undefined;
     if (paid) return;
 
     if (!txHash) {
+      // Open the table on-chain so the escrow will accept payments for it. Safe
+      // to attempt more than once: the contract rejects a second open.
+      await this.chain.openSession(session.id, competition.entry_fee_wei);
       throw new ApiError(402, 'PAYMENT_REQUIRED', 'Entry fee not paid', {
         paymentRequired: {
           chainId: this.config.bscChainId,
           contractAddress: competition.contract_address ?? this.config.escrowContractAddress,
           amountWei: competition.entry_fee_wei,
+          sessionId: session.id,
         },
       });
     }
 
-    // TODO(sub-spec 05 / T13): verify txHash on-chain before marking confirmed.
+    const check = await this.chain.verifyEntryFee(session.id, txHash, competition.entry_fee_wei);
+    if (!check.ok) {
+      throw new ApiError(402, 'PAYMENT_NOT_VERIFIED', `Entry fee not verified: ${check.error}`, {
+        paymentRequired: {
+          chainId: this.config.bscChainId,
+          contractAddress: competition.contract_address ?? this.config.escrowContractAddress,
+          amountWei: competition.entry_fee_wei,
+          sessionId: session.id,
+        },
+      });
+    }
+
     this.db
       .prepare(
         `INSERT INTO payments (id, session_id, agent_id, direction, amount_wei, tx_hash, status)
-         VALUES (?, NULL, ?, 'entry_fee', ?, ?, 'confirmed')`,
+         VALUES (?, ?, ?, 'entry_fee', ?, ?, 'confirmed')`,
       )
-      .run(newPaymentId(), agentId, competition.entry_fee_wei, txHash);
+      .run(newPaymentId(), session.id, agentId, check.amountWei ?? competition.entry_fee_wei, txHash);
+
+    // Remember where this agent paid from: that address is the on-chain player
+    // the escrow will pay if they win, and it is what `settle` must name.
+    if (check.payer) {
+      this.db
+        .prepare(`UPDATE agents SET payout_address = COALESCE(payout_address, ?) WHERE id = ?`)
+        .run(check.payer, agentId);
+    }
   }
 
   private findOrCreateLobby(competition: CompetitionRow): SessionRow {

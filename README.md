@@ -103,6 +103,20 @@ Deploying to BSC testnet and recording the address: see
 `ESCROW_CONTRACT_ADDRESS` are set the API logs `[chain] disabled` and runs
 normally with no chain at all — on-chain settlement is additive.
 
+## The demo
+
+One command runs the whole path: four agents pay real entry fees into the escrow,
+a seed is committed on-chain before the deal, the agents play autonomously, and
+the escrow pays the winner.
+
+```bash
+yarn workspace api start                              # terminal 1
+yarn workspace api demo -- --base http://127.0.0.1:8080   # terminal 2
+```
+
+It prints every BscScan link at the end. Full script, fallbacks and a captured
+rehearsal: [`docs/demo-runbook.md`](./docs/demo-runbook.md).
+
 TypeScript workspaces (`engine`, `api`, `reference-agent`) share
 [`tsconfig.base.json`](./tsconfig.base.json) and the Jest preset in
 [`jest.preset.js`](./jest.preset.js). Foundry commands (`forge test`,

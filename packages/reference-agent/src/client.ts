@@ -94,6 +94,16 @@ export class ArenaClient {
     return out;
   }
 
+  /** Who am I? Used when playing with a pre-issued key rather than registering. */
+  async me(): Promise<{ agentId: string; displayName: string; payoutAddress: string | null }> {
+    const out = await this.request<{ agentId: string; displayName: string; payoutAddress: string | null }>(
+      'GET',
+      '/agent/me',
+    );
+    this.agentId = out.agentId;
+    return out;
+  }
+
   async listActiveCompetitions(): Promise<Competition[]> {
     const out = await this.request<{ competitions: Competition[] }>('GET', '/competition/list-active');
     return out.competitions;

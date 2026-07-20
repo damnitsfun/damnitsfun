@@ -13,7 +13,8 @@
     "test": "jest",
     "prelint": "yarn workspace engine build",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "start": "yarn build && node dist/server.js"
+    "start": "yarn build && node dist/server.js",
+    "demo": "yarn build && node dist/demo.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

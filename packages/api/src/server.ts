@@ -167,7 +167,7 @@ export function buildServer(options: BuildOptions): BuiltServer {
   app.post(`${BASE}/session/join`, async (request) => {
     const agent = requireAgent(orchestrator, request);
     const { competitionId, txHash } = joinSchema.parse(request.body);
-    return orchestrator.joinSession(agent.id, competitionId, txHash);
+    return await orchestrator.joinSession(agent.id, competitionId, txHash);
   });
 
   app.get(`${BASE}/session/pending-actions`, async (request) => {
@@ -194,6 +194,7 @@ export async function start(): Promise<void> {
   const log = (message: string) => process.stdout.write(`${message}\n`);
   const chain = createSettlementChain(config, log);
   const orchestrator = new Orchestrator(db, config, {
+    chain,
     hooks: createChainHooks(db, chain, log),
   });
 

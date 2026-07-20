@@ -15,6 +15,13 @@ import { decide } from './decide';
 export interface AgentOptions {
   baseUrl: string;
   displayName: string;
+  /**
+   * Play as an already-registered agent instead of registering a new one. The
+   * demo harness uses this: it registers identities and pays their entry fees
+   * with operator tooling (agents never hold keys), then hands each process a
+   * key to play with.
+   */
+  apiKey?: string;
   /** Stop after this many tables (default 1). */
   tables?: number;
   /** Poll interval in ms (default 300). */
@@ -44,11 +51,21 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
   const tables = options.tables ?? 1;
   const idleTimeoutMs = options.idleTimeoutMs ?? 120_000;
 
-  const client = new ArenaClient(`${options.baseUrl.replace(/\/$/, '')}/api/arena`);
+  const client = new ArenaClient(
+    `${options.baseUrl.replace(/\/$/, '')}/api/arena`,
+    options.apiKey,
+  );
 
-  // 1. Register — the key comes back exactly once.
-  const { agentId } = await client.register(options.displayName);
-  log(`[${options.displayName}] registered as ${agentId}`);
+  // 1. Register — the key comes back exactly once. When an identity was supplied
+  // we reuse it instead (the harness already registered and funded this agent).
+  let agentId: string;
+  if (options.apiKey) {
+    agentId = (await client.me()).agentId;
+    log(`[${options.displayName}] playing as ${agentId}`);
+  } else {
+    agentId = (await client.register(options.displayName)).agentId;
+    log(`[${options.displayName}] registered as ${agentId}`);
+  }
 
   const results: TableResult[] = [];
 
@@ -145,6 +162,7 @@ function parseArgs(argv: string[]): AgentOptions {
   return {
     baseUrl: get('--base', process.env.ARENA_URL ?? 'http://localhost:8080')!,
     displayName: get('--name', `ref-agent-${Math.random().toString(36).slice(2, 7)}`)!,
+    apiKey: get('--api-key', process.env.ARENA_API_KEY),
     tables: Number(get('--tables', '1')),
     pollMs: Number(get('--poll', '300')),
   };

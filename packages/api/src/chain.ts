@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, type Address } from 'viem';
+import { createPublicClient, createWalletClient, http, parseEventLogs, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { bscTestnet } from 'viem/chains';
 import { seedAsBytes32, seedCommitment, sessionIdToBytes32 } from './commit';
@@ -30,6 +30,30 @@ export const DAMNITS_ESCROW_ABI = [
       { name: 'entryFeeWei', type: 'uint256' },
     ],
     outputs: [],
+  },
+  {
+    // Called by players from their OWN wallets (operator tooling in the demo
+    // harness), never by the arena — the arena only verifies the resulting tx.
+    type: 'function',
+    name: 'payEntryFee',
+    stateMutability: 'payable',
+    inputs: [{ name: 'sessionId', type: 'bytes32' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'getSession',
+    stateMutability: 'view',
+    inputs: [{ name: 'sessionId', type: 'bytes32' }],
+    outputs: [
+      { name: 'players', type: 'address[]' },
+      { name: 'entryFeeWei', type: 'uint256' },
+      { name: 'pot', type: 'uint256' },
+      { name: 'seedCommitHash', type: 'bytes32' },
+      { name: 'resultHash', type: 'bytes32' },
+      { name: 'state', type: 'uint8' },
+      { name: 'winner', type: 'address' },
+    ],
   },
   {
     type: 'function',
@@ -65,6 +89,15 @@ export const DAMNITS_ESCROW_ABI = [
   },
   {
     type: 'event',
+    name: 'EntryFeePaid',
+    inputs: [
+      { name: 'sessionId', type: 'bytes32', indexed: true },
+      { name: 'player', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
     name: 'SeedCommitted',
     inputs: [
       { name: 'sessionId', type: 'bytes32', indexed: true },
@@ -91,8 +124,26 @@ export interface ChainResult {
   error?: string;
 }
 
+/** What an on-chain entry-fee payment turns out to be, once inspected. */
+export interface EntryFeeCheck {
+  ok: boolean;
+  /** The address that actually sent the funds. */
+  payer?: string;
+  amountWei?: string;
+  error?: string;
+}
+
 export interface SettlementChain {
   readonly enabled: boolean;
+  /** Open a table on-chain and fix its fee, so players can pay into it. */
+  openSession(sessionId: string, entryFeeWei: string): Promise<ChainResult>;
+  /**
+   * Verify a claimed entry-fee payment by reading the chain, rather than
+   * trusting the txHash an agent hands us. Confirms the transaction succeeded,
+   * hit OUR escrow, and emitted EntryFeePaid for THIS session with the right
+   * amount — otherwise any random txHash would buy a seat.
+   */
+  verifyEntryFee(sessionId: string, txHash: string, expectedWei: string): Promise<EntryFeeCheck>;
   commitSeed(sessionId: string, seed: string): Promise<ChainResult>;
   settle(
     sessionId: string,
@@ -105,6 +156,12 @@ export interface SettlementChain {
 /** Used whenever the chain is not configured — every call is a clean no-op. */
 export const DISABLED_CHAIN: SettlementChain = {
   enabled: false,
+  async openSession() {
+    return { ok: false, error: 'chain disabled' };
+  },
+  async verifyEntryFee() {
+    return { ok: false, error: 'chain disabled' };
+  },
   async commitSeed() {
     return { ok: false, error: 'chain disabled' };
   },
@@ -139,7 +196,7 @@ export function createSettlementChain(
   log(`[chain] enabled — escrow ${address}, operator ${account.address}`);
 
   async function send(
-    functionName: 'commitSeed' | 'settle',
+    functionName: 'openSession' | 'commitSeed' | 'settle',
     args: readonly unknown[],
   ): Promise<ChainResult> {
     try {
@@ -166,6 +223,40 @@ export function createSettlementChain(
 
   return {
     enabled: true,
+
+    openSession(sessionId, entryFeeWei) {
+      return send('openSession', [sessionIdToBytes32(sessionId), BigInt(entryFeeWei)]);
+    },
+
+    async verifyEntryFee(sessionId, txHash, expectedWei) {
+      try {
+        const receipt = await publicClient.waitForTransactionReceipt({
+          hash: txHash as `0x${string}`,
+        });
+        if (receipt.status !== 'success') return { ok: false, error: 'transaction reverted' };
+        if ((receipt.to ?? '').toLowerCase() !== address.toLowerCase()) {
+          return { ok: false, error: 'transaction was not sent to this escrow' };
+        }
+
+        const events = parseEventLogs({
+          abi: DAMNITS_ESCROW_ABI,
+          eventName: 'EntryFeePaid',
+          logs: receipt.logs,
+        });
+        const wanted = sessionIdToBytes32(sessionId).toLowerCase();
+        const paid = events.find((e) => String(e.args.sessionId).toLowerCase() === wanted);
+        if (!paid) return { ok: false, error: 'no entry-fee payment for this table in that tx' };
+        if (paid.args.amount !== BigInt(expectedWei)) {
+          return { ok: false, error: `paid ${String(paid.args.amount)} wei, expected ${expectedWei}` };
+        }
+
+        return { ok: true, payer: paid.args.player as string, amountWei: String(paid.args.amount) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false, error: message };
+      }
+    },
+
     commitSeed(sessionId, seed) {
       return send('commitSeed', [sessionIdToBytes32(sessionId), seedCommitment(seed)]);
     },

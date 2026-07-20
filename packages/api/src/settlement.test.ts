@@ -29,6 +29,12 @@ function fakeChain(recorded: Recorded, behaviour: 'ok' | 'fail' | 'throw' = 'ok'
   };
   return {
     enabled: true,
+    async openSession() {
+      return respond();
+    },
+    async verifyEntryFee(_sessionId, _txHash, expectedWei) {
+      return { ok: true, payer: '0x'.padEnd(42, '1'), amountWei: expectedWei };
+    },
     async commitSeed(sessionId, seed) {
       recorded.commits.push({ sessionId, seed });
       return respond();
@@ -111,6 +117,79 @@ async function runTable(chain: SettlementChain) {
   const sessionId = await seatFour(app, competitionId, agents);
   return { app, db, sessionId, agents };
 }
+
+describe('entry fees are verified against the chain, not trusted', () => {
+  function payingChain(accept: boolean): SettlementChain {
+    return {
+      enabled: true,
+      async openSession() {
+        return { ok: true, txHash: `0x${'b'.repeat(64)}` };
+      },
+      async verifyEntryFee(_sessionId, _txHash, expectedWei) {
+        return accept
+          ? { ok: true, payer: `0x${'c'.repeat(40)}`, amountWei: expectedWei }
+          : { ok: false, error: 'no entry-fee payment for this table in that tx' };
+      },
+      async commitSeed() {
+        return { ok: true, txHash: `0x${'d'.repeat(64)}` };
+      },
+      async settle() {
+        return { ok: true, txHash: `0x${'e'.repeat(64)}` };
+      },
+    };
+  }
+
+  async function joinPaid(accept: boolean, txHash?: string) {
+    const config = loadConfig({ env: { TABLE_SIZE: '4', GAME_TIME_LIMIT_MS: '3600000' } });
+    const db = openDatabase(':memory:');
+    const chain = payingChain(accept);
+    const orchestrator = new Orchestrator(db, config, { chain });
+    const { app } = buildServer({ db, config, orchestrator });
+    const competitionId = orchestrator.createCompetition('Real Money Cup', '500000000000000', '0xescrow');
+    const agent = await register(app, 'Payer');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/arena/session/join',
+      headers: { 'x-arena-api-key': agent.apiKey },
+      payload: txHash ? { competitionId, txHash } : { competitionId },
+    });
+    return { res, db, agent };
+  }
+
+  it('admits an agent whose payment the chain confirms', async () => {
+    const { res, db, agent } = await joinPaid(true, `0x${'f'.repeat(64)}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('lobby');
+
+    // The payment is recorded against the specific table it funded...
+    const payment = db
+      .prepare(`SELECT session_id, amount_wei, status FROM payments WHERE agent_id = ?`)
+      .get(agent.agentId) as { session_id: string; amount_wei: string; status: string };
+    expect(payment.status).toBe('confirmed');
+    expect(payment.session_id).toMatch(/^sess_/);
+    expect(payment.amount_wei).toBe('500000000000000');
+
+    // ...and the paying address is remembered, since that is who the escrow pays.
+    const row = db.prepare(`SELECT payout_address FROM agents WHERE id = ?`).get(agent.agentId) as {
+      payout_address: string | null;
+    };
+    expect(row.payout_address).toBe(`0x${'c'.repeat(40)}`);
+  });
+
+  it('rejects a txHash the chain does not back', async () => {
+    const { res } = await joinPaid(false, `0x${'9'.repeat(64)}`);
+    expect(res.statusCode).toBe(402);
+    expect(res.json().error).toBe('PAYMENT_NOT_VERIFIED');
+    expect(res.json().message).toMatch(/no entry-fee payment/);
+  });
+
+  it('opens the table on-chain and names it in the 402', async () => {
+    const { res } = await joinPaid(true);
+    expect(res.statusCode).toBe(402);
+    expect(res.json().paymentRequired.sessionId).toMatch(/^sess_/);
+    expect(res.json().paymentRequired.amountWei).toBe('500000000000000');
+  });
+});
 
 describe('commit-reveal hashing', () => {
   it('uses one scheme the escrow can verify: keccak256(seedAsBytes32(seed))', () => {
