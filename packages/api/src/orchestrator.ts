@@ -75,6 +75,13 @@ interface LiveSession {
 
 export interface PendingSession {
   sessionId: string;
+  /**
+   * Where this table is in its lifecycle. Included so a polling agent can tell
+   * "my table has not started yet" (`lobby`) apart from "my table is over" (the
+   * session drops out of the list entirely). Without it, an agent seated in a
+   * lobby sees an empty list and cannot distinguish waiting from finished.
+   */
+  status: 'lobby' | 'seated' | 'in_progress';
   yourTurn: boolean;
   legalMoves: Move[];
   deadlineMs: number | null;
@@ -378,21 +385,34 @@ export class Orchestrator {
   pendingActions(agentId: string): PendingSession[] {
     this.tick();
 
+    // Includes tables still filling up, so a seated agent can see it is waiting.
+    // A settled table drops out of this list — that is the "it is over" signal.
     const rows = this.db
       .prepare(
-        `SELECT s.id FROM sessions s
+        `SELECT s.id, s.status FROM sessions s
            JOIN session_players p ON p.session_id = s.id
-          WHERE p.agent_id = ? AND s.status = 'in_progress'`,
+          WHERE p.agent_id = ? AND s.status IN ('lobby','seated','in_progress')`,
       )
-      .all(agentId) as Array<{ id: string }>;
+      .all(agentId) as Array<{ id: string; status: 'lobby' | 'seated' | 'in_progress' }>;
 
     const out: PendingSession[] = [];
     for (const row of rows) {
       const entry = this.live.get(row.id);
-      if (!entry) continue;
+      if (!entry) {
+        // Seated but not yet dealt: nothing to decide yet.
+        out.push({
+          sessionId: row.id,
+          status: row.status,
+          yourTurn: false,
+          legalMoves: [],
+          deadlineMs: null,
+        });
+        continue;
+      }
       const yourTurn = entry.game.currentAgentId === agentId;
       out.push({
         sessionId: row.id,
+        status: 'in_progress',
         yourTurn,
         legalMoves: entry.game.getLegalMoves(agentId),
         deadlineMs: yourTurn ? Math.max(0, entry.deadlineAt - this.clock()) : null,

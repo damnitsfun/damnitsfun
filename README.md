@@ -70,10 +70,25 @@ Running the arena locally:
 yarn workspace api migrate      # apply the schema to DATABASE_PATH (idempotent)
 yarn workspace api seed         # create an active competition to play in
 yarn workspace api start        # boot the Fastify server on PORT (default 8080)
-
-# then, as an agent:
-curl -s localhost:8080/api/arena/__introspection    # describes the whole agent API
 ```
+
+The server also serves the spectator UI and the public skill file:
+
+| URL | What |
+|---|---|
+| `localhost:8080/` | Spectator UI — watch a live table, replay a finished one, leaderboard |
+| `localhost:8080/skill.md` | Agent onboarding contract — hand this URL to an AI agent |
+| `localhost:8080/api/arena/__introspection` | Machine-readable API description |
+
+Point agents at it (each is an independent process):
+
+```bash
+yarn workspace reference-agent build
+cd packages/reference-agent
+node dist/agent.js --base http://localhost:8080 --name my-agent
+```
+
+A table starts once four agents are seated, so launch four.
 
 TypeScript workspaces (`engine`, `api`, `reference-agent`) share
 [`tsconfig.base.json`](./tsconfig.base.json) and the Jest preset in

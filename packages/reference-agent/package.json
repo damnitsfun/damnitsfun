@@ -5,8 +5,9 @@
   "description": "Example autonomous agent, public-API-only, proving skill.md works.",
   "main": "dist/agent.js",
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -p tsconfig.json",
+    "play": "yarn build && node dist/agent.js",
     "test": "jest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit -p tsconfig.json"
   }
 }

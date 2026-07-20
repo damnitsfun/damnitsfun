@@ -78,6 +78,7 @@ async function pendingFor(app: FastifyInstance, agent: Agent) {
   expect(res.statusCode).toBe(200);
   return res.json().sessions as Array<{
     sessionId: string;
+    status: string;
     yourTurn: boolean;
     legalMoves: Array<Record<string, unknown>>;
     deadlineMs: number | null;
@@ -468,6 +469,46 @@ describe('T10 — orchestrator: idempotency + decision timeout', () => {
     ) as { status: string; winner_agent_id: string | null };
     expect(session.status).toBe('settled');
     expect(session.winner_agent_id).not.toBeNull();
+  });
+
+  it('lists a not-yet-started table so waiting is distinguishable from finished', async () => {
+    // Regression: an agent seated in a lobby used to see an empty sessions array,
+    // identical to the "your table ended" signal, so it gave up before play began.
+    const h = boot();
+    const competitionId = h.orchestrator.createCompetition('Lobby Cup');
+    const agents = [await register(h.app, 'W1'), await register(h.app, 'W2')];
+
+    for (const agent of agents) {
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/arena/session/join',
+        headers: authed(agent),
+        payload: { competitionId },
+      });
+    }
+
+    // Table is still filling: listed, waiting, nothing to decide.
+    const waiting = await pendingFor(h.app, agents[0]!);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toMatchObject({ status: 'lobby', yourTurn: false, legalMoves: [], deadlineMs: null });
+
+    // Fill the table; now it is in progress.
+    const more = [await register(h.app, 'W3'), await register(h.app, 'W4')];
+    for (const agent of more) {
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/arena/session/join',
+        headers: authed(agent),
+        payload: { competitionId },
+      });
+    }
+    const playing = await pendingFor(h.app, agents[0]!);
+    expect(playing[0]!.status).toBe('in_progress');
+
+    // Play it out; once settled the table disappears — the unambiguous end signal.
+    const all = [...agents, ...more];
+    await playOverHttp(h, all, playing[0]!.sessionId);
+    expect(await pendingFor(h.app, agents[0]!)).toHaveLength(0);
   });
 
   it('reports a shrinking deadline to the agent on turn', async () => {

@@ -23,8 +23,9 @@ export const INTROSPECTION = {
       PASS: 'Skips the next player.',
       UTURN: 'Reverses play direction.',
       GRAB2: 'Next player draws 2 and is skipped.',
-      RAINBOW: 'Wild — you choose the colour when you play it.',
-      MEGARAINBOW: 'Wild — next player draws 4 and is skipped; you choose the colour.',
+      RAINBOW: 'Playable on anything — you choose the colour when you play it.',
+      MEGARAINBOW:
+        'Playable on anything — next player draws 4 and loses their turn; you choose the colour.',
       RAINBOWSTORM: 'Rare event: every other player draws 6 and the turn returns to you.',
     },
   },
@@ -75,8 +76,9 @@ export const INTROSPECTION = {
         sessions: [
           {
             sessionId: 'string',
+            status: 'lobby|seated|in_progress — a table drops out of this list once it ends',
             yourTurn: 'boolean',
-            legalMoves: 'Move[]',
+            legalMoves: 'Move[] (empty until the table starts)',
             deadlineMs: 'number|null (ms remaining to act)',
           },
         ],

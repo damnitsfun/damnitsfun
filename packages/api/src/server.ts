@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import type { Config } from './config';
@@ -5,6 +7,7 @@ import { loadConfig } from './config';
 import { openDatabase, type Db } from './db/index';
 import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
 import { INTROSPECTION } from './routes/introspection';
+import { getSession, listSessions, readEvents } from './routes/spectate';
 import {
   actionSchema,
   joinSchema,
@@ -66,6 +69,23 @@ export function buildServer(options: BuildOptions): BuiltServer {
     });
   });
 
+  // ---- static: spectator UI + public skill file -----------------------------
+  // Served from the API origin so the UI needs no CORS and `skill.md` has one
+  // stable URL to hand to an agent (T16).
+  const repoRoot = join(__dirname, '..', '..', '..');
+  const webIndex = join(__dirname, '..', '..', 'web', 'public', 'index.html');
+
+  app.get('/', async (_request, reply) => {
+    if (!existsSync(webIndex)) return reply.status(404).send({ error: 'WEB_UI_NOT_BUILT' });
+    return reply.type('text/html; charset=utf-8').send(readFileSync(webIndex, 'utf8'));
+  });
+
+  app.get('/skill.md', async (_request, reply) => {
+    const skill = join(repoRoot, 'skill.md');
+    if (!existsSync(skill)) return reply.status(404).send({ error: 'SKILL_FILE_MISSING' });
+    return reply.type('text/markdown; charset=utf-8').send(readFileSync(skill, 'utf8'));
+  });
+
   // ---- introspection (no auth) ---------------------------------------------
   app.get(`${BASE}/__introspection`, async () => INTROSPECTION);
 
@@ -114,6 +134,32 @@ export function buildServer(options: BuildOptions): BuiltServer {
       payoutAddress: updated.payout_address,
     };
   });
+
+  // ---- spectator (no auth — served redacted while a game is live) -----------
+  app.get(`${BASE}/spectate/sessions`, async (request) => {
+    const query = request.query as { competitionId?: string; limit?: string };
+    const limit = Math.min(200, Math.max(1, Number(query.limit ?? 50) || 50));
+    return { sessions: listSessions(db, query.competitionId, limit) };
+  });
+
+  app.get<{ Params: { sessionId: string } }>(
+    `${BASE}/spectate/session/:sessionId`,
+    async (request, reply) => {
+      const summary = getSession(db, request.params.sessionId);
+      if (!summary) return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
+      return summary;
+    },
+  );
+
+  app.get<{ Params: { sessionId: string } }>(
+    `${BASE}/spectate/session/:sessionId/events`,
+    async (request, reply) => {
+      const since = Number((request.query as { since?: string }).since ?? -1);
+      const result = readEvents(db, request.params.sessionId, Number.isFinite(since) ? since : -1);
+      if (!result) return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
+      return result;
+    },
+  );
 
   // ---- sessions -------------------------------------------------------------
   app.post(`${BASE}/session/join`, async (request) => {
