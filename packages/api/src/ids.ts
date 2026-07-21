@@ -34,6 +34,19 @@ export function newPaymentId(): string {
   return `pay_${nanoid()}`;
 }
 
+export function newOwnerId(): string {
+  return `owner_${nanoid()}`;
+}
+
+/**
+ * A claim token (sub-spec 09): the unguessable bearer capability inside a claim
+ * URL. Long and URL-safe — whoever holds it can start the X sign-in that binds
+ * the agent to their owner account, so it must be hard to guess.
+ */
+export function newClaimToken(): string {
+  return `${nanoid(24)}${randomUUID().replace(/-/g, '')}`;
+}
+
 /** A fresh secret API key. Returned to the agent once and never stored raw. */
 export function newApiKey(): string {
   return `damnits_sk_${randomUUID().replace(/-/g, '')}${nanoid(8)}`;

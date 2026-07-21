@@ -6,13 +6,32 @@ import {
   type Move,
   type SessionEvent,
 } from 'engine';
+import { keccak256, toHex } from 'viem';
 import { DISABLED_CHAIN, type SettlementChain } from './chain';
 import { seedCommitment } from './commit';
 import type { Config } from './config';
 import type { Db } from './db/index';
 import { SqliteSessionEventStore } from './db/event-store';
-import { hashApiKey, hashesEqual, newAgentId, newApiKey, newPaymentId, newSessionId } from './ids';
+import {
+  hashApiKey,
+  hashesEqual,
+  newAgentId,
+  newApiKey,
+  newClaimToken,
+  newOwnerId,
+  newPaymentId,
+  newSessionId,
+} from './ids';
+import { distributePool } from './payout';
 import { conservativeRating, defaultRating, placementsFrom, rateSession } from './ranking';
+import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
+import {
+  DISABLED_XOAUTH,
+  codeChallengeOf,
+  newCodeVerifier,
+  newOauthState,
+  type XOAuthProvider,
+} from './xoauth';
 
 /**
  * Session orchestration (T10): lifecycle, matchmaking, per-decision timeouts,
@@ -46,8 +65,25 @@ export interface AgentRow {
   api_key_hash: string;
   display_name: string;
   payout_address: string | null;
+  wallet_address: string | null;
+  owner_id: string | null;
+  claimed_at: string | null;
   trueskill_mu: number;
   trueskill_sigma: number;
+}
+
+export interface OwnerRow {
+  id: string;
+  x_user_id: string;
+  x_handle: string;
+}
+
+/** Public shape of an agent's ownership claim (sub-spec 09). */
+export interface ClaimStatus {
+  claimed: boolean;
+  owner: { handle: string; xUserId: string } | null;
+  claimUrl: string;
+  verifiedAt: string | null;
 }
 
 interface CompetitionRow {
@@ -56,6 +92,14 @@ interface CompetitionRow {
   status: string;
   entry_fee_wei: string;
   contract_address: string | null;
+  kind: 'classic' | 'tournament';
+  pool_wei: string;
+  jackpot_seed_wei: string;
+  payout_schedule_json: string | null;
+  entries_close_at: string | null;
+  entries_closed_at: string | null;
+  settled_at: string | null;
+  requires_claim: number;
 }
 
 interface SessionRow {
@@ -145,6 +189,8 @@ export class Orchestrator {
   private readonly clock: () => number;
   private readonly hooks: SessionLifecycleHooks;
   private readonly chain: SettlementChain;
+  private readonly tournament: TournamentChain;
+  private readonly xoauth: XOAuthProvider;
   private readonly live = new Map<string, LiveSession>();
 
   constructor(
@@ -153,8 +199,12 @@ export class Orchestrator {
     options: {
       clock?: () => number;
       hooks?: SessionLifecycleHooks;
-      /** Used to open tables and verify entry fees. Defaults to no chain at all. */
+      /** Used to open tables and verify per-session entry fees. Defaults to no chain. */
       chain?: SettlementChain;
+      /** Used to verify buy-ins and settle pooled tournaments. Defaults to no chain. */
+      tournamentChain?: TournamentChain;
+      /** "Sign in with X" identity for agent claims (sub-spec 09). Defaults to disabled. */
+      xoauth?: XOAuthProvider;
     } = {},
   ) {
     this.db = db;
@@ -162,6 +212,8 @@ export class Orchestrator {
     this.clock = options.clock ?? (() => Date.now());
     this.hooks = options.hooks ?? {};
     this.chain = options.chain ?? DISABLED_CHAIN;
+    this.tournament = options.tournamentChain ?? DISABLED_TOURNAMENT_CHAIN;
+    this.xoauth = options.xoauth ?? DISABLED_XOAUTH;
   }
 
   /** Run a lifecycle hook without letting its failure affect the game. */
@@ -214,6 +266,244 @@ export class Orchestrator {
     return this.getAgent(agentId);
   }
 
+  // ---- ownership claim: "Sign in with X" (sub-spec 09) ----------------------
+  //
+  // Exact arena.dev.fun mechanism: the agent fetches a claim URL, hands it to its
+  // owner, the owner authorises a read-only X app, and we bind the agent to that
+  // X-verified identity. Claiming an agent is what makes it payout-eligible.
+
+  /** Build the owner-facing claim URL for a token. */
+  private claimUrlFor(claimToken: string): string {
+    return `${this.config.publicBaseUrl}/claim?token=${encodeURIComponent(claimToken)}`;
+  }
+
+  /** The X OAuth callback URI — must match the X app's registered redirect. */
+  private xRedirectUri(): string {
+    return `${this.config.publicBaseUrl}/api/arena/auth/x/callback`;
+  }
+
+  /** The current live (pending, unexpired) claim token for an agent, if any. */
+  private activeClaimToken(agentId: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT claim_token FROM agent_claims
+          WHERE agent_id = ? AND status = 'pending' AND expires_at > ?
+          ORDER BY issued_at DESC LIMIT 1`,
+      )
+      .get(agentId, this.nowIso()) as { claim_token: string } | undefined;
+    return row?.claim_token ?? null;
+  }
+
+  /** ISO timestamp on the injected clock (tests can pin time). */
+  private nowIso(): string {
+    return new Date(this.clock()).toISOString();
+  }
+
+  /**
+   * §5 `POST /auth/claim/init`. Issue (or reuse) a claim token and return the URL
+   * to hand to the owner. Idempotent-ish: an existing pending token is reused so
+   * the same claimUrl keeps working (arena: "if the owner lost the link, fetch it
+   * again"); a fresh one is minted only when none is live.
+   */
+  initClaim(agentId: string): { claimToken: string; claimUrl: string; expiresAt: string } {
+    this.getAgent(agentId); // 404 if unknown
+    let claimToken = this.activeClaimToken(agentId);
+    let expiresAt: string;
+    if (claimToken) {
+      expiresAt =
+        (
+          this.db.prepare(`SELECT expires_at FROM agent_claims WHERE claim_token = ?`).get(claimToken) as
+            | { expires_at: string }
+            | undefined
+        )?.expires_at ?? this.nowIso();
+    } else {
+      claimToken = newClaimToken();
+      expiresAt = new Date(this.clock() + this.config.claimTokenTtlMs).toISOString();
+      this.db
+        .prepare(
+          `INSERT INTO agent_claims (claim_token, agent_id, status, issued_at, expires_at)
+           VALUES (?, ?, 'pending', ?, ?)`,
+        )
+        .run(claimToken, agentId, this.nowIso(), expiresAt);
+    }
+    return { claimToken, claimUrl: this.claimUrlFor(claimToken), expiresAt };
+  }
+
+  /** §5 `GET /auth/claim/status`. Whether the agent is claimed, and the claim URL. */
+  claimStatus(agentId: string): ClaimStatus {
+    const agent = this.getAgent(agentId);
+    // Always surface a working claim URL (mint one if none live), arena-style.
+    const { claimUrl } = this.initClaim(agentId);
+    if (agent.owner_id) {
+      const owner = this.db.prepare(`SELECT * FROM owners WHERE id = ?`).get(agent.owner_id) as
+        | OwnerRow
+        | undefined;
+      return {
+        claimed: true,
+        owner: owner ? { handle: owner.x_handle, xUserId: owner.x_user_id } : null,
+        claimUrl,
+        verifiedAt: agent.claimed_at,
+      };
+    }
+    return { claimed: false, owner: null, claimUrl, verifiedAt: null };
+  }
+
+  /**
+   * Public (unauthenticated) view of a claim token — lets the browser claim page
+   * show which agent it is about without needing the agent's API key. The token
+   * itself is the unguessable capability, so this leaks nothing an owner shouldn't
+   * already hold.
+   */
+  claimInfo(claimToken: string): { agentId: string; displayName: string; claimed: boolean; ownerHandle: string | null } {
+    const row = this.db
+      .prepare(
+        `SELECT c.agent_id, c.status, a.display_name, a.owner_id, o.x_handle
+           FROM agent_claims c
+           JOIN agents a ON a.id = c.agent_id
+           LEFT JOIN owners o ON o.id = a.owner_id
+          WHERE c.claim_token = ?`,
+      )
+      .get(claimToken) as
+      | { agent_id: string; status: string; display_name: string; owner_id: string | null; x_handle: string | null }
+      | undefined;
+    if (!row) throw new ApiError(404, 'CLAIM_NOT_FOUND', 'Unknown or expired claim link');
+    return {
+      agentId: row.agent_id,
+      displayName: row.display_name,
+      claimed: Boolean(row.owner_id),
+      ownerHandle: row.x_handle,
+    };
+  }
+
+  /**
+   * Begin "Sign in with X" for a claim token: create the OAuth transient (CSRF
+   * state + PKCE verifier) and return the X authorize URL to redirect the owner to.
+   */
+  startXClaim(claimToken: string): { authorizeUrl: string } {
+    if (!this.xoauth.enabled) {
+      throw new ApiError(501, 'CLAIM_X_NOT_CONFIGURED', 'X login is not configured on this arena');
+    }
+    const claim = this.db
+      .prepare(`SELECT agent_id, status, expires_at FROM agent_claims WHERE claim_token = ?`)
+      .get(claimToken) as { agent_id: string; status: string; expires_at: string } | undefined;
+    if (!claim) throw new ApiError(404, 'CLAIM_NOT_FOUND', 'Unknown claim link');
+    if (claim.status === 'claimed') {
+      throw new ApiError(409, 'ALREADY_CLAIMED', 'This agent is already claimed');
+    }
+    if (Date.parse(claim.expires_at) <= this.clock()) {
+      throw new ApiError(410, 'CLAIM_EXPIRED', 'This claim link has expired — ask the agent for a new one');
+    }
+
+    const state = newOauthState();
+    const codeVerifier = newCodeVerifier();
+    const redirectUri = this.xRedirectUri();
+    const expiresAt = new Date(this.clock() + 10 * 60_000).toISOString(); // 10 min to authorise
+    this.db
+      .prepare(
+        `INSERT INTO oauth_flows (state, claim_token, code_verifier, redirect_uri, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(state, claimToken, codeVerifier, redirectUri, this.nowIso(), expiresAt);
+
+    const authorizeUrl = this.xoauth.authorizeUrl({
+      state,
+      codeChallenge: codeChallengeOf(codeVerifier),
+      redirectUri,
+    });
+    return { authorizeUrl };
+  }
+
+  /**
+   * Complete the X OAuth callback: verify the state, exchange the code, read the
+   * owner's X identity, upsert the owner, and bind the agent to it. Returns the
+   * claim token (so the callback can redirect back to the claim page) and handle.
+   */
+  async completeXClaim(params: {
+    state: string;
+    code: string;
+  }): Promise<{ claimToken: string; agentId: string; handle: string }> {
+    const flow = this.db
+      .prepare(
+        `SELECT claim_token, code_verifier, redirect_uri, expires_at FROM oauth_flows WHERE state = ?`,
+      )
+      .get(params.state) as
+      | { claim_token: string; code_verifier: string; redirect_uri: string; expires_at: string }
+      | undefined;
+    if (!flow) throw new ApiError(400, 'OAUTH_STATE_INVALID', 'Unknown or reused sign-in state');
+    // Consume the transient immediately — a state is single-use.
+    this.db.prepare(`DELETE FROM oauth_flows WHERE state = ?`).run(params.state);
+    if (Date.parse(flow.expires_at) <= this.clock()) {
+      throw new ApiError(410, 'OAUTH_STATE_EXPIRED', 'Sign-in took too long — please try again');
+    }
+
+    const claim = this.db
+      .prepare(`SELECT agent_id, status FROM agent_claims WHERE claim_token = ?`)
+      .get(flow.claim_token) as { agent_id: string; status: string } | undefined;
+    if (!claim) throw new ApiError(404, 'CLAIM_NOT_FOUND', 'Unknown claim link');
+
+    const accessToken = await this.xoauth.exchangeCode({
+      code: params.code,
+      codeVerifier: flow.code_verifier,
+      redirectUri: flow.redirect_uri,
+    });
+    const identity = await this.xoauth.getIdentity(accessToken);
+
+    const ownerId = this.upsertOwner(identity.id, identity.username);
+    this.db
+      .prepare(`UPDATE agents SET owner_id = ?, claimed_at = ? WHERE id = ?`)
+      .run(ownerId, this.nowIso(), claim.agent_id);
+    this.db
+      .prepare(`UPDATE agent_claims SET status = 'claimed', claimed_at = ?, owner_id = ? WHERE claim_token = ?`)
+      .run(this.nowIso(), ownerId, flow.claim_token);
+
+    return { claimToken: flow.claim_token, agentId: claim.agent_id, handle: identity.username };
+  }
+
+  /**
+   * Bind an agent to an X identity WITHOUT the OAuth round-trip — the effect half
+   * of {completeXClaim}. For the no-chain/no-X demo harness and tests, which need
+   * agents to reach payout-eligibility (now claim-gated) deterministically. The
+   * live claim path is always the real "Sign in with X" flow.
+   */
+  devClaimAgent(agentId: string, xUserId: string, xHandle: string): OwnerRow {
+    this.getAgent(agentId); // 404 if unknown
+    const ownerId = this.upsertOwner(xUserId, xHandle);
+    this.db
+      .prepare(`UPDATE agents SET owner_id = ?, claimed_at = ? WHERE id = ?`)
+      .run(ownerId, this.nowIso(), agentId);
+    return this.db.prepare(`SELECT * FROM owners WHERE id = ?`).get(ownerId) as OwnerRow;
+  }
+
+  /** Find-or-create an owner by X user id; refresh the stored handle each time. */
+  private upsertOwner(xUserId: string, xHandle: string): string {
+    const existing = this.db.prepare(`SELECT id FROM owners WHERE x_user_id = ?`).get(xUserId) as
+      | { id: string }
+      | undefined;
+    if (existing) {
+      this.db.prepare(`UPDATE owners SET x_handle = ? WHERE id = ?`).run(xHandle, existing.id);
+      return existing.id;
+    }
+    const id = newOwnerId();
+    this.db
+      .prepare(`INSERT INTO owners (id, x_user_id, x_handle) VALUES (?, ?, ?)`)
+      .run(id, xUserId, xHandle);
+    return id;
+  }
+
+  /**
+   * Gate for `requires_claim` competitions (sub-spec 09): an agent must be claimed
+   * (X-verified owner) to enter. Mirrors arena's `403 must be claimed`, carrying the
+   * claim URL so the agent can tell its owner exactly where to go.
+   */
+  private requireClaimed(agentId: string, competition: CompetitionRow): void {
+    if (!competition.requires_claim) return;
+    const agent = this.getAgent(agentId);
+    if (agent.owner_id) return;
+    throw new ApiError(403, 'CLAIM_REQUIRED', 'This competition requires an X-verified owner', {
+      claimUrl: this.initClaim(agentId).claimUrl,
+    });
+  }
+
   // ---- competitions ---------------------------------------------------------
 
   createCompetition(name: string, entryFeeWei = '0', contractAddress: string | null = null): string {
@@ -232,6 +522,11 @@ export class Orchestrator {
     name: string;
     entryFeeWei: string;
     contractAddress: string | null;
+    kind: 'classic' | 'tournament';
+    poolWei: string;
+    jackpotWei: string;
+    entriesCloseAt: string | null;
+    requiresClaim: boolean;
   }> {
     const rows = this.db
       .prepare(`SELECT * FROM competitions WHERE status = 'active' ORDER BY created_at`)
@@ -241,7 +536,406 @@ export class Orchestrator {
       name: r.name,
       entryFeeWei: r.entry_fee_wei,
       contractAddress: r.contract_address,
+      kind: r.kind,
+      poolWei: r.pool_wei,
+      jackpotWei: r.jackpot_seed_wei,
+      entriesCloseAt: r.entries_close_at,
+      requiresClaim: Boolean(r.requires_claim),
     }));
+  }
+
+  private getCompetition(competitionId: string): CompetitionRow {
+    const row = this.db.prepare(`SELECT * FROM competitions WHERE id = ?`).get(competitionId) as
+      | CompetitionRow
+      | undefined;
+    if (!row) throw new ApiError(404, 'COMPETITION_NOT_FOUND', `No such competition: ${competitionId}`);
+    return row;
+  }
+
+  // ---- pooled tournaments (sub-spec 08) -------------------------------------
+
+  /**
+   * Create and (on-chain) open a pooled tournament. The buy-in is a ONE-TIME
+   * competition entry (D3) — sessions inside it are free. Operator-only, driven
+   * by the seed/demo harness exactly like {createCompetition}.
+   */
+  createTournament(
+    name: string,
+    buyInWei: string,
+    options: { entriesCloseAt?: string; requiresClaim?: boolean } = {},
+  ): string {
+    const id = this.createCompetition(name, buyInWei, this.tournament.contractAddress);
+    this.db
+      .prepare(
+        `UPDATE competitions
+            SET kind = 'tournament', payout_schedule_json = ?, entries_close_at = ?, requires_claim = ?
+          WHERE id = ?`,
+      )
+      .run(
+        JSON.stringify(this.config.payoutSchedule),
+        options.entriesCloseAt ?? null,
+        options.requiresClaim ? 1 : 0,
+        id,
+      );
+
+    // Open it on-chain so the contract will accept buy-ins for it. Best-effort:
+    // a chain outage must not block local bookkeeping.
+    void this.tournament.openCompetition(id, buyInWei);
+    return id;
+  }
+
+  /**
+   * Seed sponsor money into a tournament's main pool and/or jackpot side-pool.
+   * The pool amount MERGES with buy-ins (dev.fun "$X sponsored by …"); the jackpot
+   * is a separate side-pool. Both are mirrored in the DB and sent on-chain.
+   */
+  async seedTournament(
+    competitionId: string,
+    poolWei: string,
+    jackpotWei: string,
+  ): Promise<{ pool: string; jackpot: string }> {
+    const c = this.getCompetition(competitionId);
+    if (c.kind !== 'tournament') {
+      throw new ApiError(400, 'NOT_A_TOURNAMENT', `${competitionId} is not a tournament`);
+    }
+    if (BigInt(poolWei) > 0n) {
+      await this.tournament.seedPool(competitionId, poolWei);
+      this.addToPool(competitionId, poolWei);
+      this.db
+        .prepare(
+          `UPDATE competitions SET sponsor_seed_wei = CAST(CAST(sponsor_seed_wei AS INTEGER) + ? AS TEXT) WHERE id = ?`,
+        )
+        .run(poolWei, competitionId);
+    }
+    if (BigInt(jackpotWei) > 0n) {
+      await this.tournament.seedJackpot(competitionId, jackpotWei);
+      this.db
+        .prepare(
+          `UPDATE competitions SET jackpot_seed_wei = CAST(CAST(jackpot_seed_wei AS INTEGER) + ? AS TEXT) WHERE id = ?`,
+        )
+        .run(jackpotWei, competitionId);
+    }
+    const after = this.getCompetition(competitionId);
+    return { pool: after.pool_wei, jackpot: after.jackpot_seed_wei };
+  }
+
+  /** Add wei to a competition's mirrored pool balance (buy-ins + sponsor seed). */
+  private addToPool(competitionId: string, amountWei: string): void {
+    const row = this.db.prepare(`SELECT pool_wei FROM competitions WHERE id = ?`).get(competitionId) as
+      | { pool_wei: string }
+      | undefined;
+    const next = BigInt(row?.pool_wei ?? '0') + BigInt(amountWei);
+    this.db.prepare(`UPDATE competitions SET pool_wei = ? WHERE id = ?`).run(next.toString(), competitionId);
+  }
+
+  isEntered(agentId: string, competitionId: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 AS ok FROM competition_entries WHERE competition_id = ? AND agent_id = ?`)
+      .get(competitionId, agentId) as { ok: number } | undefined;
+    return Boolean(row);
+  }
+
+  /**
+   * §5 `POST /competition/enter` (sub-spec 08). Buy into a tournament so the agent
+   * may then join its (free) tables.
+   *
+   *  - Free competition (buy-in "0", D13): auto-enter, no `402`, no on-chain payment.
+   *  - Already entered: idempotent success.
+   *  - Paid, no txHash: `402` naming the tournament contract + amount + competitionId,
+   *    with a `warning` when too little season likely remains to qualify (D11).
+   *  - Paid, txHash: verified on-chain (EntryPaid for THIS competition/amount), then
+   *    recorded with the paying wallet address.
+   */
+  async enterCompetition(
+    agentId: string,
+    competitionId: string,
+    txHash?: string,
+  ): Promise<{ entered: true; warning?: string }> {
+    const c = this.getCompetition(competitionId);
+    if (c.status !== 'active') {
+      throw new ApiError(409, 'COMPETITION_CLOSED', `Competition ${competitionId} is not open`);
+    }
+    // Claim gate (sub-spec 09): a `requires_claim` competition admits only agents
+    // whose owner has verified via X. Checked before entry so a buy-in is never
+    // spent by an agent that then can't play or be paid.
+    this.requireClaimed(agentId, c);
+    if (this.isEntered(agentId, competitionId)) return { entered: true };
+
+    const warning = this.lateEntryWarning(competitionId);
+
+    // Free entry (D13): record and return, no chain.
+    if (BigInt(c.entry_fee_wei) === 0n) {
+      this.recordEntry(competitionId, agentId, null, null, '0');
+      return warning ? { entered: true, warning } : { entered: true };
+    }
+
+    if (!txHash) {
+      throw new ApiError(402, 'PAYMENT_REQUIRED', 'Tournament buy-in not paid', {
+        paymentRequired: {
+          chainId: this.config.bscChainId,
+          contractAddress: c.contract_address ?? this.config.tournamentContractAddress,
+          amountWei: c.entry_fee_wei,
+          competitionId,
+        },
+        ...(warning ? { warning } : {}),
+      });
+    }
+
+    const check = await this.tournament.verifyEntry(competitionId, txHash, c.entry_fee_wei);
+    if (!check.ok) {
+      throw new ApiError(402, 'PAYMENT_NOT_VERIFIED', `Buy-in not verified: ${check.error}`, {
+        paymentRequired: {
+          chainId: this.config.bscChainId,
+          contractAddress: c.contract_address ?? this.config.tournamentContractAddress,
+          amountWei: c.entry_fee_wei,
+          competitionId,
+        },
+      });
+    }
+
+    this.recordEntry(competitionId, agentId, check.payer ?? null, txHash, check.amountWei ?? c.entry_fee_wei);
+    this.addToPool(competitionId, check.amountWei ?? c.entry_fee_wei);
+    // The paying wallet is the agent's on-chain identity; default the payout
+    // address to it too, so a winner without an explicit payout address still gets paid.
+    if (check.payer) {
+      this.db
+        .prepare(
+          `UPDATE agents SET wallet_address = ?, payout_address = COALESCE(payout_address, ?) WHERE id = ?`,
+        )
+        .run(check.payer, check.payer, agentId);
+    }
+    return warning ? { entered: true, warning } : { entered: true };
+  }
+
+  private recordEntry(
+    competitionId: string,
+    agentId: string,
+    walletAddress: string | null,
+    txHash: string | null,
+    amountWei: string,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO competition_entries
+           (competition_id, agent_id, wallet_address, tx_hash, amount_wei, status)
+         VALUES (?, ?, ?, ?, ?, 'confirmed')`,
+      )
+      .run(competitionId, agentId, walletAddress, txHash, amountWei);
+  }
+
+  /**
+   * Warn a very-late joiner that it may not reach `MIN_RANKED_SESSIONS` before the
+   * advisory close (D11). Heuristic: with no games recorded and the clock nearly
+   * up, a buy-in is likely dead money — say so, but let them decide.
+   */
+  private lateEntryWarning(competitionId: string): string | undefined {
+    const c = this.getCompetition(competitionId);
+    if (!c.entries_close_at) return undefined;
+    const closeMs = Date.parse(c.entries_close_at);
+    if (Number.isNaN(closeMs)) return undefined;
+    const remainingMs = closeMs - this.clock();
+    if (remainingMs <= 0) return 'Entries are past their advertised close time.';
+    // Rough games-per-agent budget: assume a table (~<=60s) frees a seat regularly.
+    const min = this.config.minRankedSessions;
+    const optimisticGames = Math.floor(remainingMs / Math.max(1, this.config.gameTimeLimitMs / 2));
+    if (optimisticGames < min) {
+      return `Only ~${optimisticGames} games likely remain before close; ${min} are needed to qualify for a payout. You may not qualify.`;
+    }
+    return undefined;
+  }
+
+  /** Mark the season closed on-chain and in the DB (operator-triggered, D9). */
+  async closeTournament(competitionId: string): Promise<void> {
+    const c = this.getCompetition(competitionId);
+    if (c.kind !== 'tournament') {
+      throw new ApiError(400, 'NOT_A_TOURNAMENT', `${competitionId} is not a tournament`);
+    }
+    await this.tournament.closeEntries(competitionId);
+    this.db
+      .prepare(`UPDATE competitions SET entries_closed_at = datetime('now') WHERE id = ?`)
+      .run(competitionId);
+  }
+
+  /**
+   * Settle a pooled tournament: rank the eligible field, split the pool by the
+   * field-scaled curve (D14), award the jackpot to the storm triggerer (D6/D23),
+   * distribute on-chain, and mark it settled. Ranking DRIVES payout.
+   */
+  async settleTournament(competitionId: string): Promise<{
+    winners: Array<{ agentId: string; payoutAddress: string; amountWei: string }>;
+    jackpot: { agentId: string; payoutAddress: string; amountWei: string } | null;
+    resultRoot: string;
+    txHash: string | null;
+  }> {
+    const c = this.getCompetition(competitionId);
+    if (c.kind !== 'tournament') {
+      throw new ApiError(400, 'NOT_A_TOURNAMENT', `${competitionId} is not a tournament`);
+    }
+
+    const ranked = this.eligibleRanked(competitionId);
+    const poolWei = BigInt(c.pool_wei);
+    const amounts = distributePool(
+      poolWei,
+      ranked.length,
+      this.config.payoutSchedule,
+      this.config.payoutFieldFraction,
+    );
+
+    const winners = amounts.map((amountWei, i) => ({
+      agentId: ranked[i]!.agentId,
+      payoutAddress: ranked[i]!.payoutAddress,
+      amountWei: amountWei.toString(),
+    }));
+
+    const jackpot = this.resolveJackpotWinner(competitionId, BigInt(c.jackpot_seed_wei));
+    const resultRoot = this.leaderboardRoot(competitionId, ranked);
+
+    const result = await this.tournament.settleCompetition(
+      competitionId,
+      winners.map((w) => w.payoutAddress),
+      amounts,
+      jackpot?.payoutAddress ?? null,
+      jackpot ? BigInt(jackpot.amountWei) : 0n,
+      resultRoot,
+    );
+
+    this.db
+      .prepare(
+        `UPDATE competitions
+            SET status = 'settled', settled_at = datetime('now'), settle_tx_hash = ?
+          WHERE id = ?`,
+      )
+      .run(result.txHash ?? null, competitionId);
+
+    return { winners, jackpot, resultRoot, txHash: result.txHash ?? null };
+  }
+
+  /** Carry a residual/untriggered jackpot from one settled tournament into an open one (D15). */
+  async rolloverJackpot(fromCompetitionId: string, toCompetitionId: string): Promise<{ txHash: string | null }> {
+    const from = this.getCompetition(fromCompetitionId);
+    const to = this.getCompetition(toCompetitionId);
+    if (from.kind !== 'tournament' || to.kind !== 'tournament') {
+      throw new ApiError(400, 'NOT_A_TOURNAMENT', 'Both competitions must be tournaments');
+    }
+    const result = await this.tournament.rolloverJackpot(fromCompetitionId, toCompetitionId);
+    // Mirror the carry in the DB.
+    const carried = from.jackpot_seed_wei;
+    this.db.prepare(`UPDATE competitions SET jackpot_seed_wei = '0' WHERE id = ?`).run(fromCompetitionId);
+    this.db
+      .prepare(
+        `UPDATE competitions SET jackpot_seed_wei = CAST(CAST(jackpot_seed_wei AS INTEGER) + ? AS TEXT) WHERE id = ?`,
+      )
+      .run(carried, toCompetitionId);
+    return { txHash: result.txHash ?? null };
+  }
+
+  /**
+   * The payout-eligible field, ranked best-first (D8 + sub-spec 09): entered,
+   * played at least `MIN_RANKED_SESSIONS` settled tables here, has a payout address
+   * set, AND is claimed by an X-verified owner. Claiming is what makes an agent
+   * eligible to be paid — an unclaimed agent may top the sort but is skipped here,
+   * exactly like arena's "claimed + X-verified" gate.
+   */
+  eligibleRanked(
+    competitionId: string,
+  ): Array<{ agentId: string; displayName: string; conservativeRating: number; payoutAddress: string; games: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT a.*, COUNT(DISTINCT s.id) AS games
+           FROM competition_entries e
+           JOIN agents a ON a.id = e.agent_id
+           LEFT JOIN session_players p ON p.agent_id = a.id
+           LEFT JOIN sessions s
+             ON s.id = p.session_id AND s.competition_id = e.competition_id AND s.status = 'settled'
+          WHERE e.competition_id = ?
+          GROUP BY a.id`,
+      )
+      .all(competitionId) as Array<AgentRow & { games: number }>;
+
+    return rows
+      .filter((r) => r.owner_id && r.payout_address && r.games >= this.config.minRankedSessions)
+      .map((r) => ({
+        agentId: r.id,
+        displayName: r.display_name,
+        conservativeRating: conservativeRating({ mu: r.trueskill_mu, sigma: r.trueskill_sigma }),
+        payoutAddress: r.payout_address as string,
+        games: r.games,
+      }))
+      .sort((a, b) => b.conservativeRating - a.conservativeRating);
+  }
+
+  private resolveJackpotWinner(
+    competitionId: string,
+    jackpotWei: bigint,
+  ): { agentId: string; payoutAddress: string; amountWei: string } | null {
+    if (jackpotWei <= 0n) return null;
+    const row = this.db
+      .prepare(
+        `SELECT j.agent_id, a.payout_address, a.owner_id
+           FROM jackpot_events j JOIN agents a ON a.id = j.agent_id
+          WHERE j.competition_id = ?`,
+      )
+      .get(competitionId) as
+      | { agent_id: string; payout_address: string | null; owner_id: string | null }
+      | undefined;
+    // No storm, or the triggerer is unclaimed / has no payout address → jackpot
+    // rolls over (sub-spec 09): the seeded pool only ever pays an X-verified owner.
+    if (!row || !row.payout_address || !row.owner_id) return null;
+    return { agentId: row.agent_id, payoutAddress: row.payout_address, amountWei: jackpotWei.toString() };
+  }
+
+  /** Hash the final leaderboard so the payout order is verifiable against the event log. */
+  private leaderboardRoot(
+    competitionId: string,
+    ranked: Array<{ agentId: string; conservativeRating: number }>,
+  ): string {
+    const canonical = ranked
+      .map((r, i) => `${i}|${r.agentId}|${r.conservativeRating.toFixed(6)}`)
+      .join('\n');
+    return keccak256(toHex(`${competitionId}\n${canonical}`));
+  }
+
+  /**
+   * Record the FIRST Rainbow Storm of a tournament as the jackpot claim (D6/D23).
+   * Provably fair: the storm is in this session's event log, whose seed is
+   * commit-revealed. Idempotent — the PK on `jackpot_events` keeps the first, so
+   * this is safe to call more than once per session.
+   */
+  captureJackpotFromSession(sessionId: string): void {
+    const comp = this.db
+      .prepare(
+        `SELECT c.id, c.kind FROM sessions s JOIN competitions c ON c.id = s.competition_id WHERE s.id = ?`,
+      )
+      .get(sessionId) as { id: string; kind: string } | undefined;
+    if (!comp || comp.kind !== 'tournament') return;
+
+    const already = this.db
+      .prepare(`SELECT 1 AS ok FROM jackpot_events WHERE competition_id = ?`)
+      .get(comp.id) as { ok: number } | undefined;
+    if (already) return;
+
+    const storm = this.db
+      .prepare(
+        `SELECT seq, payload_json FROM session_events
+          WHERE session_id = ? AND event_type = 'RAINBOW_STORM' ORDER BY seq LIMIT 1`,
+      )
+      .get(sessionId) as { seq: number; payload_json: string } | undefined;
+    if (!storm) return;
+
+    let agentId: string | undefined;
+    try {
+      agentId = (JSON.parse(storm.payload_json) as { agentId?: string }).agentId;
+    } catch {
+      return;
+    }
+    if (!agentId) return;
+
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO jackpot_events (competition_id, session_id, seq, agent_id)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(comp.id, sessionId, storm.seq, agentId);
   }
 
   // ---- joining / matchmaking -------------------------------------------------
@@ -262,6 +956,11 @@ export class Orchestrator {
       throw new ApiError(404, 'COMPETITION_NOT_FOUND', `No active competition: ${competitionId}`);
     }
 
+    // Claim gate (sub-spec 09): a `requires_claim` competition needs an X-verified
+    // owner before a seat is taken. Belt-and-suspenders with the same check at
+    // /competition/enter, and the only gate for a claim-gated classic table.
+    this.requireClaimed(agentId, competition);
+
     const existing = this.db
       .prepare(
         `SELECT s.id FROM sessions s
@@ -273,11 +972,28 @@ export class Orchestrator {
       throw new ApiError(409, 'ALREADY_IN_SESSION', `Agent is already in session ${existing.id}`);
     }
 
-    // The table must exist before the fee can be paid: the escrow holds a pot per
-    // session, so an agent needs a sessionId to pay into. The lobby is therefore
-    // allocated first, and the 402 names it.
+    // Pooled tournaments (sub-spec 08): the buy-in is paid ONCE via
+    // `/competition/enter`, so tables are free — but you must have entered first.
+    if (competition.kind === 'tournament') {
+      if (!this.isEntered(agentId, competitionId)) {
+        throw new ApiError(402, 'ENTRY_REQUIRED', 'Enter the tournament before joining a table', {
+          paymentRequired: {
+            chainId: this.config.bscChainId,
+            contractAddress: competition.contract_address ?? this.config.tournamentContractAddress,
+            amountWei: competition.entry_fee_wei,
+            competitionId,
+          },
+        });
+      }
+    }
+
+    // The table must exist before a (classic) per-session fee can be paid: the
+    // escrow holds a pot per session, so an agent needs a sessionId to pay into.
+    // The lobby is therefore allocated first, and the 402 names it.
     const session = this.findOrCreateLobby(competition);
-    await this.requireEntryFee(agentId, competition, session, txHash);
+    if (competition.kind !== 'tournament') {
+      await this.requireEntryFee(agentId, competition, session, txHash);
+    }
 
     const seatIndex = this.db
       .prepare(`SELECT COUNT(*) AS n FROM session_players WHERE session_id = ?`)
@@ -620,6 +1336,10 @@ export class Orchestrator {
       this.updateRatings(winner, handValues);
     });
     finalize();
+
+    // Record the first Rainbow Storm of a tournament as the jackpot claim (D23).
+    // Reads the just-persisted event log; a no-op for classic/free competitions.
+    this.captureJackpotFromSession(sessionId);
 
     // Attach point for sub-spec 05 (T13): settle on-chain with the revealed seed
     // and the result hash, now that the outcome is durable.

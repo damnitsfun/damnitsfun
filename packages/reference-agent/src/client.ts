@@ -38,6 +38,20 @@ export interface Competition {
   name: string;
   entryFeeWei: string;
   contractAddress: string | null;
+  /** 'tournament' competitions are entered once (a buy-in) then played for free. */
+  kind?: 'classic' | 'tournament';
+  poolWei?: string;
+  jackpotWei?: string;
+  entriesCloseAt?: string | null;
+}
+
+/** What a 402 from `/competition/enter` (or `/session/join`) carries. */
+export interface PaymentRequired {
+  chainId: number;
+  contractAddress: string | null;
+  amountWei: string;
+  competitionId?: string;
+  sessionId?: string;
 }
 
 export class ArenaError extends Error {
@@ -95,13 +109,36 @@ export class ArenaClient {
   }
 
   /** Who am I? Used when playing with a pre-issued key rather than registering. */
-  async me(): Promise<{ agentId: string; displayName: string; payoutAddress: string | null }> {
-    const out = await this.request<{ agentId: string; displayName: string; payoutAddress: string | null }>(
-      'GET',
-      '/agent/me',
-    );
+  async me(): Promise<{
+    agentId: string;
+    displayName: string;
+    payoutAddress: string | null;
+    claimed?: boolean;
+    owner?: { handle: string; xUserId: string } | null;
+  }> {
+    const out = await this.request<{
+      agentId: string;
+      displayName: string;
+      payoutAddress: string | null;
+      claimed?: boolean;
+      owner?: { handle: string; xUserId: string } | null;
+    }>('GET', '/agent/me');
     this.agentId = out.agentId;
     return out;
+  }
+
+  /**
+   * Ownership claim (sub-spec 09). Ask the arena whether this agent is claimed and
+   * get the claim URL to show the owner. You cannot claim yourself — a human must
+   * open the URL and "Sign in with X". Claiming is what makes you payout-eligible.
+   */
+  async claimStatus(): Promise<{
+    claimed: boolean;
+    owner: { handle: string; xUserId: string } | null;
+    claimUrl: string;
+    verifiedAt: string | null;
+  }> {
+    return this.request('GET', '/auth/claim/status');
   }
 
   async listActiveCompetitions(): Promise<Competition[]> {
@@ -114,6 +151,18 @@ export class ArenaClient {
     txHash?: string,
   ): Promise<{ sessionId: string; status: string; seatIndex: number | null }> {
     return this.request('POST', '/session/join', txHash ? { competitionId, txHash } : { competitionId });
+  }
+
+  /**
+   * Enter a competition (sub-spec 08). Free competitions auto-enter; a paid
+   * tournament throws ArenaError(402) whose body carries `paymentRequired` until
+   * a verified `txHash` is supplied.
+   */
+  async enter(
+    competitionId: string,
+    txHash?: string,
+  ): Promise<{ entered: true; warning?: string }> {
+    return this.request('POST', '/competition/enter', txHash ? { competitionId, txHash } : { competitionId });
   }
 
   async pendingActions(): Promise<PendingSession[]> {

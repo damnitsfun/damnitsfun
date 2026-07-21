@@ -17,6 +17,18 @@ export function migrate(db: Db): void {
   // so columns introduced after a database was first created are applied here.
   addColumnIfMissing(db, 'sessions', 'commit_tx_hash', 'TEXT');
   addColumnIfMissing(db, 'sessions', 'settle_tx_hash', 'TEXT');
+
+  // Sub-spec 08 additions (pooled tournament + agent wallets).
+  addColumnIfMissing(db, 'agents', 'wallet_address', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'kind', "TEXT NOT NULL DEFAULT 'classic'");
+  addColumnIfMissing(db, 'competitions', 'pool_wei', "TEXT NOT NULL DEFAULT '0'");
+  addColumnIfMissing(db, 'competitions', 'sponsor_seed_wei', "TEXT NOT NULL DEFAULT '0'");
+  addColumnIfMissing(db, 'competitions', 'jackpot_seed_wei', "TEXT NOT NULL DEFAULT '0'");
+  addColumnIfMissing(db, 'competitions', 'payout_schedule_json', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'entries_close_at', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'entries_closed_at', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'settled_at', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'settle_tx_hash', 'TEXT');
 }
 
 function addColumnIfMissing(db: Db, table: string, column: string, type: string): void {

@@ -10,6 +10,10 @@ describe('config loader (spec §9)', () => {
     expect(c.gameTimeLimitMs).toBe(120000);
     expect(c.rainbowStormChance).toBeCloseTo(0.00001);
     expect(c.tableSize).toBe(4);
+    // sub-spec 09 defaults: claim URL origin + disabled X login.
+    expect(c.publicBaseUrl).toBe('http://localhost:8080');
+    expect(c.xClientId).toBeNull();
+    expect(c.xScopes).toBe('tweet.read users.read');
   });
 
   it('reads every §9 variable from the env source', () => {
@@ -25,15 +29,39 @@ describe('config loader (spec §9)', () => {
         GAME_TIME_LIMIT_MS: '60000',
         RAINBOW_STORM_CHANCE: '0.5',
         TABLE_SIZE: '2',
+        TOURNAMENT_CONTRACT_ADDRESS: '0xtourney',
+        TOURNAMENT_ENTRY_FEE_WEI: '123',
+        SPONSOR_POOL_SEED_WEI: '456',
+        JACKPOT_SEED_WEI: '789',
+        PAYOUT_SCHEDULE_JSON: '[60,40]',
+        PAYOUT_FIELD_FRACTION: '0.25',
+        MIN_RANKED_SESSIONS: '3',
+        PUBLIC_BASE_URL: 'https://damnits.example',
+        X_CLIENT_ID: 'x-client',
+        X_CLIENT_SECRET: 'x-secret',
+        X_OAUTH_SCOPES: 'tweet.read users.read',
+        CLAIM_TOKEN_TTL_MS: '3600000',
       },
     });
     expect(c).toEqual({
       port: 3000,
       databasePath: '/tmp/x.sqlite',
+      publicBaseUrl: 'https://damnits.example',
+      xClientId: 'x-client',
+      xClientSecret: 'x-secret',
+      xScopes: 'tweet.read users.read',
+      claimTokenTtlMs: 3600000,
       bscTestnetRpcUrl: 'https://rpc.example',
       bscChainId: 56,
       operatorPrivateKey: '0xdeadbeef',
       escrowContractAddress: '0xabc',
+      tournamentContractAddress: '0xtourney',
+      tournamentEntryFeeWei: '123',
+      sponsorPoolSeedWei: '456',
+      jackpotSeedWei: '789',
+      payoutSchedule: [60, 40],
+      payoutFieldFraction: 0.25,
+      minRankedSessions: 3,
       decisionTimeoutMs: 1000,
       gameTimeLimitMs: 60000,
       rainbowStormChance: 0.5,

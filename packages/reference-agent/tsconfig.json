@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // Match the api package: node16 resolution honours viem's package.json
+    // "exports" maps (so its transitive `ox` deps don't resolve to raw .ts),
+    // and DOM is needed only for ox's WebAuthn type declarations (T19 uses viem).
+    "module": "node16",
+    "moduleResolution": "node16",
+    "lib": ["ES2023", "DOM"]
   },
   "include": ["src/**/*.ts"]
 }

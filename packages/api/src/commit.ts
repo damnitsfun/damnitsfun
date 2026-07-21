@@ -18,6 +18,11 @@ export function sessionIdToBytes32(sessionId: string): Hash {
   return keccak256(toHex(sessionId));
 }
 
+/** Off-chain competition ids are strings; DamnitsTournament keys them by bytes32. */
+export function competitionIdToBytes32(competitionId: string): Hash {
+  return keccak256(toHex(competitionId));
+}
+
 /**
  * The contract stores a bytes32 seed, so a string seed is folded into one. The
  * SAME transform is used on commit and on reveal, or verification fails.

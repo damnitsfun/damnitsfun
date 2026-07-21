@@ -1,5 +1,6 @@
-import { ArenaClient, ArenaError, type Competition } from './client';
+import { ArenaClient, ArenaError, type Competition, type PaymentRequired } from './client';
 import { decide } from './decide';
+import { payTournamentEntry } from './wallet';
 
 /**
  * Reference autonomous agent (T17).
@@ -28,6 +29,15 @@ export interface AgentOptions {
   pollMs?: number;
   /** Give up on a table after this long with no progress (default 120s). */
   idleTimeoutMs?: number;
+  /**
+   * Agent-held wallet (T19). When set alongside `payEntry`, the agent signs its
+   * OWN tournament buy-in from this key — the arena never sees it. Without these,
+   * the agent only plays free competitions.
+   */
+  walletPrivateKey?: string;
+  rpcUrl?: string;
+  /** Authorise spending the buy-in. Off by default: money is never spent unbidden. */
+  payEntry?: boolean;
   log?: (message: string) => void;
 }
 
@@ -39,10 +49,71 @@ export interface TableResult {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function pickCompetition(competitions: Competition[]): Competition | null {
+function pickCompetition(competitions: Competition[], authorizedToPay: boolean): Competition | null {
   if (competitions.length === 0) return null;
-  // skill.md's stated preference: free tables unless told otherwise.
+  // skill.md's stated preference: free tables unless the operator authorised a
+  // buy-in — in which case a paid tournament is a valid choice.
+  if (authorizedToPay) {
+    return (
+      competitions.find((c) => c.kind === 'tournament' && c.entryFeeWei !== '0') ??
+      competitions.find((c) => c.entryFeeWei === '0') ??
+      competitions[0]!
+    );
+  }
   return competitions.find((c) => c.entryFeeWei === '0') ?? competitions[0]!;
+}
+
+/**
+ * Ensure the agent has entered `competition` before it joins a table (T19).
+ * Returns false when a buy-in is required but not authorised (the caller stops).
+ *
+ * Classic competitions have no entry step — their per-table fee (if any) is
+ * handled at join time. Tournaments are entered once here; a paid one is paid
+ * from the agent's own wallet, then retried with the txHash.
+ */
+async function ensureEntered(
+  client: ArenaClient,
+  competition: Competition,
+  options: AgentOptions,
+  log: (m: string) => void,
+): Promise<boolean> {
+  if (competition.kind !== 'tournament') return true;
+
+  try {
+    const res = await client.enter(competition.id);
+    if (res.warning) log(`[${options.displayName}] ${res.warning}`);
+    return true;
+  } catch (error) {
+    // This competition needs an X-verified owner (sub-spec 09). We cannot claim
+    // ourselves — a human must open the claim URL and "Sign in with X" — so we
+    // surface the link and stop.
+    if (error instanceof ArenaError && error.status === 403) {
+      const claimUrl =
+        (error.body as { claimUrl?: string }).claimUrl ?? (await client.claimStatus()).claimUrl;
+      log(`[${options.displayName}] this competition requires a claimed agent. Ask your owner to claim you:`);
+      log(`[${options.displayName}]   ${claimUrl}`);
+      return false;
+    }
+    if (!(error instanceof ArenaError) || error.status !== 402) throw error;
+
+    const pr = (error.body as { paymentRequired?: PaymentRequired }).paymentRequired;
+    if (!options.payEntry || !options.walletPrivateKey || !pr?.contractAddress) {
+      log(`[${options.displayName}] tournament buy-in required and not authorised — stopping`);
+      return false;
+    }
+
+    log(`[${options.displayName}] paying buy-in ${pr.amountWei} wei into ${pr.contractAddress}`);
+    const txHash = await payTournamentEntry({
+      rpcUrl: options.rpcUrl ?? 'https://bsc-testnet-dataseed.bnbchain.org',
+      privateKey: options.walletPrivateKey,
+      contractAddress: pr.contractAddress,
+      competitionId: pr.competitionId ?? competition.id,
+      amountWei: pr.amountWei,
+    });
+    log(`[${options.displayName}] buy-in tx ${txHash} — retrying entry`);
+    await client.enter(competition.id, txHash);
+    return true;
+  }
 }
 
 export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
@@ -67,15 +138,33 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
     log(`[${options.displayName}] registered as ${agentId}`);
   }
 
+  // Ownership claim (sub-spec 09): claiming is what makes an agent payout-eligible.
+  // We can't claim ourselves — surface the link so the owner can "Sign in with X".
+  try {
+    const claim = await client.claimStatus();
+    if (claim.claimed) {
+      log(`[${options.displayName}] claimed by @${claim.owner?.handle ?? '?'} — payout-eligible`);
+    } else {
+      log(`[${options.displayName}] not yet claimed. To be eligible for prizes, ask your owner to claim you:`);
+      log(`[${options.displayName}]   ${claim.claimUrl}`);
+    }
+  } catch {
+    /* claim status is advisory; a failure here must not stop play */
+  }
+
   const results: TableResult[] = [];
 
   for (let table = 0; table < tables; table++) {
     // 2. Choose a competition.
-    const competition = pickCompetition(await client.listActiveCompetitions());
+    const authorizedToPay = Boolean(options.payEntry && options.walletPrivateKey);
+    const competition = pickCompetition(await client.listActiveCompetitions(), authorizedToPay);
     if (!competition) {
       log(`[${options.displayName}] no active competition — stopping`);
       break;
     }
+
+    // 2b. Enter it if needed (pooled tournaments; pays its own buy-in — T19).
+    if (!(await ensureEntered(client, competition, options, log))) break;
 
     // 3. Take a seat.
     let sessionId: string;
@@ -159,12 +248,17 @@ function parseArgs(argv: string[]): AgentOptions {
     const index = argv.indexOf(flag);
     return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
   };
+  const payEntry = argv.includes('--pay-entry');
   return {
     baseUrl: get('--base', process.env.ARENA_URL ?? 'http://localhost:8080')!,
     displayName: get('--name', `ref-agent-${Math.random().toString(36).slice(2, 7)}`)!,
     apiKey: get('--api-key', process.env.ARENA_API_KEY),
     tables: Number(get('--tables', '1')),
     pollMs: Number(get('--poll', '300')),
+    // T19: an agent-held key. Passing --pay-entry authorises spending the buy-in.
+    walletPrivateKey: get('--wallet-key', process.env.AGENT_WALLET_KEY),
+    rpcUrl: get('--rpc', process.env.BSC_TESTNET_RPC_URL),
+    payEntry,
   };
 }
 

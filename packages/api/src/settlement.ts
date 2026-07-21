@@ -30,6 +30,12 @@ export function createChainHooks(
 
   return {
     onSessionStarted({ sessionId, seed }) {
+      // Pooled-tournament tables are free (sub-spec 08): the money lives at the
+      // competition level, not per session, and nobody paid into this escrow
+      // session — so an escrow settle would revert. The season's fairness is
+      // anchored by the persisted event log + the tournament's on-chain
+      // resultRoot instead, so the per-table escrow calls are omitted entirely.
+      if (isTournamentSession(db, sessionId)) return;
       // The hook is synchronous and the chain is not; deliberately not awaited.
       void chain
         .commitSeed(sessionId, seed)
@@ -45,6 +51,7 @@ export function createChainHooks(
     },
 
     onSessionSettled({ sessionId, winnerAgentId, resultHash, seedReveal }) {
+      if (isTournamentSession(db, sessionId)) return; // see onSessionStarted
       if (!seedReveal) {
         log(`[settlement] no seed reveal for ${sessionId}; skipping on-chain settle`);
         return;
@@ -62,6 +69,16 @@ export function createChainHooks(
         .catch((error: unknown) => log(`[settlement] settle threw: ${String(error)}`));
     },
   };
+}
+
+/** True when a session belongs to a pooled tournament (settled at the competition level). */
+function isTournamentSession(db: Db, sessionId: string): boolean {
+  const row = db
+    .prepare(
+      `SELECT c.kind FROM sessions s JOIN competitions c ON c.id = s.competition_id WHERE s.id = ?`,
+    )
+    .get(sessionId) as { kind?: string } | undefined;
+  return row?.kind === 'tournament';
 }
 
 /**

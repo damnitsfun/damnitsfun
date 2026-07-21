@@ -43,6 +43,11 @@ export const joinSchema = z.object({
   txHash: z.string().min(1).optional(),
 });
 
+export const enterSchema = z.object({
+  competitionId: z.string().min(1),
+  txHash: z.string().min(1).optional(),
+});
+
 export const actionSchema = z.object({
   sessionId: z.string().min(1),
   move: moveSchema,

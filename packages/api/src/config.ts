@@ -13,16 +13,36 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { assertValidCurve } from './payout';
 
 export interface Config {
   /** api */
   port: number;
   databasePath: string;
+  /**
+   * Publicly reachable origin of this server, used to build the claim URL and the
+   * X OAuth redirect URI (sub-spec 09). Must match the callback registered in the
+   * X developer app. Defaults to `http://localhost:<port>` for local runs.
+   */
+  publicBaseUrl: string;
+  /** "Sign in with X" identity (sub-spec 09). Absent → claim/login is disabled. */
+  xClientId: string | null;
+  xClientSecret: string | null;
+  xScopes: string;
+  claimTokenTtlMs: number;
   /** chain (api + contracts) */
   bscTestnetRpcUrl: string;
   bscChainId: number;
   operatorPrivateKey: string | null;
   escrowContractAddress: string | null;
+  /** pooled tournament + jackpot (sub-spec 08, §9 additions) */
+  tournamentContractAddress: string | null;
+  tournamentEntryFeeWei: string;
+  sponsorPoolSeedWei: string;
+  jackpotSeedWei: string;
+  payoutSchedule: number[];
+  payoutFieldFraction: number;
+  minRankedSessions: number;
   /** orchestration / engine tunables */
   decisionTimeoutMs: number;
   gameTimeLimitMs: number;
@@ -79,6 +99,25 @@ function toFloat(key: string, value: string): number {
   return n;
 }
 
+/** Parse and validate the PAYOUT_SCHEDULE_JSON base curve (must sum to 100). */
+function parseCurve(value: string): number[] {
+  let curve: unknown;
+  try {
+    curve = JSON.parse(value);
+  } catch {
+    throw new ConfigError(`PAYOUT_SCHEDULE_JSON must be a JSON array, got "${value}".`);
+  }
+  if (!Array.isArray(curve) || curve.some((w) => typeof w !== 'number')) {
+    throw new ConfigError('PAYOUT_SCHEDULE_JSON must be a JSON array of numbers.');
+  }
+  try {
+    assertValidCurve(curve as number[]);
+  } catch (error) {
+    throw new ConfigError(error instanceof Error ? error.message : String(error));
+  }
+  return curve as number[];
+}
+
 /**
  * Load and validate configuration. Idempotent and side-effect-light: reading
  * `.env` is best-effort (skipped if absent). Throws {@link ConfigError} on any
@@ -92,9 +131,16 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   }
   const env = options.env ?? process.env;
 
+  const port = toInt('PORT', withDefault(env, 'PORT', '8080'));
+
   const config: Config = {
-    port: toInt('PORT', withDefault(env, 'PORT', '8080')),
+    port,
     databasePath: withDefault(env, 'DATABASE_PATH', './data/damnits.sqlite'),
+    publicBaseUrl: withDefault(env, 'PUBLIC_BASE_URL', `http://localhost:${port}`).replace(/\/$/, ''),
+    xClientId: optional(env, 'X_CLIENT_ID'),
+    xClientSecret: optional(env, 'X_CLIENT_SECRET'),
+    xScopes: withDefault(env, 'X_OAUTH_SCOPES', 'tweet.read users.read'),
+    claimTokenTtlMs: toInt('CLAIM_TOKEN_TTL_MS', withDefault(env, 'CLAIM_TOKEN_TTL_MS', '86400000')),
     bscTestnetRpcUrl: withDefault(
       env,
       'BSC_TESTNET_RPC_URL',
@@ -105,6 +151,18 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       ? requireVar(env, 'OPERATOR_PRIVATE_KEY')
       : optional(env, 'OPERATOR_PRIVATE_KEY'),
     escrowContractAddress: optional(env, 'ESCROW_CONTRACT_ADDRESS'),
+    tournamentContractAddress: optional(env, 'TOURNAMENT_CONTRACT_ADDRESS'),
+    tournamentEntryFeeWei: withDefault(env, 'TOURNAMENT_ENTRY_FEE_WEI', '500000000000000'),
+    sponsorPoolSeedWei: withDefault(env, 'SPONSOR_POOL_SEED_WEI', '0'),
+    jackpotSeedWei: withDefault(env, 'JACKPOT_SEED_WEI', '50000000000000000'),
+    payoutSchedule: parseCurve(
+      withDefault(env, 'PAYOUT_SCHEDULE_JSON', '[30,20,14,10,8,6,4.5,3,2.5,2]'),
+    ),
+    payoutFieldFraction: toFloat(
+      'PAYOUT_FIELD_FRACTION',
+      withDefault(env, 'PAYOUT_FIELD_FRACTION', '0.20'),
+    ),
+    minRankedSessions: toInt('MIN_RANKED_SESSIONS', withDefault(env, 'MIN_RANKED_SESSIONS', '10')),
     decisionTimeoutMs: toInt('DECISION_TIMEOUT_MS', withDefault(env, 'DECISION_TIMEOUT_MS', '3000')),
     gameTimeLimitMs: toInt('GAME_TIME_LIMIT_MS', withDefault(env, 'GAME_TIME_LIMIT_MS', '120000')),
     rainbowStormChance: toFloat(

@@ -10,8 +10,12 @@ import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
 import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
 import { getSession, listSessions, readEvents } from './routes/spectate';
+import { createTournamentChain } from './tournament-chain';
+import { createXOAuth } from './xoauth';
+import { renderClaimError, renderClaimPage } from './routes/claim-page';
 import {
   actionSchema,
+  enterSchema,
   joinSchema,
   leaderboardQuerySchema,
   patchAgentSchema,
@@ -116,13 +120,25 @@ export function buildServer(options: BuildOptions): BuiltServer {
     return { leaderboard: orchestrator.leaderboard(competitionId) };
   });
 
+  // Buy into a pooled tournament (sub-spec 08). Free competitions auto-enter;
+  // paid ones answer 402 with the tournament contract + amount until a verified
+  // txHash is supplied.
+  app.post(`${BASE}/competition/enter`, async (request) => {
+    const agent = requireAgent(orchestrator, request);
+    const { competitionId, txHash } = enterSchema.parse(request.body);
+    return await orchestrator.enterCompetition(agent.id, competitionId, txHash);
+  });
+
   // ---- agent identity -------------------------------------------------------
   app.get(`${BASE}/agent/me`, async (request) => {
     const agent = requireAgent(orchestrator, request);
+    const claim = orchestrator.claimStatus(agent.id);
     return {
       agentId: agent.id,
       displayName: agent.display_name,
       payoutAddress: agent.payout_address,
+      claimed: claim.claimed,
+      owner: claim.owner,
     };
   });
 
@@ -135,6 +151,71 @@ export function buildServer(options: BuildOptions): BuiltServer {
       displayName: updated.display_name,
       payoutAddress: updated.payout_address,
     };
+  });
+
+  // ---- ownership claim: "Sign in with X" (sub-spec 09) ----------------------
+  // Exact arena mechanism: the agent fetches a claim URL, hands it to its owner,
+  // the owner authorises X, and we bind the agent to that X-verified identity.
+
+  // Agent-facing (x-arena-api-key). Get/refresh the claim URL to give the owner.
+  app.post(`${BASE}/auth/claim/init`, async (request) => {
+    const agent = requireAgent(orchestrator, request);
+    return orchestrator.initClaim(agent.id);
+  });
+
+  app.get(`${BASE}/auth/claim/status`, async (request) => {
+    const agent = requireAgent(orchestrator, request);
+    return orchestrator.claimStatus(agent.id);
+  });
+
+  // Public (token is the capability). Lets the browser claim page name the agent.
+  app.get(`${BASE}/auth/claim/info`, async (request, reply) => {
+    const token = (request.query as { token?: string }).token;
+    if (!token) return reply.status(400).send({ error: 'MISSING_TOKEN' });
+    return orchestrator.claimInfo(token);
+  });
+
+  // Browser: start "Sign in with X" for a claim token → 302 to X's authorize page.
+  app.get(`${BASE}/auth/x/login`, async (request, reply) => {
+    const claim = (request.query as { claim?: string }).claim;
+    if (!claim) return reply.status(400).send({ error: 'MISSING_CLAIM_TOKEN' });
+    const { authorizeUrl } = orchestrator.startXClaim(claim);
+    return reply.redirect(authorizeUrl);
+  });
+
+  // Browser: X redirects back here after the owner authorises. Bind, then bounce
+  // back to the claim page which shows the success state.
+  app.get(`${BASE}/auth/x/callback`, async (request, reply) => {
+    const { code, state, error } = request.query as {
+      code?: string;
+      state?: string;
+      error?: string;
+    };
+    if (error) {
+      return reply
+        .type('text/html; charset=utf-8')
+        .send(renderClaimError(`X sign-in was cancelled (${error}).`));
+    }
+    if (!code || !state) {
+      return reply
+        .type('text/html; charset=utf-8')
+        .send(renderClaimError('Missing code or state from X.'));
+    }
+    try {
+      const { claimToken, handle } = await orchestrator.completeXClaim({ code, state });
+      // Bounce back to the claim page in a claimed state (shows "✓ @handle").
+      const url = `${config.publicBaseUrl}/claim?token=${encodeURIComponent(claimToken)}&claimed=1&handle=${encodeURIComponent(handle)}`;
+      return reply.redirect(url);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not complete the claim.';
+      return reply.type('text/html; charset=utf-8').send(renderClaimError(message));
+    }
+  });
+
+  // The owner-facing claim landing page (single-file, no build step).
+  app.get('/claim', async (request, reply) => {
+    const token = (request.query as { token?: string }).token ?? '';
+    return reply.type('text/html; charset=utf-8').send(renderClaimPage({ token, base: BASE }));
   });
 
   // ---- spectator (no auth — served redacted while a game is live) -----------
@@ -193,8 +274,15 @@ export async function start(): Promise<void> {
   // a no-op, so the arena runs perfectly well with no chain at all.
   const log = (message: string) => process.stdout.write(`${message}\n`);
   const chain = createSettlementChain(config, log);
+  const tournamentChain = createTournamentChain(config, log);
+  const xoauth = createXOAuth(config);
+  if (!xoauth.enabled) {
+    log('X login not configured (X_CLIENT_ID unset) — agent claiming is disabled.');
+  }
   const orchestrator = new Orchestrator(db, config, {
     chain,
+    tournamentChain,
+    xoauth,
     hooks: createChainHooks(db, chain, log),
   });
 

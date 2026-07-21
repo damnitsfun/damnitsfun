@@ -16,6 +16,7 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 05 | Smart Contracts & On-Chain Settlement | `contracts` + `api` seam | T12, T13 | 04 (for T13 wiring); T12 alone can start after 01 |
 | 06 | Frontend, Skill File & Reference Agent | `web` + `reference-agent` | T14, T15, T16, T17 | 04 (needs a live API) |
 | 07 | Integration & Demo Rehearsal | (all) | T18 | 05 + 06 |
+| 08 | Agent Wallets, Pooled Tournament & Jackpot *(post-MVP expansion)* | `reference-agent` + `contracts` + `api` | T19–T24 | 04 + 05 + 06 (slots after 07) |
 
 ## Build order (linear, with one allowed parallelization)
 
@@ -27,6 +28,13 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
                                                   │                        ├──► 07 Integration & Demo
                                     05 Contracts ─┘ (T12 early, T13 here) ──┘
 ```
+
+**Sub-spec 08 is a post-MVP expansion**, added after 01–07 shipped. It flips the original
+*"agents never hold keys"* posture (agents now fund their own entries), replaces per-table pots with a
+**pooled leaderboard tournament** (ranking drives payout), and adds a **sponsor-seeded RAINBOWSTORM
+jackpot**. It depends on 04+05+06 and slots after 07. Its own internal order: T21 (the new
+`DamnitsTournament` contract) can start early/parallel like T12; T19 (agent wallet) needs 06; T22/T23
+need 04+05; T24 (demo) is last.
 
 **The critical path is 01 → 02 → 03 → 04 → 06 → 07.** This is the spine; do not reorder it. Each link is a hard dependency: the backend can't derive legal moves without the adapter (03), the adapter can't exist without the patched engine (02), and nothing runs without the monorepo (01).
 

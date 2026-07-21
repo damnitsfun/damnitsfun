@@ -4,6 +4,9 @@
   "private": true,
   "description": "Example autonomous agent, public-API-only, proving skill.md works.",
   "main": "dist/agent.js",
+  "dependencies": {
+    "viem": "^2.55.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "play": "yarn build && node dist/agent.js",
