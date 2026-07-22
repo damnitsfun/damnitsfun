@@ -41,6 +41,8 @@ describe('config loader (spec §9)', () => {
         X_CLIENT_SECRET: 'x-secret',
         X_OAUTH_SCOPES: 'tweet.read users.read',
         CLAIM_TOKEN_TTL_MS: '3600000',
+        SPECTATOR_MODE: 'archive',
+        SPECTATOR_DELAY_MS: '15000',
       },
     });
     expect(c).toEqual({
@@ -66,6 +68,8 @@ describe('config loader (spec §9)', () => {
       gameTimeLimitMs: 60000,
       rainbowStormChance: 0.5,
       tableSize: 2,
+      spectatorMode: 'archive',
+      spectatorDelayMs: 15000,
     });
   });
 

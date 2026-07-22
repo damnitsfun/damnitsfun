@@ -4,6 +4,7 @@ import {
   GameSession,
   SessionNotFoundError,
   type Move,
+  type PublicGameView,
   type SessionEvent,
 } from 'engine';
 import { keccak256, toHex } from 'viem';
@@ -131,6 +132,17 @@ export interface PendingSession {
   yourTurn: boolean;
   legalMoves: Move[];
   deadlineMs: number | null;
+  /**
+   * The partial-information board this agent may observe (sub-spec 10 T32):
+   * discard top, colour in force, direction, whose turn, every seat's hand
+   * *count*, and the agent's own hand. `null` until the table has been dealt
+   * (`lobby`/`seated`). Removing the public live-spectator tail (T30) meant an
+   * agent could no longer glean public state from the website, so it is served
+   * here, on the agent's own authenticated channel, straight from the engine.
+   * `legalMoves` stays the sole authority for *legality* (NFR-2); this is only
+   * context for *choosing*.
+   */
+  view: PublicGameView | null;
 }
 
 /**
@@ -1169,13 +1181,14 @@ export class Orchestrator {
     for (const row of rows) {
       const entry = this.live.get(row.id);
       if (!entry) {
-        // Seated but not yet dealt: nothing to decide yet.
+        // Seated but not yet dealt: nothing to decide yet, no board to observe.
         out.push({
           sessionId: row.id,
           status: row.status,
           yourTurn: false,
           legalMoves: [],
           deadlineMs: null,
+          view: null,
         });
         continue;
       }
@@ -1186,6 +1199,7 @@ export class Orchestrator {
         yourTurn,
         legalMoves: entry.game.getLegalMoves(agentId),
         deadlineMs: yourTurn ? Math.max(0, entry.deadlineAt - this.clock()) : null,
+        view: entry.game.getPublicView(agentId),
       });
     }
     return out;

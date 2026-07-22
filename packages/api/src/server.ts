@@ -9,7 +9,7 @@ import { openDatabase, type Db } from './db/index';
 import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
 import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
-import { getSession, listSessions, readEvents } from './routes/spectate';
+import { getPublicSession, listSessions, readEvents } from './routes/spectate';
 import { createTournamentChain } from './tournament-chain';
 import { createXOAuth } from './xoauth';
 import { renderClaimError, renderClaimPage } from './routes/claim-page';
@@ -218,19 +218,29 @@ export function buildServer(options: BuildOptions): BuiltServer {
     return reply.type('text/html; charset=utf-8').send(renderClaimPage({ token, base: BASE }));
   });
 
-  // ---- spectator (no auth — served redacted while a game is live) -----------
+  // ---- spectator (no auth — replay-only; finished sessions only, sub-spec 10) --
+  // The public feed never exposes a live table: sessions are listed and served
+  // only once settled, so a scraping agent cannot read an in-progress hand.
   app.get(`${BASE}/spectate/sessions`, async (request) => {
     const query = request.query as { competitionId?: string; limit?: string };
     const limit = Math.min(200, Math.max(1, Number(query.limit ?? 50) || 50));
-    return { sessions: listSessions(db, query.competitionId, limit) };
+    return {
+      // `mode` lets the viewer choose delayed-live airing vs on-demand browsing;
+      // either way these are finished sessions only (sub-spec 10).
+      mode: config.spectatorMode,
+      sessions: listSessions(db, query.competitionId, limit, {
+        minFinishedAgeMs: config.spectatorDelayMs,
+      }),
+    };
   });
 
   app.get<{ Params: { sessionId: string } }>(
     `${BASE}/spectate/session/:sessionId`,
     async (request, reply) => {
-      const summary = getSession(db, request.params.sessionId);
-      if (!summary) return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
-      return summary;
+      const result = getPublicSession(db, request.params.sessionId);
+      if (result.status === 'not_found') return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
+      if (result.status === 'in_progress') return reply.status(409).send({ error: 'GAME_IN_PROGRESS' });
+      return result.summary;
     },
   );
 
@@ -239,8 +249,9 @@ export function buildServer(options: BuildOptions): BuiltServer {
     async (request, reply) => {
       const since = Number((request.query as { since?: string }).since ?? -1);
       const result = readEvents(db, request.params.sessionId, Number.isFinite(since) ? since : -1);
-      if (!result) return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
-      return result;
+      if (result.status === 'not_found') return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
+      if (result.status === 'in_progress') return reply.status(409).send({ error: 'GAME_IN_PROGRESS' });
+      return { events: result.events, settled: result.settled };
     },
   );
 

@@ -1,4 +1,4 @@
-import type { SessionEventRecord } from 'engine';
+import type { SessionEventRecord, SessionEventType } from 'engine';
 import type { Db } from '../db/index';
 
 /**
@@ -9,17 +9,21 @@ import type { Db } from '../db/index';
  * constraint, a missing capability means the API is incomplete — the frontend
  * does NOT get to reach into the database — so these endpoints are added here.
  *
- * ## Why redaction is mandatory
+ * ## Replay-only: the public feed never shows a live table (sub-spec 10)
  *
  * `session_events` is deliberately a full-information record: it carries every
  * dealt hand, every drawn card face, and the commit-reveal seed, because replay
- * and the on-chain result hash need all of it. Serving that verbatim while a
- * game is running would let anyone — including a competing agent — read their
- * opponents' hands and, worse, derive the entire shuffled deck from the seed.
+ * and the on-chain result hash need all of it. Serving any of that while a game
+ * is running would let a competing agent read its opponents' hands or, worse,
+ * derive the whole shuffled deck from the seed.
  *
- * So a live session is served redacted; the full log is released only once the
- * session is settled, when the information is historical and the seed is meant
- * to be public for verification.
+ * So — mirroring arena.dev.fun, whose viewer only ever fetches `Completed`
+ * tables — the public spectator serves **only finished sessions**
+ * (`settled`/`archived`). An in-progress session is absent from the list, is not
+ * individually addressable, and its events answer `409 GAME_IN_PROGRESS`. There
+ * is no redacted live tail to get wrong; the boundary opens only once a session
+ * is over, when the log is history and the seed is meant to be public for
+ * verification. {@link redactPayload} remains as defense-in-depth (see below).
  */
 
 export type SessionStatus = 'lobby' | 'seated' | 'in_progress' | 'settled' | 'archived';
@@ -32,35 +36,66 @@ export interface SpectatorEvent {
   createdAt: string;
 }
 
-/** Hidden-information fields, stripped while a session is still being played. */
-function redactPayload(type: string, payload: Record<string, unknown>): Record<string, unknown> {
-  switch (type) {
-    case 'SESSION_STARTED': {
-      const { hands, seedReveal, ...rest } = payload as {
-        hands?: Record<string, unknown[]>;
-        seedReveal?: string | null;
-      } & Record<string, unknown>;
-      return {
-        ...rest,
-        // Sizes are public (you can see how many cards someone holds); faces are not.
-        handCounts: Object.fromEntries(
-          Object.entries(hands ?? {}).map(([agentId, cards]) => [agentId, cards.length]),
-        ),
-        // The seed stays secret until settlement — it determines the whole deck.
-        seedReveal: null,
-      };
-    }
-    case 'CARD_DRAWN': {
-      // How many were drawn is public; which cards is not.
-      const { cards, ...rest } = payload as { cards?: unknown[] } & Record<string, unknown>;
-      void cards;
-      return rest;
-    }
-    default:
-      // CARD_PLAYED, TURN_PASSED, TURN_CHANGED, RAINBOW_STORM and GAME_ENDED are
-      // all public by nature (played face-up, or emitted only at the end).
-      return payload;
+/** A session is publicly viewable only once its game is over. */
+function isCompleted(status: SessionStatus): boolean {
+  return status === 'settled' || status === 'archived';
+}
+
+type Projection = (payload: Record<string, unknown>) => Record<string, unknown>;
+
+/** Keep only `keys` that are present — never introduce fields the payload lacks. */
+function pick(payload: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (key in payload) out[key] = payload[key];
   }
+  return out;
+}
+
+/**
+ * Allowlist of what each event type may expose BEFORE settlement. This is a
+ * **fail-safe** design (sub-spec 10 T31): every type opts into an explicit set of
+ * public fields, and an unknown/new type falls through to a bare skeleton — never
+ * the raw payload. A future event that carries hidden information therefore
+ * cannot leak by omission the way the old denylist `default: return payload`
+ * would have.
+ *
+ * The `satisfies` clause makes this exhaustive: adding a `SessionEventType`
+ * without declaring its projection fails the build.
+ *
+ * NOTE: after T30 no public route serves an unsettled session's events at all, so
+ * this path is reached only by unit tests and any future pre-settlement reader —
+ * it is defense-in-depth guarding the seed, not a live-serving path.
+ */
+const PUBLIC_PROJECTIONS = {
+  SESSION_STARTED: (payload) => {
+    const hands = (payload.hands ?? {}) as Record<string, unknown[]>;
+    return {
+      ...pick(payload, ['seats', 'timeLimitMs', 'rainbowStormChance', 'firstAgentId', 'discard']),
+      // Sizes are public (you can see how many cards someone holds); faces are not.
+      handCounts: Object.fromEntries(
+        Object.entries(hands).map(([agentId, cards]) => [agentId, cards.length]),
+      ),
+      // The seed determines the whole deck — it stays secret until settlement.
+      seedReveal: null,
+    };
+  },
+  // Played face-up: fully public.
+  CARD_PLAYED: (payload) => pick(payload, ['agentId', 'card', 'chosenColor', 'handCountAfter']),
+  // How many were drawn is public; which cards is not.
+  CARD_DRAWN: (payload) => pick(payload, ['agentId', 'count', 'cause', 'handCountAfter']),
+  TURN_PASSED: (payload) => pick(payload, ['agentId']),
+  RAINBOW_STORM: (payload) => pick(payload, ['agentId', 'victims', 'drawCount']),
+  TURN_CHANGED: (payload) => pick(payload, ['currentAgentId', 'direction']),
+  // Emitted only at game end — hands are public by then.
+  GAME_ENDED: (payload) => pick(payload, ['winnerAgentId', 'reason', 'finalHands', 'handValues']),
+} satisfies Record<SessionEventType, Projection>;
+
+/** Fail-safe projection: known types use their allowlist, unknown types a skeleton. */
+function redactPayload(type: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const project = (PUBLIC_PROJECTIONS as Record<string, Projection>)[type];
+  // Unknown/new type → reveal only a minimal skeleton, never the raw payload.
+  return project ? project(payload) : pick(payload, ['agentId']);
 }
 
 export function toSpectatorEvent(record: SessionEventRecord, settled: boolean): SpectatorEvent {
@@ -94,20 +129,51 @@ export interface SessionSummary {
   eventCount: number;
 }
 
-export function listSessions(db: Db, competitionId?: string, limit = 50): SessionSummary[] {
-  const rows = (
-    competitionId
-      ? db
-          .prepare(
-            `SELECT * FROM sessions WHERE competition_id = ? ORDER BY created_at DESC LIMIT ?`,
-          )
-          .all(competitionId, limit)
-      : db.prepare(`SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?`).all(limit)
-  ) as Array<Record<string, unknown>>;
+export interface ListSessionsOptions {
+  /**
+   * Include not-yet-finished sessions. Public callers MUST leave this false — a
+   * live table must never be listed. Reserved for internal/ops callers.
+   */
+  includeLive?: boolean;
+  /**
+   * `delayed`-mode airing buffer (sub-spec 10 D32): hide sessions that finished
+   * fewer than this many ms ago from the public list, so the featured replay lags
+   * the true frontier. `0` (default) = list as soon as finished (arena-style).
+   */
+  minFinishedAgeMs?: number;
+}
+
+export function listSessions(
+  db: Db,
+  competitionId?: string,
+  limit = 50,
+  options: ListSessionsOptions = {},
+): SessionSummary[] {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (competitionId) {
+    clauses.push('competition_id = ?');
+    params.push(competitionId);
+  }
+  if (!options.includeLive) {
+    // The security invariant: the public list is finished sessions only.
+    clauses.push(`status IN ('settled', 'archived')`);
+    const age = options.minFinishedAgeMs ?? 0;
+    if (age > 0) {
+      // Optional UX buffer — lag the featured frontier by SPECTATOR_DELAY_MS.
+      clauses.push(`ended_at IS NOT NULL AND ended_at <= datetime('now', ?)`);
+      params.push(`-${Math.floor(age / 1000)} seconds`);
+    }
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const rows = db
+    .prepare(`SELECT * FROM sessions ${where} ORDER BY created_at DESC LIMIT ?`)
+    .all(...params, limit) as Array<Record<string, unknown>>;
 
   return rows.map((row) => summaryFromRow(db, row));
 }
 
+/** Raw summary for any status — internal use. Hidden fields are still gated on settlement. */
 export function getSession(db: Db, sessionId: string): SessionSummary | null {
   const row = db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(sessionId) as
     | Record<string, unknown>
@@ -115,10 +181,28 @@ export function getSession(db: Db, sessionId: string): SessionSummary | null {
   return row ? summaryFromRow(db, row) : null;
 }
 
+export type PublicSessionResult =
+  | { status: 'ok'; summary: SessionSummary }
+  | { status: 'in_progress' }
+  | { status: 'not_found' };
+
+/**
+ * Public session lookup (sub-spec 10 T30): a not-yet-finished session is reported
+ * `in_progress` and carries NO summary — a live table is not individually
+ * addressable, mirroring its omission from the list. The route maps that to
+ * `409 GAME_IN_PROGRESS`.
+ */
+export function getPublicSession(db: Db, sessionId: string): PublicSessionResult {
+  const summary = getSession(db, sessionId);
+  if (!summary) return { status: 'not_found' };
+  if (!isCompleted(summary.status)) return { status: 'in_progress' };
+  return { status: 'ok', summary };
+}
+
 function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
   const sessionId = row.id as string;
   const status = row.status as SessionStatus;
-  const settled = status === 'settled' || status === 'archived';
+  const settled = isCompleted(status);
 
   const seats = db
     .prepare(
@@ -153,17 +237,24 @@ function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
   };
 }
 
-export function readEvents(
-  db: Db,
-  sessionId: string,
-  since: number,
-): { events: SpectatorEvent[]; settled: boolean } | null {
+export type ReadEventsResult =
+  | { status: 'ok'; events: SpectatorEvent[]; settled: boolean }
+  | { status: 'in_progress' }
+  | { status: 'not_found' };
+
+/**
+ * Public event log (sub-spec 10 T30). Serves the FULL log of a finished session
+ * (the seed is public post-settlement, for commit-reveal verification). A
+ * still-running session yields `in_progress` and NO events — there is no redacted
+ * live tail. The route maps that to `409 GAME_IN_PROGRESS`.
+ */
+export function readEvents(db: Db, sessionId: string, since: number): ReadEventsResult {
   const row = db.prepare(`SELECT status FROM sessions WHERE id = ?`).get(sessionId) as
     | { status: SessionStatus }
     | undefined;
-  if (!row) return null;
+  if (!row) return { status: 'not_found' };
+  if (!isCompleted(row.status)) return { status: 'in_progress' };
 
-  const settled = row.status === 'settled' || row.status === 'archived';
   const records = db
     .prepare(
       `SELECT session_id AS sessionId, seq, event_type AS eventType, payload_json AS payloadJson,
@@ -174,5 +265,5 @@ export function readEvents(
     )
     .all(sessionId, since) as SessionEventRecord[];
 
-  return { events: records.map((r) => toSpectatorEvent(r, settled)), settled };
+  return { status: 'ok', events: records.map((r) => toSpectatorEvent(r, true)), settled: true };
 }

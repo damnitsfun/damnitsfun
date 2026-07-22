@@ -48,7 +48,17 @@ export interface Config {
   gameTimeLimitMs: number;
   rainbowStormChance: number;
   tableSize: number;
+  /** spectator (sub-spec 10). The public feed only ever serves finished sessions. */
+  spectatorMode: SpectatorMode;
+  spectatorDelayMs: number;
 }
+
+/**
+ * `delayed` (default, arena parity): the UI auto-airs the most-recently-finished
+ * session as a continuously-advancing replay. `archive`: on-demand browsing only.
+ * Neither ever exposes an in-progress table — both replay only finished sessions.
+ */
+export type SpectatorMode = 'delayed' | 'archive';
 
 export interface LoadConfigOptions {
   /** Env source. Defaults to `process.env`. Injectable for tests. */
@@ -97,6 +107,13 @@ function toFloat(key: string, value: string): number {
     throw new ConfigError(`Environment variable ${key} must be a number, got "${value}".`);
   }
   return n;
+}
+
+function parseSpectatorMode(value: string): SpectatorMode {
+  if (value !== 'delayed' && value !== 'archive') {
+    throw new ConfigError(`SPECTATOR_MODE must be "delayed" or "archive", got "${value}".`);
+  }
+  return value;
 }
 
 /** Parse and validate the PAYOUT_SCHEDULE_JSON base curve (must sum to 100). */
@@ -170,6 +187,8 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       withDefault(env, 'RAINBOW_STORM_CHANCE', '0.00001'),
     ),
     tableSize: toInt('TABLE_SIZE', withDefault(env, 'TABLE_SIZE', '4')),
+    spectatorMode: parseSpectatorMode(withDefault(env, 'SPECTATOR_MODE', 'delayed')),
+    spectatorDelayMs: toInt('SPECTATOR_DELAY_MS', withDefault(env, 'SPECTATOR_DELAY_MS', '0')),
   };
 
   return Object.freeze(config);

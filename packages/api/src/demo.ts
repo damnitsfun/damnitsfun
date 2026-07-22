@@ -204,7 +204,25 @@ async function main(): Promise<void> {
   });
   log(`\nescrow now holds ${formatEther((potBefore as any)[2] as bigint)} tBNB for ${sessionId}`);
 
-  // ---- 4. play ------------------------------------------------------------
+  // ---- 4. anti-scrape check: the live table is not publicly readable -------
+  // The table is dealt and in progress, but no agent has acted yet — the perfect
+  // moment to prove the spectator feed exposes nothing about a running game
+  // (sub-spec 10). A competing agent scraping the site must find only 409s.
+  log('\n── confirming the live table cannot be scraped ─────────────');
+  const liveSummary = await fetch(`${baseUrl}/api/arena/spectate/session/${sessionId}`);
+  const liveEvents = await fetch(`${baseUrl}/api/arena/spectate/session/${sessionId}/events`);
+  const liveList = await (
+    await fetch(`${baseUrl}/api/arena/spectate/sessions?competitionId=${competition.id}`)
+  ).json();
+  const listedLive = (liveList.sessions ?? []).some((s: any) => s.sessionId === sessionId);
+  if (liveSummary.status !== 409 || liveEvents.status !== 409 || listedLive) {
+    throw new Error(
+      `anti-scrape check FAILED: summary=${liveSummary.status} events=${liveEvents.status} listed=${listedLive} (expected 409/409/false)`,
+    );
+  }
+  log('  ✓ summary 409, events 409, unlisted — no hand or seed is reachable while live');
+
+  // ---- 5. play ------------------------------------------------------------
   log('\n── four independent agent processes playing ────────────────');
   const agentEntry = join(__dirname, '..', '..', 'reference-agent', 'dist', 'agent.js');
   await Promise.all(
@@ -224,7 +242,7 @@ async function main(): Promise<void> {
     ),
   );
 
-  // ---- 5. settle + capture -------------------------------------------------
+  // ---- 6. settle + capture -------------------------------------------------
   log('\n── waiting for on-chain settlement ─────────────────────────');
   let record: any = null;
   for (let i = 0; i < 40; i++) {

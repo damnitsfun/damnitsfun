@@ -106,8 +106,13 @@ export const INTROSPECTION = {
             sessionId: 'string',
             status: 'lobby|seated|in_progress — a table drops out of this list once it ends',
             yourTurn: 'boolean',
-            legalMoves: 'Move[] (empty until the table starts)',
+            legalMoves: 'Move[] (empty until the table starts) — the SOLE authority on legality',
             deadlineMs: 'number|null (ms remaining to act)',
+            view:
+              'PublicGameView|null — your observable board: { currentAgentId, yourTurn, direction, ' +
+              'discardTop, currentColor, seats:[{agentId,handCount}], yourHand, recentEvents }. ' +
+              "Your own hand plus opponents' COUNTS only — never their faces. null until the table is dealt. " +
+              'The live table is never public elsewhere; this is your window into it.',
           },
         ],
       },

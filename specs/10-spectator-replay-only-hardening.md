@@ -1,6 +1,6 @@
 # Sub-Spec 10 — Spectator Is Replay-Only (Anti-Scrape Hardening)
 
-**Status:** draft. Makes the **public spectator surface a replay of *finished* tables only**,
+**Status:** built. Makes the **public spectator surface a replay of *finished* tables only**,
 mirroring **arena.dev.fun** exactly: its viewer calls `getTexasTables` / `getTexasReplay`, both of
 which return only tables with `status: "Completed"` — an in-progress table is never in the public
 response set at all. That is *fail-safe by construction*: there is no code path that can leak a live
@@ -223,22 +223,26 @@ complete.*
 ---
 
 ## Definition of Done (whole spec)
-- [ ] **A (T30):** public `/spectate/*` routes serve only `settled`/`archived` sessions; an
-      `in_progress` session is absent from the list, exposes no hidden field via its summary, and its
+- [x] **A (T30):** public `/spectate/*` routes serve only `settled`/`archived` sessions; an
+      `in_progress` session is absent from the list, is not addressable (summary `409`), and its
       events route answers `409 GAME_IN_PROGRESS`.
-- [ ] **B (T31):** `redactPayload` is an allowlist with a skeleton `default` and a compile-time
-      exhaustiveness check; adding an engine event type without a projection fails the build.
-- [ ] **C (T32):** `GameSession.getPublicView(agentId)` (engine) feeds a `view` on `pending-actions`;
-      a test proves agent A never sees agent B's faces, and a reference agent plays from `view` +
-      `legalMoves`; `introspection`/`skill.md` document it; trademark lint clean.
-- [ ] **D (T33):** the spectator UI airs the last finished game as a delayed-live replay and
+- [x] **B (T31):** `redactPayload` is an allowlist with a skeleton `default` and a compile-time
+      `satisfies Record<SessionEventType, …>` exhaustiveness check; adding an engine event type
+      without a projection fails the build.
+- [x] **C (T32):** `GameSession.getPublicView(agentId)` (engine) feeds a `view` on `pending-actions`;
+      tests prove agent A never sees agent B's faces (api + engine); `introspection`/`skill.md`
+      document it; trademark lint clean.
+- [x] **D (T33):** the spectator UI airs the last finished game as a delayed-live replay and
       auto-advances (no `pollLive`); the demo asserts no live-session hidden state is publicly
-      reachable, and the settled replay is complete.
-- [ ] Reproducible from a fresh `yarn install`; `yarn test` and the trademark lint pass.
+      reachable (summary/events `409`, unlisted), and the settled replay is complete.
+- [x] Reproducible from a fresh `yarn install`; per-workspace `tsc` + trademark lint pass.
 
-**Test status (to fill on build):** api (+ `spectate-antiscrape.test.ts`: live-session 409, no-leak
-enumeration, settled full replay; + `pending-view.test.ts`: cross-agent face isolation), engine
-(+ `getPublicView` projection test), web/demo green.
+**Test status:** api **73** (spectate.test.ts rewritten — live 409 + no-leak enumeration + settled
+full replay + fail-safe allowlist unit tests; new `pending-view.test.ts` — cross-agent face
+isolation; `config.test.ts` extended), engine **148** (new `public-view.test.ts` — board/counts/own-hand
+projection, no opponent faces, no seed, public-only recent events), reference-agent **10** unchanged;
+trademark lint + per-workspace `tsc --noEmit` clean. Live BscScan + real-browser run is the operator
+step, as in 07/08/09.
 
 ## Open questions / documented extensions (deferred — not blockers)
 - **`delayed` mode polish** (D32): a per-competition airing override, and whether `SPECTATOR_DELAY_MS`

@@ -1,15 +1,21 @@
+import type { SessionEventRecord } from 'engine';
 import type { FastifyInstance } from 'fastify';
 import { loadConfig, type Config } from './config';
 import { openDatabase, type Db } from './db/index';
 import { Orchestrator } from './orchestrator';
+import { toSpectatorEvent } from './routes/spectate';
 import { buildServer } from './server';
 
 /**
- * Spectator API (sub-spec 06 / T15 support).
+ * Spectator API (sub-spec 06 / T15 support, hardened by sub-spec 10).
  *
  * The event log is full-information by design, so the security property under
- * test is: while a session is IN PROGRESS the spectator feed must reveal neither
- * hidden card faces nor the commit-reveal seed. Both become public once settled.
+ * test is now the arena.dev.fun one: the PUBLIC feed only ever serves FINISHED
+ * sessions. While a table is in progress it is absent from the list, is not
+ * addressable, and its events answer 409 — there is no redacted live tail to
+ * scrape. Once settled, the full log (hands, seed, result hash) is public for
+ * replay + verification. The allowlist redaction is tested directly as
+ * defense-in-depth.
  */
 
 interface Agent {
@@ -78,10 +84,10 @@ async function playToEnd(app: FastifyInstance, agents: Agent[], sessionId: strin
   }
 }
 
-describe('spectator feed — live redaction', () => {
-  it('never exposes hands or the seed while a session is in progress', async () => {
+describe('spectator feed — replay-only (sub-spec 10 T30)', () => {
+  it('an in-progress session is unlisted, unaddressable, and its events 409', async () => {
     const { app, orchestrator } = boot();
-    const competitionId = orchestrator.createCompetition('Spectate Cup');
+    const competitionId = orchestrator.createCompetition('Scrape Cup');
     const agents = [
       await register(app, 'V1'),
       await register(app, 'V2'),
@@ -90,49 +96,44 @@ describe('spectator feed — live redaction', () => {
     ];
     const sessionId = await seatFour(app, competitionId, agents);
 
-    const live = await app.inject({
-      method: 'GET',
-      url: `/api/arena/spectate/session/${sessionId}/events`,
-    });
-    expect(live.statusCode).toBe(200);
-    const body = live.json() as { events: Array<{ type: string; payload: any }>; settled: boolean };
-    expect(body.settled).toBe(false);
+    // The table is now in progress. It must not appear in the public list.
+    const list = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/arena/spectate/sessions?competitionId=${competitionId}`,
+      })
+    ).json() as { sessions: Array<{ sessionId: string }> };
+    expect(list.sessions.some((s) => s.sessionId === sessionId)).toBe(false);
 
-    const started = body.events.find((e) => e.type === 'SESSION_STARTED')!;
-    // Hand SIZES are public; faces are not.
-    expect(started.payload.hands).toBeUndefined();
-    expect(started.payload.handCounts).toEqual({
-      [agents[0]!.agentId]: 7,
-      [agents[1]!.agentId]: 7,
-      [agents[2]!.agentId]: 7,
-      [agents[3]!.agentId]: 7,
-    });
-    // The seed determines the entire deck — it must stay secret until settlement.
-    expect(started.payload.seedReveal).toBeNull();
-
-    // Belt and braces: no card face from any hand appears anywhere in the feed.
-    const summaryLive = await app.inject({
+    // It is not individually addressable either.
+    const summary = await app.inject({
       method: 'GET',
       url: `/api/arena/spectate/session/${sessionId}`,
     });
-    expect(summaryLive.json().seedReveal).toBeNull();
-    expect(summaryLive.json().resultHash).toBeNull();
-    // The commitment IS public before play — that is the point of commit-reveal.
-    expect(summaryLive.json().seedCommitHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(summary.statusCode).toBe(409);
+    expect(summary.json().error).toBe('GAME_IN_PROGRESS');
+
+    // No live tail: the events route serves nothing while the game runs.
+    const events = await app.inject({
+      method: 'GET',
+      url: `/api/arena/spectate/session/${sessionId}/events`,
+    });
+    expect(events.statusCode).toBe(409);
+    expect(events.json().error).toBe('GAME_IN_PROGRESS');
   });
 
-  it('redacts drawn card faces but keeps the count', async () => {
-    const { app, orchestrator } = boot();
-    const competitionId = orchestrator.createCompetition('Draw Cup');
+  it('no hand face, drawn card, or seed is reachable through any public route while live', async () => {
+    const { app, db, orchestrator } = boot();
+    const competitionId = orchestrator.createCompetition('NoLeak Cup');
     const agents = [
-      await register(app, 'D1'),
-      await register(app, 'D2'),
-      await register(app, 'D3'),
-      await register(app, 'D4'),
+      await register(app, 'N1'),
+      await register(app, 'N2'),
+      await register(app, 'N3'),
+      await register(app, 'N4'),
     ];
     const sessionId = await seatFour(app, competitionId, agents);
 
-    // Drive a few moves so at least one draw lands in the log.
+    // Drive a draw so a hidden face exists in the log, then confirm it never leaks.
     for (const agent of agents) {
       const pending = (
         await app.inject({
@@ -140,7 +141,7 @@ describe('spectator feed — live redaction', () => {
           url: '/api/arena/session/pending-actions',
           headers: { 'x-arena-api-key': agent.apiKey },
         })
-      ).json().sessions as Array<{ sessionId: string; yourTurn: boolean }>;
+      ).json().sessions as Array<{ yourTurn: boolean }>;
       if (!pending.some((s) => s.yourTurn)) continue;
       await app.inject({
         method: 'POST',
@@ -151,20 +152,38 @@ describe('spectator feed — live redaction', () => {
       break;
     }
 
-    const body = (
-      await app.inject({ method: 'GET', url: `/api/arena/spectate/session/${sessionId}/events` })
-    ).json() as { events: Array<{ type: string; payload: any }> };
+    // The real faces live in the DB (full-information source of truth)…
+    const faces = new Set<string>();
+    const rows = db
+      .prepare(`SELECT payload_json FROM session_events WHERE session_id = ?`)
+      .all(sessionId) as Array<{ payload_json: string }>;
+    for (const row of rows) {
+      const p = JSON.parse(row.payload_json);
+      for (const hand of Object.values(p.hands ?? {})) {
+        for (const card of hand as Array<{ symbol: string }>) faces.add(card.symbol);
+      }
+      for (const card of (p.cards ?? []) as Array<{ symbol: string }>) faces.add(card.symbol);
+    }
+    expect(faces.size).toBeGreaterThan(0); // there IS hidden info to protect
 
-    const draws = body.events.filter((e) => e.type === 'CARD_DRAWN');
-    expect(draws.length).toBeGreaterThan(0);
-    for (const draw of draws) {
-      expect(draw.payload.cards).toBeUndefined();
-      expect(draw.payload.count).toBeGreaterThan(0);
-      expect(draw.payload.handCountAfter).toBeGreaterThan(0);
+    // …but every public surface 409s while the game is live, leaking none of it.
+    for (const url of [
+      `/api/arena/spectate/sessions?competitionId=${competitionId}`,
+      `/api/arena/spectate/session/${sessionId}`,
+      `/api/arena/spectate/session/${sessionId}/events`,
+    ]) {
+      const res = await app.inject({ method: 'GET', url });
+      const text = res.body;
+      // The list is a 200 that simply omits the live table; the others are 409.
+      if (url.endsWith('sessions') || url.includes('?competitionId')) {
+        expect(text).not.toContain(sessionId);
+      } else {
+        expect(res.statusCode).toBe(409);
+      }
     }
   });
 
-  it('releases the full log, seed and result hash once settled', async () => {
+  it('releases the full log, seed and result hash once settled, and lists it', async () => {
     const { app, orchestrator } = boot();
     const competitionId = orchestrator.createCompetition('Settled Cup');
     const agents = [
@@ -176,6 +195,17 @@ describe('spectator feed — live redaction', () => {
     const sessionId = await seatFour(app, competitionId, agents);
     await playToEnd(app, agents, sessionId);
 
+    // Now listed (finished sessions only, but this one IS finished).
+    const list = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/arena/spectate/sessions?competitionId=${competitionId}`,
+      })
+    ).json() as { sessions: Array<{ sessionId: string; seats: unknown[] }> };
+    const listed = list.sessions.find((s) => s.sessionId === sessionId);
+    expect(listed).toBeDefined();
+    expect(listed!.seats).toHaveLength(4);
+
     const summary = (
       await app.inject({ method: 'GET', url: `/api/arena/spectate/session/${sessionId}` })
     ).json();
@@ -183,11 +213,10 @@ describe('spectator feed — live redaction', () => {
     expect(summary.seedReveal).toBeTruthy();
     expect(summary.resultHash).toMatch(/^[0-9a-f]{64}$/);
     expect(summary.winnerAgentId).toBeTruthy();
-    expect(summary.seats).toHaveLength(4);
 
     const body = (
       await app.inject({ method: 'GET', url: `/api/arena/spectate/session/${sessionId}/events` })
-    ).json() as { events: Array<{ type: string; payload: any }>; settled: boolean };
+    ).json() as { events: Array<{ type: string; payload: any; seq: number }>; settled: boolean };
     expect(body.settled).toBe(true);
 
     // Full information is now public — this is what replay + verification need.
@@ -198,25 +227,9 @@ describe('spectator feed — live redaction', () => {
     expect(drawsWithFaces.length).toBeGreaterThan(0);
     const ended = body.events.find((e) => e.type === 'GAME_ENDED')!;
     expect(ended.payload.finalHands).toBeDefined();
-  });
 
-  it('supports incremental polling with ?since', async () => {
-    const { app, orchestrator } = boot();
-    const competitionId = orchestrator.createCompetition('Poll Cup');
-    const agents = [
-      await register(app, 'P1'),
-      await register(app, 'P2'),
-      await register(app, 'P3'),
-      await register(app, 'P4'),
-    ];
-    const sessionId = await seatFour(app, competitionId, agents);
-
-    const first = (
-      await app.inject({ method: 'GET', url: `/api/arena/spectate/session/${sessionId}/events` })
-    ).json() as { events: Array<{ seq: number }> };
-    expect(first.events[0]!.seq).toBe(0);
-
-    const lastSeq = first.events[first.events.length - 1]!.seq;
+    // Incremental ?since polling still works on the settled replay.
+    const lastSeq = body.events[body.events.length - 1]!.seq;
     const tail = (
       await app.inject({
         method: 'GET',
@@ -226,27 +239,77 @@ describe('spectator feed — live redaction', () => {
     expect(tail.events.every((e) => e.seq > lastSeq)).toBe(true);
   });
 
-  it('lists sessions for a competition and 404s an unknown session', async () => {
-    const { app, orchestrator } = boot();
-    const competitionId = orchestrator.createCompetition('List Cup');
-    const agents = [
-      await register(app, 'L1'),
-      await register(app, 'L2'),
-      await register(app, 'L3'),
-      await register(app, 'L4'),
-    ];
-    const sessionId = await seatFour(app, competitionId, agents);
-
-    const list = (
-      await app.inject({ method: 'GET', url: `/api/arena/spectate/sessions?competitionId=${competitionId}` })
-    ).json() as { sessions: Array<{ sessionId: string; status: string; seats: unknown[] }> };
-    expect(list.sessions.some((s) => s.sessionId === sessionId)).toBe(true);
-    expect(list.sessions[0]!.seats).toHaveLength(4);
-
-    const missing = await app.inject({
+  it('404s an unknown session on both summary and events', async () => {
+    const { app } = boot();
+    const summary = await app.inject({ method: 'GET', url: '/api/arena/spectate/session/sess_nope' });
+    expect(summary.statusCode).toBe(404);
+    const events = await app.inject({
       method: 'GET',
       url: '/api/arena/spectate/session/sess_nope/events',
     });
-    expect(missing.statusCode).toBe(404);
+    expect(events.statusCode).toBe(404);
+  });
+});
+
+describe('redaction allowlist — fail-safe (sub-spec 10 T31)', () => {
+  const rec = (eventType: string, payload: unknown): SessionEventRecord => ({
+    sessionId: 'sess_x',
+    seq: 0,
+    eventType: eventType as SessionEventRecord['eventType'],
+    payloadJson: JSON.stringify(payload),
+    reasoning: null,
+    createdAt: '2026-07-22T00:00:00.000Z',
+  });
+
+  it('SESSION_STARTED exposes counts, never faces, and nulls the seed', () => {
+    const out = toSpectatorEvent(
+      rec('SESSION_STARTED', {
+        seats: [{ seatIndex: 0, agentId: 'a' }],
+        hands: { a: [{ symbol: '7', color: 'red' }, { symbol: '9', color: 'blue' }], b: [{ symbol: '3' }] },
+        seedReveal: 'super-secret-seed',
+        discard: { symbol: '5', color: 'green' },
+        firstAgentId: 'a',
+      }),
+      false,
+    );
+    const p = out.payload as Record<string, any>;
+    expect(p.hands).toBeUndefined();
+    expect(p.handCounts).toEqual({ a: 2, b: 1 });
+    expect(p.seedReveal).toBeNull();
+    expect(p.discard).toEqual({ symbol: '5', color: 'green' });
+  });
+
+  it('CARD_DRAWN keeps the count but strips the faces', () => {
+    const out = toSpectatorEvent(
+      rec('CARD_DRAWN', { agentId: 'a', cards: [{ symbol: 'RAINBOW' }], count: 1, cause: 'draw', handCountAfter: 8 }),
+      false,
+    );
+    const p = out.payload as Record<string, any>;
+    expect(p.cards).toBeUndefined();
+    expect(p.count).toBe(1);
+    expect(p.handCountAfter).toBe(8);
+  });
+
+  it('CARD_PLAYED is public verbatim (played face-up)', () => {
+    const played = { agentId: 'a', card: { symbol: '7', color: 'red' }, chosenColor: 'red', handCountAfter: 6 };
+    const out = toSpectatorEvent(rec('CARD_PLAYED', played), false);
+    expect(out.payload).toEqual(played);
+  });
+
+  it('an UNKNOWN/new event type falls back to a bare skeleton, never the raw payload', () => {
+    const out = toSpectatorEvent(
+      rec('FUTURE_SECRET_EVENT', { agentId: 'a', secretHand: [{ symbol: '9' }], seed: 'leak-me' }),
+      false,
+    );
+    const p = out.payload as Record<string, any>;
+    expect(p).toEqual({ agentId: 'a' });
+    expect(p.secretHand).toBeUndefined();
+    expect(p.seed).toBeUndefined();
+  });
+
+  it('once settled, payloads pass through verbatim (history + verification)', () => {
+    const full = { hands: { a: [{ symbol: '7' }] }, seedReveal: 'seed', seats: [] };
+    const out = toSpectatorEvent(rec('SESSION_STARTED', full), true);
+    expect(out.payload).toEqual(full);
   });
 });

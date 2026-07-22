@@ -524,7 +524,11 @@
         settled: false,
         playing: false,
         timer: null,
-        poller: null,
+        // delayed-live (arena parity): auto-air the last FINISHED game, advancing
+        // as new ones settle. There is no live table here — the feed is replay-only.
+        mode: 'delayed',
+        autoAir: true,
+        airedId: null,
       };
 
       // ---- rendering helpers ----------------------------------------------
@@ -706,7 +710,9 @@
       }
 
       async function loadSessions() {
-        const { sessions } = await get('/spectate/sessions?limit=50');
+        const data = await get('/spectate/sessions?limit=50');
+        if (data.mode) state.mode = data.mode;
+        const sessions = data.sessions;
         // Only rebuild when something actually changed: the poll runs every couple
         // of seconds, and replacing rows under the cursor swallows clicks.
         const signature = sessions.map((s) => s.sessionId + s.status + s.eventCount).join('|');
@@ -716,28 +722,26 @@
 
         // Header ticker — derived from the same public list, no extra endpoint.
         const agents = new Set();
-        let moves = 0, liveCount = 0;
+        let moves = 0;
         for (const s of sessions) {
           s.seats.forEach((x) => agents.add(x.agentId));
           moves += s.eventCount;
-          if (s.status === 'in_progress') liveCount++;
         }
         $('tk-agents').textContent = num(agents.size);
         $('tk-tables').textContent = num(sessions.length);
         $('tk-moves').textContent = num(moves);
-        $('live-count').textContent = liveCount ? liveCount + ' live' : 'idle';
-        $('live-count').className = 'status' + (liveCount ? '' : ' off');
+        // Finished sessions only — a replay feed, never a live table (sub-spec 10).
+        $('live-count').textContent = state.mode === 'archive' ? 'archive' : 'delayed-live';
+        $('live-count').className = 'status';
 
         const tb = $('session-rows');
         tb.innerHTML = '';
         $('no-sessions').hidden = sessions.length > 0;
         for (const s of sessions) {
           const tr = document.createElement('tr');
-          const live = s.status === 'in_progress';
           tr.innerHTML =
             '<td class="agent">' + s.seats.map((x) => x.displayName).join(' · ') + '</td>' +
-            '<td><span class="badge ' + (live ? 'live' : '') + '">' +
-              (live ? 'live' : s.status) + '</span></td>' +
+            '<td><span class="badge">replay</span></td>' +
             '<td class="num dim">' + s.seats.length + '/' + s.tableSize + '</td>' +
             '<td class="num">' + s.eventCount + '</td>' +
             '<td>' + (s.winnerAgentId
@@ -746,10 +750,28 @@
           tr.onclick = () => openSession(s.sessionId);
           tb.appendChild(tr);
         }
+
+        maybeAutoAir();
       }
 
-      async function openSession(sessionId) {
+      // Delayed-live (arena parity): keep the newest FINISHED game on screen,
+      // advancing to each newer one as it settles. There is no live table in this
+      // list to expose. A manual pick pauses airing until the viewer returns.
+      function maybeAutoAir() {
+        if (state.mode !== 'delayed' || !state.autoAir || state.view !== 'watch') return;
+        const newest = state.sessions[0];
+        if (!newest || newest.sessionId === state.airedId) return;
+        // Advance only when idle on the picker or already watching the aired game.
+        if (state.sessionId && state.sessionId !== state.airedId) return;
+        state.airedId = newest.sessionId;
+        openSession(newest.sessionId, { auto: true });
+      }
+
+      async function openSession(sessionId, opts) {
+        const auto = !!(opts && opts.auto);
         stopTimers();
+        // A manual pick pauses delayed-live airing; an aired game keeps it running.
+        state.autoAir = auto;
         state.sessionId = sessionId;
         state.events = [];
         state.cursor = 0;
@@ -757,54 +779,41 @@
         $('viewer').hidden = false;
         $('viewer-id').textContent = sessionId;
 
-        state.summary = await get('/spectate/session/' + sessionId);
-        $('viewer-title').textContent = state.summary.seats.map((x) => x.displayName).join('  vs  ');
-        const live = state.summary.status === 'in_progress';
-        $('viewer-status').innerHTML = '<span class="badge ' + (live ? 'live' : '') + '">' +
-          (live ? 'live' : state.summary.status) + '</span>';
-        $('board-mode').textContent = live ? 'live table' : 'replay';
+        let summary, data;
+        try {
+          summary = await get('/spectate/session/' + sessionId);
+          data = await get('/spectate/session/' + sessionId + '/events');
+        } catch (err) {
+          // The public feed serves FINISHED games only. Anything else — a table
+          // still in progress (409) or a bad id (404) — is simply not viewable, by
+          // design, so a scraper can never read a live table. Return to the list.
+          state.sessionId = null;
+          $('viewer').hidden = true;
+          $('picker').hidden = false;
+          return;
+        }
 
-        const data = await get('/spectate/session/' + sessionId + '/events');
+        state.summary = summary;
         state.events = data.events;
         state.settled = data.settled;
-        $('board-meta').textContent = state.summary.competitionId || '';
+        $('viewer-title').textContent = summary.seats.map((x) => x.displayName).join('  vs  ');
+        $('viewer-status').innerHTML = '<span class="badge">replay</span>';
+        $('board-mode').textContent = auto ? 'delayed-live · last finished game' : 'replay';
+        $('board-meta').textContent = summary.competitionId || '';
 
-        if (state.settled) {
-          // Replay mode: full log in hand, scrub through it.
-          $('replay-controls').hidden = false;
-          $('live-note').hidden = false;
-          $('live-note').innerHTML =
-            'finished table — full log released. seed <code>' +
-            (state.summary.seedReveal || '').slice(0, 24) + '…</code> matches the commitment published before play.';
-          $('scrub').max = String(state.events.length);
-          setCursor(state.events.length);
+        // Every viewable session is a finished replay — the full log is in hand.
+        $('replay-controls').hidden = false;
+        $('live-note').hidden = false;
+        $('live-note').innerHTML =
+          'finished table — full log released. seed <code>' +
+          (summary.seedReveal || '').slice(0, 24) + '…</code> matches the commitment published before play.';
+        $('scrub').max = String(state.events.length);
+        if (auto) {
+          setCursor(0);
+          startPlayback(); // air it from the top, like a broadcast
         } else {
-          // Live mode: same renderer, events arrive by polling.
-          $('replay-controls').hidden = true;
-          $('live-note').hidden = false;
-          $('live-note').textContent =
-            'live table — hands stay hidden until the game ends, so nobody can watch their way to an advantage.';
           setCursor(state.events.length);
-          state.poller = setInterval(pollLive, 700);
         }
-      }
-
-      async function pollLive() {
-        if (!state.sessionId) return;
-        try {
-          const since = state.events.length ? state.events[state.events.length - 1].seq : -1;
-          const data = await get('/spectate/session/' + state.sessionId + '/events?since=' + since);
-          if (data.events.length) {
-            state.events = state.events.concat(data.events);
-            setCursor(state.events.length);
-          }
-          if (data.settled) {
-            // The table just finished: reload so the full log + seed are shown.
-            clearInterval(state.poller);
-            state.poller = null;
-            openSession(state.sessionId);
-          }
-        } catch (err) { $('conn').textContent = 'connection lost'; }
       }
 
       function setCursor(n) {
@@ -816,14 +825,13 @@
 
       function stopTimers() {
         if (state.timer) { clearInterval(state.timer); state.timer = null; }
-        if (state.poller) { clearInterval(state.poller); state.poller = null; }
         state.playing = false;
         $('playpause').textContent = '▸ play';
       }
 
       // ---- replay transport ------------------------------------------------
-      $('playpause').onclick = () => {
-        if (state.playing) { stopTimers(); return; }
+      function startPlayback() {
+        if (state.playing) return;
         if (state.cursor >= state.events.length) setCursor(0);
         state.playing = true;
         $('playpause').textContent = '❚❚ pause';
@@ -832,6 +840,10 @@
           setCursor(state.cursor + 1);
         };
         state.timer = setInterval(step, Number($('speed').value));
+      }
+      $('playpause').onclick = () => {
+        if (state.playing) { stopTimers(); return; }
+        startPlayback();
       };
       $('speed').onchange = () => {
         if (!state.playing) return;
@@ -845,6 +857,9 @@
       $('back').onclick = () => {
         stopTimers();
         state.sessionId = null;
+        // Returning to the list resumes delayed-live airing from the newest game.
+        state.autoAir = true;
+        state.airedId = null;
         $('viewer').hidden = true;
         $('picker').hidden = false;
         state.sessionsSignature = ''; // force a redraw on return
@@ -959,8 +974,10 @@
         btn.onclick = () => { if (state.view !== btn.dataset.view) { stopTimers(); show(btn.dataset.view); } };
       }
 
-      // Refresh the table list periodically while browsing.
-      setInterval(() => { if (state.view === 'watch' && !state.sessionId) loadSessions().catch(() => {}); }, 2500);
+      // Refresh the finished-games list periodically. Runs even with the viewer
+      // open so delayed-live can advance to a newer game as it settles; the picker
+      // rebuild is hidden underneath, and manual viewing is left untouched.
+      setInterval(() => { if (state.view === 'watch') loadSessions().catch(() => {}); }, 2500);
       show('watch');
     </script>
   </body>

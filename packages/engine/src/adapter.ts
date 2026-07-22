@@ -47,6 +47,23 @@ const DEFAULT_TIME_LIMIT_MS = 120_000;
 const DEFAULT_RAINBOW_STORM_CHANCE = 0.00001;
 const RAINBOW_STORM_DRAW_COUNT = 6;
 
+/** How many recent public events {@link GameSession.getPublicView} carries. */
+const RECENT_VIEW_EVENT_LIMIT = 12;
+
+/**
+ * Event types safe to surface, payload-verbatim, in the live agent view: each is
+ * played face-up or emitted with no hidden card faces. Deliberately excludes
+ * `SESSION_STARTED` (dealt hands), `CARD_DRAWN` (drawn faces) and `GAME_ENDED`
+ * (final hands) — a live view must never carry those. An opponent's draw is
+ * observable only as a higher hand count, never as faces.
+ */
+const PUBLIC_VIEW_EVENT_TYPES: ReadonlySet<SessionEventType> = new Set([
+  'CARD_PLAYED',
+  'TURN_PASSED',
+  'TURN_CHANGED',
+  'RAINBOW_STORM',
+]);
+
 export interface GameSessionOptions {
   /** Stable session id. Defaults to a generated `sess_...`. */
   sessionId?: string;
@@ -62,6 +79,38 @@ export interface GameSessionOptions {
   rainbowStormChance?: number;
   /** Injected storm trigger, overriding the seed-derived / random default (tests). */
   stormRoll?: () => boolean;
+}
+
+/** A seat as any player at the table can observe it: identity + card count only. */
+export interface PublicSeatView {
+  agentId: string;
+  handCount: number;
+}
+
+/**
+ * The partial-information projection an agent is entitled to while a session is
+ * live (sub-spec 10, T32): everything a player seated at the table can legally
+ * observe — the public board and every seat's hand *count* — plus its OWN hand,
+ * the one hand this view may reveal. It never carries another seat's card faces
+ * or the commit-reveal seed. Assembled here because the engine is the sole state
+ * authority (NFR-2); the API forwards it verbatim on `pending-actions`.
+ */
+export interface PublicGameView {
+  /** Whose turn it is, or null once the session has ended. */
+  currentAgentId: string | null;
+  /** Convenience: `currentAgentId === agentId`. */
+  yourTurn: boolean;
+  direction: PlayDirection;
+  /** Top of the discard pile (a wild reports `color: null`; see `currentColor`). */
+  discardTop: PublicCard;
+  /** The colour now in force — a wild-player's chosen colour, else the card's own. */
+  currentColor: ColorName | null;
+  /** Every seat with its hand *count* only; faces are never included. */
+  seats: PublicSeatView[];
+  /** The caller's own hand — the only hand this view reveals. */
+  yourHand: PublicCard[];
+  /** Recent inherently-public events (see {@link PUBLIC_VIEW_EVENT_TYPES}). */
+  recentEvents: SessionEvent[];
 }
 
 interface Snapshot {
@@ -448,6 +497,32 @@ export class GameSession {
   getRecords(): SessionEventRecord[] {
     this.checkTimeout();
     return this.store.readAll(this.sessionId);
+  }
+
+  /**
+   * The partial-information view for `agentId` (§5, sub-spec 10 T32) — what an
+   * opponent seated at the table may observe, plus the caller's own hand. Used by
+   * `pending-actions` so an agent can choose a move without the spectator API ever
+   * exposing a live table. Never leaks another seat's faces or the seed.
+   */
+  getPublicView(agentId: string): PublicGameView {
+    this.checkTimeout(); // resolve the wall clock before snapshotting state
+    const top = this.game.discardedCard;
+    const currentColor: ColorName | null =
+      top.color === undefined ? null : colorToName(top.color);
+    const current = this.currentAgentId;
+    return {
+      currentAgentId: current,
+      yourTurn: current === agentId,
+      direction: this.direction(),
+      discardTop: cardToPublic(top),
+      currentColor,
+      seats: this.seatAgentIds.map((id) => ({ agentId: id, handCount: this.handOf(id).length })),
+      yourHand: this.handOf(agentId).map(cardToPublic),
+      recentEvents: this.events
+        .filter((e) => PUBLIC_VIEW_EVENT_TYPES.has(e.type))
+        .slice(-RECENT_VIEW_EVENT_LIMIT),
+    };
   }
 
   private publicHandsInternal(): Record<string, PublicCard[]> {
