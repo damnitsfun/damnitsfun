@@ -188,7 +188,7 @@
       }
       /* play direction — a curved arrow that hugs the oval (CW / CCW) */
       .dir-arc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-      .dir-arc path { fill: none; stroke: rgba(111,214,143,.5); stroke-width: 2; stroke-linecap: round; }
+      .dir-arc path { fill: none; stroke: rgba(111,214,143,.5); stroke-width: 2.5; stroke-linecap: round; }
       .dir-arc polygon { fill: rgba(111,214,143,.72); }
 
       /* centre: draw pile · direction chip · discard pile */
@@ -662,7 +662,10 @@
         if (!w || !h) return;
         svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
         const cx = w / 2, cy = h / 2;
-        const rx = Math.max(60, w / 2 - 78), ry = Math.max(50, h / 2 - 60);
+        // Sized to a fraction of the oval (its border sits at inset 44px 64px), so
+        // the direction arrow reads as a bold ring concentric with the table.
+        const F = 0.75;
+        const rx = Math.max(50, (w / 2 - 64) * F), ry = Math.max(40, (h / 2 - 44) * F);
         const gap = 34 * Math.PI / 180, steps = 100;
         const start = -Math.PI / 2 + gap, end = -Math.PI / 2 + 2 * Math.PI - gap;
         const pts = [];
@@ -673,7 +676,7 @@
         if (!cw) pts.reverse();
         const d = 'M ' + pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L ');
         const [ex, ey] = pts[pts.length - 1], [bx, by] = pts[pts.length - 4];
-        const ang = Math.atan2(ey - by, ex - bx), len = 16;
+        const ang = Math.atan2(ey - by, ex - bx), len = 20;
         const head = [
           [ex, ey],
           [ex + len * Math.cos(ang + Math.PI - 0.42), ey + len * Math.sin(ang + Math.PI - 0.42)],
