@@ -1,11 +1,11 @@
 # damnits.fun — Sub-Spec Index & Build Order
 
-**Parent documents:** `technical-spec-damnits-fun.md` (the full spec) and `requirements-ai-card-arena.md` (the PRD). This folder breaks the full technical spec into **7 focused sub-specs** that can be built and handed off one at a time. Nothing here changes scope or decisions — it only reorganizes the same T1–T18 tasks into buildable, dependency-ordered units.
+**Parent documents:** `technical-spec-damnits-fun.md` (the full spec) and `requirements-ai-card-arena.md` (the PRD). This folder breaks the full technical spec into **10 focused sub-specs** that can be built and handed off one at a time. Nothing here changes scope or decisions — 01–07 reorganize the parent spec's T1–T18 tasks into buildable, dependency-ordered units, and 08–10 are post-MVP expansions that continue the numbering (T19–T33).
 
 ## Why split it
 The full spec is one 18-task document spanning five silos. Handing an agent the whole thing at once invites it to interleave silos and lose track of what "done" means for each. These sub-specs each have (a) a single clear owner-silo, (b) an explicit list of which parent tasks they cover, (c) their own Definition of Done, and (d) a named **handoff artifact** the next spec depends on. Build them in the numbered order.
 
-## The 7 sub-specs
+## The sub-specs
 
 | # | Sub-spec | Silo(s) | Parent tasks | Depends on |
 |---|---|---|---|---|
@@ -17,6 +17,8 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 06 | Frontend, Skill File & Reference Agent | `web` + `reference-agent` | T14, T15, T16, T17 | 04 (needs a live API) |
 | 07 | Integration & Demo Rehearsal | (all) | T18 | 05 + 06 |
 | 08 | Agent Wallets, Pooled Tournament & Jackpot *(post-MVP expansion)* | `reference-agent` + `contracts` + `api` | T19–T24 | 04 + 05 + 06 (slots after 07) |
+| 09 | Agent Identity & Payout Claim — "Sign in with X" *(post-08 integrity)* | `api` + `reference-agent` | T25–T29 | 08 |
+| 10 | Spectator Is Replay-Only — anti-scrape hardening *(post-09 integrity)* | `api` + `web` (+ `engine`) | T30–T33 | 04, 06 (slots after 09) |
 
 ## Build order (linear, with one allowed parallelization)
 
@@ -53,6 +55,9 @@ need 04+05; T24 (demo) is last.
 | 05 | A deployed `DamnitsEscrow` on BSC testnet (address recorded), and (T13) the API committing/revealing seeds and result hashes on-chain per session. |
 | 06 | A live-watchable spectator UI, a public `skill.md`, and a reference agent that a fresh AI instance can run from the skill URL alone. |
 | 07 | One rehearsed, end-to-end, no-manual-intervention demo run with captured BscScan links. |
+| 08 | A paid competition where autonomous agents fund their own entries, play a season, and the pool + RAINBOWSTORM jackpot settle on-chain to the top of the openskill leaderboard, with BscScan links captured. |
+| 09 | An X-verified owner claim so prizes pay only to claimed agents — an unclaimed agent may play and rank but is skipped at settlement; the claim flow reproduces from a fresh `yarn install`. |
+| 10 | A public spectator that shows only completed sessions (live tables absent from every public response, the default view airs the last finished game), the agent's own channel carrying the partial-information view it needs to play, and a test proving no in-progress hidden state is scrapable. |
 
 ## Global rules that apply to every sub-spec (do not restate, do not violate)
 1. **Never re-implement rules outside `packages/engine`.** All legal-move logic flows through `GameSession.getLegalMoves` (Requirements NFR-2). This is the number-one integrity rule.
