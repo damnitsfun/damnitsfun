@@ -194,7 +194,7 @@
       /* centre: draw pile · direction chip · discard pile */
       .pile {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-        display: flex; align-items: flex-end; gap: 20px; z-index: 2;
+        display: flex; align-items: flex-end; gap: 34px; z-index: 2;
       }
       .pile-col { display: flex; flex-direction: column; align-items: center; gap: 7px; }
       .pile-k { font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #7fa590; }
@@ -207,11 +207,6 @@
         transform: rotate(-9deg) translate(-5px, 3px);
         background: #8f3838; border: 1px solid #2a2a24;
       }
-      .dir-chip {
-        display: flex; flex-direction: column; align-items: center; gap: 2px;
-        color: #6fd68f; font-size: 10px; letter-spacing: 1px; margin-bottom: 20px;
-      }
-      .dir-chip .g { font-size: 16px; line-height: 1; }
 
       /* seats float at the edges of the oval */
       .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
@@ -409,10 +404,6 @@
                     <div class="pile-col">
                       <div class="pile-k">draw</div>
                       <div id="draw-pile"></div>
-                    </div>
-                    <div class="dir-chip" id="dir-chip">
-                      <span class="g" id="dir-glyph">↻</span>
-                      <span id="dir-text">CW</span>
                     </div>
                     <div class="pile-col">
                       <div class="pile-k">discard</div>
@@ -703,11 +694,9 @@
         }
         $('discard-n').textContent = s.discard ? String(played + 1) : '';
 
-        // play direction — chip + the curved arrow inside the oval
+        // play direction — the curved arrow inside the oval carries it now
         const cw = s.direction !== 'ccw';
         state.dirCw = cw;
-        $('dir-glyph').textContent = cw ? '↻' : '↺';
-        $('dir-text').textContent = cw ? 'CW' : 'CCW';
         drawDirectionArc(cw);
 
         // colour in force, shown as a badge in the board bar
