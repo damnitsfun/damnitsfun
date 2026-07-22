@@ -657,8 +657,10 @@
         // the direction arrow reads as a bold ring concentric with the table.
         const F = 0.75;
         const rx = Math.max(50, (w / 2 - 64) * F), ry = Math.max(40, (h / 2 - 44) * F);
-        const gap = 34 * Math.PI / 180, steps = 100;
-        const start = -Math.PI / 2 + gap, end = -Math.PI / 2 + 2 * Math.PI - gap;
+        // A half-turn arc across the LOWER half of the table: both ends sit on the
+        // horizontal midline (3 o'clock → bottom → 9 o'clock), clear of the corner
+        // seats. Forward = clockwise; reversed for CCW so the arrowhead flips side.
+        const steps = 80, start = 0, end = Math.PI;
         const pts = [];
         for (let k = 0; k <= steps; k++) {
           const t = start + (end - start) * (k / steps);
