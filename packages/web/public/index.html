@@ -177,34 +177,53 @@
       @media (max-width: 900px) { .board-split { grid-template-columns: 1fr; } }
       .felt {
         background:
-          radial-gradient(circle at 50% 45%, var(--felt) 0%, var(--felt-2) 78%);
-        padding: 20px; position: relative; min-height: 430px;
+          radial-gradient(circle at 50% 48%, var(--felt) 0%, var(--felt-2) 82%);
+        position: relative; min-height: 540px; overflow: hidden;
       }
+      /* the table itself — one large oval */
       .felt::before {
-        content: ""; position: absolute; inset: 26px;
-        border: 1px solid rgba(255,255,255,.07); border-radius: 46%;
+        content: ""; position: absolute; inset: 44px 64px;
+        border: 1px solid rgba(255,255,255,.09); border-radius: 50%;
         pointer-events: none;
       }
-      .center-hud {
-        position: relative; display: flex; justify-content: center; gap: 0;
-        margin: 8px 0 14px;
+      /* play direction — a curved arrow that hugs the oval (CW / CCW) */
+      .dir-arc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+      .dir-arc path { fill: none; stroke: rgba(111,214,143,.5); stroke-width: 2; stroke-linecap: round; }
+      .dir-arc polygon { fill: rgba(111,214,143,.72); }
+
+      /* centre: draw pile · direction chip · discard pile */
+      .pile {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        display: flex; align-items: flex-end; gap: 20px; z-index: 2;
       }
-      .hud {
-        display: flex; align-items: stretch; border: 1px solid var(--felt-line);
-        background: rgba(0,0,0,.35);
+      .pile-col { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+      .pile-k { font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #7fa590; }
+      .pile-n { font-size: 12px; font-weight: 700; color: #eef4ef; }
+      .discardwrap { position: relative; }
+      /* the played card sits on top; its backer peeks out from behind */
+      .discardwrap .card { position: relative; z-index: 1; }
+      .discardwrap::before {
+        content: ""; position: absolute; inset: 0; z-index: 0;
+        transform: rotate(-9deg) translate(-5px, 3px);
+        background: #8f3838; border: 1px solid #2a2a24;
       }
-      .hud .cell { padding: 8px 16px; border-right: 1px solid var(--felt-line); text-align: center; }
-      .hud .cell:last-child { border-right: 0; }
-      .hud .k { font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase; color: #7fa590; }
-      .hud .v { color: #eef4ef; font-weight: 700; margin-top: 3px; }
-      .seats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; position: relative; }
-      @media (max-width: 640px) { .seats { grid-template-columns: 1fr; } }
+      .dir-chip {
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+        color: #6fd68f; font-size: 10px; letter-spacing: 1px; margin-bottom: 20px;
+      }
+      .dir-chip .g { font-size: 16px; line-height: 1; }
+
+      /* seats float at the edges of the oval */
+      .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
       .seat {
-        border: 1px solid var(--felt-line); background: rgba(255,255,255,.055);
+        position: absolute; width: 236px; pointer-events: auto;
+        border: 1px solid var(--felt-line); background: rgba(9,20,14,.74);
         padding: 10px 11px; color: #e8efe9;
       }
-      .seat.active { border-color: #6fd68f; background: rgba(111,214,143,.1); }
-      .seat.winner { border-color: #e2c05a; background: rgba(226,192,90,.12); }
+      .seat.tl { top: 16px; left: 16px; } .seat.tr { top: 16px; right: 16px; }
+      .seat.br { bottom: 16px; right: 16px; } .seat.bl { bottom: 16px; left: 16px; }
+      .seat.active { border-color: #6fd68f; background: rgba(20,48,31,.9); }
+      .seat.winner { border-color: #e2c05a; background: rgba(48,40,16,.9); }
       .seat .top { display: flex; align-items: center; gap: 8px; }
       .seat .nm { font-weight: 700; }
       .seat .cnt { margin-left: auto; font-size: 10.5px; color: #9dbfab; letter-spacing: .5px; }
@@ -214,6 +233,25 @@
         background: #6fd68f; color: #10301f; padding: 1px 5px; font-weight: 700;
       }
       .seat .tag.win { background: #e2c05a; }
+      .seat .dealer {
+        margin-left: 6px; width: 17px; height: 17px; border-radius: 50%;
+        background: #eef4ef; color: #10301f; font-size: 9px; font-weight: 800;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      /* colour-in-force badge in the board bar */
+      .cbadge {
+        display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px;
+        border: 1px solid rgba(255,255,255,.28); font-weight: 700; letter-spacing: 1px;
+      }
+      .cbadge i { width: 8px; height: 8px; display: inline-block; }
+      /* narrow screens: drop the oval, stack the seats */
+      @media (max-width: 720px) {
+        .felt { min-height: 0; padding: 16px; overflow: visible; }
+        .felt::before, .dir-arc { display: none; }
+        .pile { position: static; transform: none; justify-content: center; margin: 0 0 14px; }
+        .seats { position: static; }
+        .seat { position: static; width: auto; margin-bottom: 8px; inset: auto; }
+      }
       .hand { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 9px; min-height: 34px; }
 
       /* ---- cards: square, hairline, paper-faced ---- */
@@ -358,26 +396,28 @@
           <div class="board">
             <div class="board-bar">
               <span class="on">▪</span>
-              <span id="board-mode">live table</span>
+              <span id="board-mode">replay</span>
+              <span class="cbadge" id="board-color" hidden><i></i><span id="board-color-name"></span></span>
+              <span id="board-event" class="dim"></span>
               <span class="r" id="board-meta"></span>
             </div>
             <div class="board-split">
               <div>
                 <div class="felt">
-                  <div class="center-hud">
-                    <div class="hud">
-                      <div class="cell">
-                        <div class="k">in play</div>
-                        <div id="discard" style="margin-top:6px"></div>
-                      </div>
-                      <div class="cell">
-                        <div class="k">turn</div>
-                        <div class="v" id="turn">—</div>
-                      </div>
-                      <div class="cell">
-                        <div class="k">order</div>
-                        <div class="v" id="direction">—</div>
-                      </div>
+                  <svg class="dir-arc" id="dir-arc" preserveAspectRatio="none" aria-hidden="true"></svg>
+                  <div class="pile">
+                    <div class="pile-col">
+                      <div class="pile-k">draw</div>
+                      <div id="draw-pile"></div>
+                    </div>
+                    <div class="dir-chip" id="dir-chip">
+                      <span class="g" id="dir-glyph">↻</span>
+                      <span id="dir-text">CW</span>
+                    </div>
+                    <div class="pile-col">
+                      <div class="pile-k">discard</div>
+                      <div class="discardwrap"><div id="discard"></div></div>
+                      <div class="pile-n" id="discard-n"></div>
                     </div>
                   </div>
                   <div class="seats" id="seats"></div>
@@ -509,6 +549,7 @@
       };
       const label = (sym) => CARD_NAME[sym] || sym;
       const colourClass = (c) => (c ? c : 'any');
+      const COLOUR_HEX = { red: '#c2503f', blue: '#3a6ea8', green: '#3d8552', yellow: '#c99a25' };
       const num = (n) => n.toLocaleString('en-US');
 
       const state = {
@@ -554,13 +595,14 @@
         const s = {
           seats: [], counts: {}, hands: null, discard: null,
           current: null, direction: 'cw', ended: false, winner: null,
-          finalHands: null, names: {},
+          finalHands: null, names: {}, firstAgentId: null,
         };
         for (let i = 0; i < upTo && i < events.length; i++) {
           const ev = events[i], p = ev.payload || {};
           if (ev.type === 'SESSION_STARTED') {
             s.seats = (p.seats || []).map((x) => x.agentId);
             s.current = p.firstAgentId;
+            s.firstAgentId = p.firstAgentId;
             s.discard = p.discard;
             if (p.hands) {                       // settled: full information
               s.hands = {};
@@ -595,26 +637,99 @@
         return s;
       }
 
+      // Seat anchor slots around the oval. ≤4 seats sit at the corners (clockwise
+      // from top-left); 5–6 distribute evenly along the ellipse.
+      function seatSlots(n) {
+        const corners = [{ cls: 'tl' }, { cls: 'tr' }, { cls: 'br' }, { cls: 'bl' }];
+        if (n <= 4) {
+          const pick = { 1: [0], 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] }[n] || [0, 1, 2, 3];
+          return pick.map((i) => corners[i]);
+        }
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const a = (-90 + (i * 360) / n) * Math.PI / 180;
+          out.push({ left: (50 + 40 * Math.cos(a)).toFixed(1) + '%', top: (50 + 43 * Math.sin(a)).toFixed(1) + '%' });
+        }
+        return out;
+      }
+
+      // Draw the play-direction arrow: a ~300° arc hugging the oval, arrowhead at
+      // the leading end. CW traces increasing screen-angle; CCW is the reverse.
+      function drawDirectionArc(cw) {
+        const svg = $('dir-arc');
+        const felt = svg.parentElement;
+        const w = felt.clientWidth, h = felt.clientHeight;
+        if (!w || !h) return;
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        const cx = w / 2, cy = h / 2;
+        const rx = Math.max(60, w / 2 - 78), ry = Math.max(50, h / 2 - 60);
+        const gap = 34 * Math.PI / 180, steps = 100;
+        const start = -Math.PI / 2 + gap, end = -Math.PI / 2 + 2 * Math.PI - gap;
+        const pts = [];
+        for (let k = 0; k <= steps; k++) {
+          const t = start + (end - start) * (k / steps);
+          pts.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
+        }
+        if (!cw) pts.reverse();
+        const d = 'M ' + pts.map((p) => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L ');
+        const [ex, ey] = pts[pts.length - 1], [bx, by] = pts[pts.length - 4];
+        const ang = Math.atan2(ey - by, ex - bx), len = 16;
+        const head = [
+          [ex, ey],
+          [ex + len * Math.cos(ang + Math.PI - 0.42), ey + len * Math.sin(ang + Math.PI - 0.42)],
+          [ex + len * Math.cos(ang + Math.PI + 0.42), ey + len * Math.sin(ang + Math.PI + 0.42)],
+        ];
+        svg.innerHTML =
+          '<path d="' + d + '"/>' +
+          '<polygon points="' + head.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '"/>';
+      }
+
       function renderBoard() {
         const s = foldEvents(state.events, state.cursor);
         const names = {};
         (state.summary ? state.summary.seats : []).forEach((x) => { names[x.agentId] = x.displayName; });
 
-        // in-play card
+        // centre piles: draw (back) + discard (top card, with a peeking backer)
         $('discard').innerHTML = '';
         $('discard').appendChild(s.discard ? cardEl(s.discard, true) : backEl('', true));
+        $('draw-pile').innerHTML = '';
+        $('draw-pile').appendChild(backEl('', true));
+        let played = 0;
+        for (let i = 0; i < state.cursor && i < state.events.length; i++) {
+          if (state.events[i].type === 'CARD_PLAYED') played++;
+        }
+        $('discard-n').textContent = s.discard ? String(played + 1) : '';
 
-        $('turn').textContent = s.ended
-          ? (s.winner ? (names[s.winner] || s.winner) + ' wins' : 'finished')
-          : (names[s.current] || s.current || '—');
-        $('direction').textContent = s.direction === 'cw' ? 'clockwise ↻' : 'anticlockwise ↺';
+        // play direction — chip + the curved arrow inside the oval
+        const cw = s.direction !== 'ccw';
+        state.dirCw = cw;
+        $('dir-glyph').textContent = cw ? '↻' : '↺';
+        $('dir-text').textContent = cw ? 'CW' : 'CCW';
+        drawDirectionArc(cw);
+
+        // colour in force, shown as a badge in the board bar
+        const colour = s.discard && s.discard.color;
+        const cb = $('board-color');
+        if (colour) {
+          cb.hidden = false;
+          $('board-color-name').textContent = colour.toUpperCase();
+          cb.querySelector('i').style.background = COLOUR_HEX[colour] || '#ccc';
+        } else {
+          cb.hidden = true;
+        }
+        $('board-event').textContent = state.events.length
+          ? 'event ' + state.cursor + ' / ' + state.events.length : '';
 
         const seatsEl = $('seats');
         seatsEl.innerHTML = '';
         const order = s.seats.length ? s.seats : (state.summary ? state.summary.seats.map((x) => x.agentId) : []);
-        for (const agentId of order) {
+        const slots = seatSlots(order.length);
+        order.forEach((agentId, seatIdx) => {
           const div = document.createElement('div');
           div.className = 'seat' + (agentId === s.current ? ' active' : '') + (agentId === s.winner ? ' winner' : '');
+          const slot = slots[seatIdx] || {};
+          if (slot.cls) div.classList.add(slot.cls);
+          else { div.style.left = slot.left; div.style.top = slot.top; div.style.transform = 'translate(-50%,-50%)'; }
           const count = s.counts[agentId] != null ? s.counts[agentId] : 0;
 
           const top = document.createElement('div');
@@ -638,6 +753,13 @@
           cnt.className = 'cnt';
           cnt.textContent = count + (count === 1 ? ' card' : ' cards');
           top.appendChild(cnt);
+          if (agentId === s.firstAgentId) {
+            const dealer = document.createElement('span');
+            dealer.className = 'dealer';
+            dealer.textContent = 'S';
+            dealer.title = 'starting player';
+            top.appendChild(dealer);
+          }
           div.appendChild(top);
 
           const id = document.createElement('div');
@@ -652,7 +774,7 @@
           else for (let i = 0; i < count; i++) hand.appendChild(backEl('?'));
           div.appendChild(hand);
           seatsEl.appendChild(div);
-        }
+        });
 
         renderFeed(names);
       }
@@ -972,6 +1094,14 @@
       }
       for (const btn of document.querySelectorAll('nav button')) {
         btn.onclick = () => { if (state.view !== btn.dataset.view) { stopTimers(); show(btn.dataset.view); } };
+      }
+
+      // Keep the direction arrow sized to the felt as the layout changes.
+      const feltEl = document.querySelector('.felt');
+      if (window.ResizeObserver && feltEl) {
+        new ResizeObserver(() => {
+          if (state.sessionId) drawDirectionArc(state.dirCw !== false);
+        }).observe(feltEl);
       }
 
       // Refresh the finished-games list periodically. Runs even with the viewer
