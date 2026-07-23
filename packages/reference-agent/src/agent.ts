@@ -1,11 +1,11 @@
-import { ArenaClient, ArenaError, type Competition, type PaymentRequired } from './client';
+import { BattlegroundClient, BattlegroundError, type Competition, type PaymentRequired } from './client';
 import { decide } from './decide';
 import { payTournamentEntry } from './wallet';
 
 /**
  * Reference autonomous agent (T17).
  *
- * Uses the public `/api/arena/*` contract and nothing else — no engine import,
+ * Uses the public `/api/battleground/*` contract and nothing else — no engine import,
  * no database access. It follows exactly the onboarding sequence documented in
  * `skill.md`, so running it is also the practical proof that the skill file is
  * complete and correct (T16).
@@ -72,7 +72,7 @@ function pickCompetition(competitions: Competition[], authorizedToPay: boolean):
  * from the agent's own wallet, then retried with the txHash.
  */
 async function ensureEntered(
-  client: ArenaClient,
+  client: BattlegroundClient,
   competition: Competition,
   options: AgentOptions,
   log: (m: string) => void,
@@ -87,14 +87,14 @@ async function ensureEntered(
     // This competition needs an X-verified owner (sub-spec 09). We cannot claim
     // ourselves — a human must open the claim URL and "Sign in with X" — so we
     // surface the link and stop.
-    if (error instanceof ArenaError && error.status === 403) {
+    if (error instanceof BattlegroundError && error.status === 403) {
       const claimUrl =
         (error.body as { claimUrl?: string }).claimUrl ?? (await client.claimStatus()).claimUrl;
       log(`[${options.displayName}] this competition requires a claimed agent. Ask your owner to claim you:`);
       log(`[${options.displayName}]   ${claimUrl}`);
       return false;
     }
-    if (!(error instanceof ArenaError) || error.status !== 402) throw error;
+    if (!(error instanceof BattlegroundError) || error.status !== 402) throw error;
 
     const pr = (error.body as { paymentRequired?: PaymentRequired }).paymentRequired;
     if (!options.payEntry || !options.walletPrivateKey || !pr?.contractAddress) {
@@ -122,8 +122,8 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
   const tables = options.tables ?? 1;
   const idleTimeoutMs = options.idleTimeoutMs ?? 120_000;
 
-  const client = new ArenaClient(
-    `${options.baseUrl.replace(/\/$/, '')}/api/arena`,
+  const client = new BattlegroundClient(
+    `${options.baseUrl.replace(/\/$/, '')}/api/battleground`,
     options.apiKey,
   );
 
@@ -173,13 +173,13 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
       sessionId = joined.sessionId;
       log(`[${options.displayName}] seated at ${sessionId} (${joined.status})`);
     } catch (error) {
-      if (error instanceof ArenaError && error.status === 409) {
+      if (error instanceof BattlegroundError && error.status === 409) {
         // Already seated somewhere — go straight to polling, per skill.md.
         const pending = await client.pendingActions();
         if (pending.length === 0) throw error;
         sessionId = pending[0]!.sessionId;
         log(`[${options.displayName}] already seated at ${sessionId}`);
-      } else if (error instanceof ArenaError && error.status === 402) {
+      } else if (error instanceof BattlegroundError && error.status === 402) {
         log(`[${options.displayName}] entry fee required and not authorised — stopping`);
         break;
       } else {
@@ -225,8 +225,8 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
         movesMade++;
         lastProgressAt = Date.now();
       } catch (error) {
-        if (error instanceof ArenaError && (error.status === 410 || error.status === 404)) break;
-        if (error instanceof ArenaError && error.status === 409) {
+        if (error instanceof BattlegroundError && (error.status === 410 || error.status === 404)) break;
+        if (error instanceof BattlegroundError && error.status === 409) {
           // Someone else moved first (or the arena auto-acted) — just re-poll.
           await sleep(pollMs);
           continue;
@@ -272,5 +272,5 @@ if (require.main === module) {
 }
 
 export { decide } from './decide';
-export { ArenaClient } from './client';
+export { BattlegroundClient, ArenaClient } from './client';
 export const REFERENCE_AGENT_PACKAGE = 'reference-agent';

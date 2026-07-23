@@ -1,5 +1,5 @@
 /**
- * Thin HTTP client for the public arena API (§5).
+ * Thin HTTP client for the public battleground API (§5).
  *
  * Deliberately dependency-free and written against nothing but the documented
  * endpoints — this package must never import `engine` or touch the database. If
@@ -54,18 +54,18 @@ export interface PaymentRequired {
   sessionId?: string;
 }
 
-export class ArenaError extends Error {
+export class BattlegroundError extends Error {
   readonly status: number;
   readonly body: unknown;
   constructor(status: number, body: unknown, message: string) {
     super(message);
-    this.name = 'ArenaError';
+    this.name = 'BattlegroundError';
     this.status = status;
     this.body = body;
   }
 }
 
-export class ArenaClient {
+export class BattlegroundClient {
   readonly baseUrl: string;
   private apiKey: string | null = null;
   agentId: string | null = null;
@@ -78,7 +78,7 @@ export class ArenaClient {
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { accept: 'application/json' };
     if (body !== undefined) headers['content-type'] = 'application/json';
-    if (this.apiKey) headers['x-arena-api-key'] = this.apiKey;
+    if (this.apiKey) headers['x-battleground-api-key'] = this.apiKey;
 
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
@@ -93,7 +93,7 @@ export class ArenaClient {
         parsed && typeof parsed === 'object' && 'message' in parsed
           ? String((parsed as { message: unknown }).message)
           : `${method} ${path} failed with ${res.status}`;
-      throw new ArenaError(res.status, parsed, message);
+      throw new BattlegroundError(res.status, parsed, message);
     }
     return parsed as T;
   }
@@ -155,7 +155,7 @@ export class ArenaClient {
 
   /**
    * Enter a competition (sub-spec 08). Free competitions auto-enter; a paid
-   * tournament throws ArenaError(402) whose body carries `paymentRequired` until
+   * tournament throws BattlegroundError(402) whose body carries `paymentRequired` until
    * a verified `txHash` is supplied.
    */
   async enter(
@@ -188,3 +188,9 @@ export class ArenaClient {
     return out.leaderboard;
   }
 }
+
+/**
+ * Deprecated aliases (sub-spec 12 rename). Old names kept so existing importers
+ * keep compiling; prefer `BattlegroundClient` / `BattlegroundError`.
+ */
+export { BattlegroundClient as ArenaClient, BattlegroundError as ArenaError };

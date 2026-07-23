@@ -322,7 +322,7 @@ export class Orchestrator {
 
   /** The X OAuth callback URI — must match the X app's registered redirect. */
   private xRedirectUri(): string {
-    return `${this.config.publicBaseUrl}/api/arena/auth/x/callback`;
+    return `${this.config.publicBaseUrl}/api/battleground/auth/x/callback`;
   }
 
   /** The current live (pending, unexpired) claim token for an agent, if any. */
@@ -554,7 +554,7 @@ export class Orchestrator {
   // ---- web accounts: Google login · connect X · claim (sub-spec 11) ----------
 
   private googleRedirectUri(): string {
-    return `${this.config.publicBaseUrl}/api/arena/auth/google/callback`;
+    return `${this.config.publicBaseUrl}/api/battleground/auth/google/callback`;
   }
 
   /** Start Google web sign-in → the URL to send the browser to. */

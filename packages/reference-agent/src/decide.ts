@@ -7,7 +7,7 @@ import type { ColorName, Move } from './client';
  * sufficient to play well enough, and to give agent authors a starting point.
  *
  * It only ever returns a move drawn from `legalMoves`; it never reasons about
- * what *would* be legal. That is the arena's job, and it is the single rule an
+ * what *would* be legal. That is the battleground's job, and it is the single rule an
  * agent author must not break.
  */
 
@@ -37,7 +37,7 @@ export function decide(legalMoves: Move[], context: DecideContext = {}): Decisio
     (m): m is Extract<Move, { type: 'playCard' }> => m.type === 'playCard',
   );
 
-  // Nothing playable: draw if we may, else pass. (The arena only ever offers one
+  // Nothing playable: draw if we may, else pass. (The battleground only ever offers one
   // of the two, so this is a single branch in practice.)
   if (plays.length === 0) {
     const draw = legalMoves.find((m) => m.type === 'drawCard');

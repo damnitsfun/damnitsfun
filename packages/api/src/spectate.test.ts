@@ -201,7 +201,9 @@ describe('spectator feed — replay-only (sub-spec 10 T30)', () => {
         method: 'GET',
         url: `/api/arena/spectate/sessions?competitionId=${competitionId}`,
       })
-    ).json() as { sessions: Array<{ sessionId: string; seats: unknown[] }> };
+    ).json() as {
+      sessions: Array<{ sessionId: string; seats: unknown[]; gameNumber: number | null }>;
+    };
     const listed = list.sessions.find((s) => s.sessionId === sessionId);
     expect(listed).toBeDefined();
     expect(listed!.seats).toHaveLength(4);
@@ -213,6 +215,10 @@ describe('spectator feed — replay-only (sub-spec 10 T30)', () => {
     expect(summary.seedReveal).toBeTruthy();
     expect(summary.resultHash).toMatch(/^[0-9a-f]{64}$/);
     expect(summary.winnerAgentId).toBeTruthy();
+    // Game number (sub-spec 12 D54): a finished session carries a 1-based index,
+    // and the list summary agrees with the single-session summary.
+    expect(summary.gameNumber).toBe(1);
+    expect(listed!.gameNumber).toBe(1);
 
     const body = (
       await app.inject({ method: 'GET', url: `/api/arena/spectate/session/${sessionId}/events` })

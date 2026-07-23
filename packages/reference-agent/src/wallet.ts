@@ -15,8 +15,8 @@ import { bscTestnet } from 'viem/chains';
  * This is the module that makes the old rule *"agents never hold keys"* FALSE —
  * on purpose, and only for the agent process. The agent owns a viem local
  * account, and when a tournament asks for a buy-in (HTTP 402) it signs
- * `payEntry(competitionId)` itself and hands the arena the resulting txHash. The
- * arena never sees this key; it only verifies the transaction on-chain.
+ * `payEntry(competitionId)` itself and hands the battleground the resulting txHash. The
+ * battleground never sees this key; it only verifies the transaction on-chain.
  *
  * Safety posture (spec "Safety boundary"): the key lives with the agent, under
  * its own operator's authorisation, and paying is opt-in (the runner only calls
@@ -36,7 +36,7 @@ const PAY_ENTRY_ABI = [
   },
 ] as const;
 
-/** Same string→bytes32 transform the arena and contract use to key competitions. */
+/** Same string→bytes32 transform the battleground and contract use to key competitions. */
 export function competitionIdToBytes32(competitionId: string): `0x${string}` {
   return keccak256(toHex(competitionId));
 }
@@ -45,7 +45,7 @@ function normalizeKey(privateKey: string): `0x${string}` {
   return (privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`) as `0x${string}`;
 }
 
-/** The address this agent pays from — its on-chain identity for the arena. */
+/** The address this agent pays from — its on-chain identity for the battleground. */
 export function walletAddress(privateKey: string): string {
   return privateKeyToAccount(normalizeKey(privateKey)).address;
 }
@@ -60,7 +60,7 @@ export interface PayEntryOptions {
 
 /**
  * Sign and send `payEntry(competitionId){value: amountWei}` from the agent's own
- * wallet, waiting for the receipt. Returns the txHash to hand back to the arena.
+ * wallet, waiting for the receipt. Returns the txHash to hand back to the battleground.
  */
 export async function payTournamentEntry(options: PayEntryOptions): Promise<string> {
   const account = privateKeyToAccount(normalizeKey(options.privateKey));

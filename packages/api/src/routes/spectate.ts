@@ -127,6 +127,13 @@ export interface SessionSummary {
   startedAt: string | null;
   endedAt: string | null;
   eventCount: number;
+  /**
+   * 1-based monotonic index of this game over ALL finished games, from the very
+   * first one played (sub-spec 12 D54). Stable per session; `null` while a
+   * session is not yet finished (only finished sessions are public anyway). The
+   * replay window shows this as "game #N".
+   */
+  gameNumber: number | null;
 }
 
 export interface ListSessionsOptions {
@@ -218,6 +225,22 @@ function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
     }
   ).n;
 
+  // A stable, 1-based index of this game among all finished games (D54): count the
+  // finished sessions ordered before this one (by creation, id as tiebreaker),
+  // inclusive. Only defined once this session is itself finished.
+  const createdAt = row.created_at as string;
+  const gameNumber = settled
+    ? (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM sessions
+              WHERE status IN ('settled','archived')
+                AND (created_at < ? OR (created_at = ? AND id <= ?))`,
+          )
+          .get(createdAt, createdAt, sessionId) as { n: number }
+      ).n
+    : null;
+
   return {
     sessionId,
     competitionId: row.competition_id as string,
@@ -234,6 +257,7 @@ function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
     startedAt: (row.started_at as string | null) ?? null,
     endedAt: (row.ended_at as string | null) ?? null,
     eventCount,
+    gameNumber,
   };
 }
 
