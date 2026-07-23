@@ -4,12 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository currently contains **only planning specs** — no code has been written yet (`packages/`, `skill.md`, etc. don't exist). It will become a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness.
+This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. Sub-specs **01–11 are built** (the `packages/`, `skill.md`, etc. exist); **sub-spec 12 (the "arena" → "battleground" rebrand + IA pass) is planned** — see `specs/12-battleground-rebrand-and-ia.md`.
+
+> **Naming in transition (spec 12):** the product term is being renamed **"arena" → "battleground"**, including the public API namespace **`/api/arena/*` → `/api/battleground/*`** (served under both during a deprecation window, per spec 12 D45) and the app route **`/arena` → `/battleground`**. Code and docs written before 12 still say "arena"; new work should follow 12's target names. The external design-reference site `arena.dev.fun` is **not** ours and is never renamed.
 
 Before writing any code, read:
 1. `specs/00-INDEX-and-build-order.md` — the build order and why it's fixed.
 2. `specs/technical-spec-damnits-fun.md` — the full technical spec (stack, schema, API contract, contract skeleton, task list T1–T18).
-3. The one numbered sub-spec (`specs/01-...` through `specs/07-...`) matching the silo currently being worked on.
+3. The one numbered sub-spec (`specs/01-...` through `specs/12-...`) matching the silo currently being worked on.
 
 **Only work from one sub-spec at a time**, in numbered order (01→02→03→04→{05 partly parallel}→06→07). Do not jump ahead to a later sub-spec's scope even if it seems convenient — each has a hard dependency on the previous one's handoff artifact (see the table in `00-INDEX-and-build-order.md`).
 
@@ -84,7 +86,7 @@ Key architectural facts worth internalizing before touching any layer:
 - **The `session_events` table is the single source of truth** for both the replay UI and the on-chain `resultHash` — it must be produced once (in the adapter/persistence layer) and never regenerated differently by two consumers.
 - **Commit-reveal, not VRF, is the fairness mechanism.** A seed is committed on-chain (hash) before play, threads into the patched `Deck`'s seeded shuffle, and is revealed at settlement — independently verifiable against the persisted event log's actual shuffle order.
 - **Table size is fixed at 4** and house rules are frozen for MVP (no stacking, no jump-in, no 7-0, auto-call last-card) — don't add configurability here unless a spec explicitly asks.
-- **The reference agent and frontend must only ever use the public `/api/arena/*` HTTP contract** (spec §5) — never import `packages/engine` directly or reach into the DB. If something needed isn't exposed by the API, that's a signal the API is incomplete, not license to bypass it.
+- **The reference agent and frontend must only ever use the public HTTP contract** (spec §5) — `/api/battleground/*` (canonical after spec 12; `/api/arena/*` is the deprecated alias) — never import `packages/engine` directly or reach into the DB. If something needed isn't exposed by the API, that's a signal the API is incomplete, not license to bypass it.
 
 ## Environment variables (spec §9)
 
