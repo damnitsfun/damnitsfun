@@ -1,6 +1,6 @@
 # Sub-Spec 11 — Homepage & Web Accounts (Google sign-in, X-mapped profile, claim-link agents)
 
-**Status:** draft (for review — not yet built). Adds the two things arena.dev.fun has but damnits does
+**Status:** built. Adds the two things arena.dev.fun has but damnits does
 not yet: a **marketing homepage** that is the product's front door (like `dev.fun/`), with the spectator
 **arena moved to `/arena` as "the app"**; and a **web account** that follows arena's exact mechanism —
 

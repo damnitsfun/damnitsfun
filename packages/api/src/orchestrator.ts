@@ -16,13 +16,16 @@ import { SqliteSessionEventStore } from './db/event-store';
 import {
   hashApiKey,
   hashesEqual,
+  newAccountId,
   newAgentId,
   newApiKey,
   newClaimToken,
   newOwnerId,
   newPaymentId,
   newSessionId,
+  newSessionToken,
 } from './ids';
+import { DISABLED_GOOGLE_OAUTH, type GoogleOAuthProvider } from './googleoauth';
 import { distributePool } from './payout';
 import { conservativeRating, defaultRating, placementsFrom, rateSession } from './ranking';
 import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
@@ -77,6 +80,30 @@ export interface OwnerRow {
   id: string;
   x_user_id: string;
   x_handle: string;
+}
+
+/** A web account (sub-spec 11) — a person signed in with Google. */
+export interface AccountRow {
+  id: string;
+  google_sub: string;
+  email: string | null;
+  name: string | null;
+  owner_id: string | null;
+  created_at: string;
+}
+
+/** What `GET /auth/session` returns. `account` is null when logged out. */
+export interface WebSessionInfo {
+  account: { id: string; email: string | null; name: string | null; memberSince: string } | null;
+  x: { handle: string; xUserId: string } | null;
+  agents: Array<{
+    agentId: string;
+    displayName: string;
+    payoutAddress: string | null;
+    rating: number;
+    claimed: boolean;
+  }>;
+  providers: { google: boolean; x: boolean };
 }
 
 /** Public shape of an agent's ownership claim (sub-spec 09). */
@@ -203,6 +230,7 @@ export class Orchestrator {
   private readonly chain: SettlementChain;
   private readonly tournament: TournamentChain;
   private readonly xoauth: XOAuthProvider;
+  private readonly googleoauth: GoogleOAuthProvider;
   private readonly live = new Map<string, LiveSession>();
 
   constructor(
@@ -217,6 +245,8 @@ export class Orchestrator {
       tournamentChain?: TournamentChain;
       /** "Sign in with X" identity for agent claims (sub-spec 09). Defaults to disabled. */
       xoauth?: XOAuthProvider;
+      /** "Sign in with Google" web login (sub-spec 11). Defaults to disabled. */
+      googleoauth?: GoogleOAuthProvider;
     } = {},
   ) {
     this.db = db;
@@ -226,6 +256,7 @@ export class Orchestrator {
     this.chain = options.chain ?? DISABLED_CHAIN;
     this.tournament = options.tournamentChain ?? DISABLED_TOURNAMENT_CHAIN;
     this.xoauth = options.xoauth ?? DISABLED_XOAUTH;
+    this.googleoauth = options.googleoauth ?? DISABLED_GOOGLE_OAUTH;
   }
 
   /** Run a lifecycle hook without letting its failure affect the game. */
@@ -461,9 +492,7 @@ export class Orchestrator {
     const identity = await this.xoauth.getIdentity(accessToken);
 
     const ownerId = this.upsertOwner(identity.id, identity.username);
-    this.db
-      .prepare(`UPDATE agents SET owner_id = ?, claimed_at = ? WHERE id = ?`)
-      .run(ownerId, this.nowIso(), claim.agent_id);
+    this.bindAgentToOwner(claim.agent_id, ownerId); // 1:1 guard (sub-spec 11 D38)
     this.db
       .prepare(`UPDATE agent_claims SET status = 'claimed', claimed_at = ?, owner_id = ? WHERE claim_token = ?`)
       .run(this.nowIso(), ownerId, flow.claim_token);
@@ -480,10 +509,30 @@ export class Orchestrator {
   devClaimAgent(agentId: string, xUserId: string, xHandle: string): OwnerRow {
     this.getAgent(agentId); // 404 if unknown
     const ownerId = this.upsertOwner(xUserId, xHandle);
+    this.bindAgentToOwner(agentId, ownerId); // 1:1 guard (sub-spec 11 D38)
+    return this.db.prepare(`SELECT * FROM owners WHERE id = ?`).get(ownerId) as OwnerRow;
+  }
+
+  /**
+   * Bind an agent to an owner (a claim), enforcing arena's 1:1 rule (sub-spec 11
+   * D38): each agent is claimed once, and each X owner claims at most one agent.
+   * Re-binding an agent to the SAME owner is a no-op (idempotent).
+   */
+  private bindAgentToOwner(agentId: string, ownerId: string): void {
+    const agent = this.getAgent(agentId);
+    if (agent.owner_id) {
+      if (agent.owner_id === ownerId) return;
+      throw new ApiError(409, 'ALREADY_CLAIMED', 'This agent is already claimed');
+    }
+    const existing = this.db
+      .prepare(`SELECT id FROM agents WHERE owner_id = ? LIMIT 1`)
+      .get(ownerId) as { id: string } | undefined;
+    if (existing) {
+      throw new ApiError(409, 'X_ALREADY_HAS_AGENT', 'This X account has already claimed an agent');
+    }
     this.db
       .prepare(`UPDATE agents SET owner_id = ?, claimed_at = ? WHERE id = ?`)
       .run(ownerId, this.nowIso(), agentId);
-    return this.db.prepare(`SELECT * FROM owners WHERE id = ?`).get(ownerId) as OwnerRow;
   }
 
   /** Find-or-create an owner by X user id; refresh the stored handle each time. */
@@ -500,6 +549,249 @@ export class Orchestrator {
       .prepare(`INSERT INTO owners (id, x_user_id, x_handle) VALUES (?, ?, ?)`)
       .run(id, xUserId, xHandle);
     return id;
+  }
+
+  // ---- web accounts: Google login · connect X · claim (sub-spec 11) ----------
+
+  private googleRedirectUri(): string {
+    return `${this.config.publicBaseUrl}/api/arena/auth/google/callback`;
+  }
+
+  /** Start Google web sign-in → the URL to send the browser to. */
+  startGoogleLogin(): { authorizeUrl: string } {
+    if (!this.googleoauth.enabled) {
+      throw new ApiError(501, 'GOOGLE_NOT_CONFIGURED', 'Web login is not configured on this arena');
+    }
+    const state = newOauthState();
+    const codeVerifier = newCodeVerifier();
+    const redirectUri = this.googleRedirectUri();
+    const expiresAt = new Date(this.clock() + 10 * 60_000).toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO web_oauth_flows (state, purpose, account_id, code_verifier, redirect_uri, created_at, expires_at)
+         VALUES (?, 'google', NULL, ?, ?, ?, ?)`,
+      )
+      .run(state, codeVerifier, redirectUri, this.nowIso(), expiresAt);
+    return {
+      authorizeUrl: this.googleoauth.authorizeUrl({
+        state,
+        codeChallenge: codeChallengeOf(codeVerifier),
+        redirectUri,
+      }),
+    };
+  }
+
+  /** Validate + consume a web OAuth flow of the given purpose. */
+  private consumeWebFlow(
+    state: string,
+    purpose: 'google' | 'connect',
+  ): { accountId: string | null; codeVerifier: string; redirectUri: string } {
+    const flow = this.db
+      .prepare(
+        `SELECT purpose, account_id, code_verifier, redirect_uri, expires_at FROM web_oauth_flows WHERE state = ?`,
+      )
+      .get(state) as
+      | { purpose: string; account_id: string | null; code_verifier: string; redirect_uri: string; expires_at: string }
+      | undefined;
+    if (!flow || flow.purpose !== purpose) {
+      throw new ApiError(400, 'OAUTH_STATE_INVALID', 'Unknown or reused sign-in state');
+    }
+    this.db.prepare(`DELETE FROM web_oauth_flows WHERE state = ?`).run(state);
+    if (Date.parse(flow.expires_at) <= this.clock()) {
+      throw new ApiError(410, 'OAUTH_STATE_EXPIRED', 'Sign-in took too long — please try again');
+    }
+    return { accountId: flow.account_id, codeVerifier: flow.code_verifier, redirectUri: flow.redirect_uri };
+  }
+
+  /** Is a given state a web connect-X flow (vs a 09 agent-claim)? Lets one X callback serve both. */
+  isConnectFlow(state: string): boolean {
+    const row = this.db
+      .prepare(`SELECT purpose FROM web_oauth_flows WHERE state = ?`)
+      .get(state) as { purpose: string } | undefined;
+    return row?.purpose === 'connect';
+  }
+
+  /** Complete Google sign-in: upsert the account, open a session, return its token. */
+  async completeGoogleLogin(params: { state: string; code: string }): Promise<{ sessionToken: string }> {
+    const flow = this.consumeWebFlow(params.state, 'google');
+    const accessToken = await this.googleoauth.exchangeCode({
+      code: params.code,
+      codeVerifier: flow.codeVerifier,
+      redirectUri: flow.redirectUri,
+    });
+    const identity = await this.googleoauth.getIdentity(accessToken);
+    const accountId = this.upsertAccount(identity.sub, identity.email, identity.name);
+    const token = newSessionToken();
+    const expiresAt = new Date(this.clock() + this.config.webSessionTtlMs).toISOString();
+    this.db
+      .prepare(`INSERT INTO web_sessions (token, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)`)
+      .run(token, accountId, this.nowIso(), expiresAt);
+    return { sessionToken: token };
+  }
+
+  private upsertAccount(googleSub: string, email: string | null, name: string | null): string {
+    const existing = this.db
+      .prepare(`SELECT id FROM accounts WHERE google_sub = ?`)
+      .get(googleSub) as { id: string } | undefined;
+    if (existing) {
+      this.db
+        .prepare(`UPDATE accounts SET email = ?, name = COALESCE(name, ?) WHERE id = ?`)
+        .run(email, name, existing.id);
+      return existing.id;
+    }
+    const id = newAccountId();
+    this.db
+      .prepare(`INSERT INTO accounts (id, google_sub, email, name) VALUES (?, ?, ?, ?)`)
+      .run(id, googleSub, email, name ?? 'Unnamed User');
+    return id;
+  }
+
+  /** The account behind a session cookie token, or null if absent/expired (expired rows are pruned). */
+  private accountByToken(token: string | undefined): AccountRow | null {
+    if (!token) return null;
+    const row = this.db
+      .prepare(
+        `SELECT a.*, s.expires_at AS session_expires FROM web_sessions s
+           JOIN accounts a ON a.id = s.account_id WHERE s.token = ?`,
+      )
+      .get(token) as (AccountRow & { session_expires: string }) | undefined;
+    if (!row) return null;
+    if (Date.parse(row.session_expires) <= this.clock()) {
+      this.db.prepare(`DELETE FROM web_sessions WHERE token = ?`).run(token);
+      return null;
+    }
+    return row;
+  }
+
+  /** `GET /auth/session` payload. Always resolves (account null when logged out). */
+  sessionInfo(token: string | undefined): WebSessionInfo {
+    const providers = { google: this.googleoauth.enabled, x: this.xoauth.enabled };
+    const account = this.accountByToken(token);
+    if (!account) return { account: null, x: null, agents: [], providers };
+
+    let x: WebSessionInfo['x'] = null;
+    let agents: WebSessionInfo['agents'] = [];
+    if (account.owner_id) {
+      const owner = this.db
+        .prepare(`SELECT x_user_id, x_handle FROM owners WHERE id = ?`)
+        .get(account.owner_id) as { x_user_id: string; x_handle: string } | undefined;
+      if (owner) x = { handle: owner.x_handle, xUserId: owner.x_user_id };
+      const rows = this.db
+        .prepare(
+          `SELECT id, display_name, payout_address, trueskill_mu, trueskill_sigma
+             FROM agents WHERE owner_id = ? ORDER BY created_at`,
+        )
+        .all(account.owner_id) as Array<{
+        id: string;
+        display_name: string;
+        payout_address: string | null;
+        trueskill_mu: number;
+        trueskill_sigma: number;
+      }>;
+      agents = rows.map((r) => ({
+        agentId: r.id,
+        displayName: r.display_name,
+        payoutAddress: r.payout_address,
+        rating: conservativeRating({ mu: r.trueskill_mu, sigma: r.trueskill_sigma }),
+        claimed: true,
+      }));
+    }
+    return {
+      account: { id: account.id, email: account.email, name: account.name, memberSince: account.created_at },
+      x,
+      agents,
+      providers,
+    };
+  }
+
+  logoutSession(token: string | undefined): void {
+    if (token) this.db.prepare(`DELETE FROM web_sessions WHERE token = ?`).run(token);
+  }
+
+  /** Rename the logged-in account (the profile's EDIT). */
+  renameAccount(token: string | undefined, name: string): { name: string } {
+    const account = this.requireAccount(token);
+    const clean = name.trim().slice(0, 40) || 'Unnamed User';
+    this.db.prepare(`UPDATE accounts SET name = ? WHERE id = ?`).run(clean, account.id);
+    return { name: clean };
+  }
+
+  private requireAccount(token: string | undefined): AccountRow {
+    const account = this.accountByToken(token);
+    if (!account) throw new ApiError(401, 'NOT_LOGGED_IN', 'Sign in with Google first');
+    return account;
+  }
+
+  /** Start "connect X" for a logged-in account → the URL to send the browser to. */
+  startConnectX(token: string | undefined): { authorizeUrl: string } {
+    const account = this.requireAccount(token);
+    if (!this.xoauth.enabled) {
+      throw new ApiError(501, 'CONNECT_X_NOT_CONFIGURED', 'X is not configured on this arena');
+    }
+    const state = newOauthState();
+    const codeVerifier = newCodeVerifier();
+    const redirectUri = this.xRedirectUri(); // reuse 09's /auth/x/callback
+    const expiresAt = new Date(this.clock() + 10 * 60_000).toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO web_oauth_flows (state, purpose, account_id, code_verifier, redirect_uri, created_at, expires_at)
+         VALUES (?, 'connect', ?, ?, ?, ?, ?)`,
+      )
+      .run(state, account.id, codeVerifier, redirectUri, this.nowIso(), expiresAt);
+    return {
+      authorizeUrl: this.xoauth.authorizeUrl({
+        state,
+        codeChallenge: codeChallengeOf(codeVerifier),
+        redirectUri,
+      }),
+    };
+  }
+
+  /** Complete "connect X": read the X identity and map it to the account (one X ↔ one account). */
+  async completeConnectX(params: { state: string; code: string }): Promise<{ handle: string }> {
+    const flow = this.consumeWebFlow(params.state, 'connect');
+    if (!flow.accountId) throw new ApiError(400, 'OAUTH_STATE_INVALID', 'Connect flow is missing its account');
+    const accessToken = await this.xoauth.exchangeCode({
+      code: params.code,
+      codeVerifier: flow.codeVerifier,
+      redirectUri: flow.redirectUri,
+    });
+    const identity = await this.xoauth.getIdentity(accessToken);
+    const ownerId = this.upsertOwner(identity.id, identity.username);
+    const linkedElsewhere = this.db
+      .prepare(`SELECT id FROM accounts WHERE owner_id = ? AND id != ?`)
+      .get(ownerId, flow.accountId) as { id: string } | undefined;
+    if (linkedElsewhere) {
+      throw new ApiError(409, 'X_ALREADY_LINKED', 'That X account is already linked to another account');
+    }
+    this.db.prepare(`UPDATE accounts SET owner_id = ? WHERE id = ?`).run(ownerId, flow.accountId);
+    return { handle: identity.username };
+  }
+
+  /** Claim an agent to the logged-in account via its claim link, under the 1:1 rule (D38). */
+  claimAgentAsAccount(token: string | undefined, claimToken: string): { agentId: string; handle: string } {
+    const account = this.requireAccount(token);
+    if (!account.owner_id) {
+      throw new ApiError(403, 'CONNECT_X_FIRST', 'Connect your X account before claiming an agent');
+    }
+    const claim = this.db
+      .prepare(`SELECT agent_id, status, expires_at FROM agent_claims WHERE claim_token = ?`)
+      .get(claimToken) as { agent_id: string; status: string; expires_at: string } | undefined;
+    if (!claim) throw new ApiError(404, 'CLAIM_NOT_FOUND', 'Unknown claim link');
+    if (claim.status === 'claimed') {
+      throw new ApiError(409, 'ALREADY_CLAIMED', 'This agent is already claimed');
+    }
+    if (Date.parse(claim.expires_at) <= this.clock()) {
+      throw new ApiError(410, 'CLAIM_EXPIRED', 'This claim link has expired — ask the agent for a new one');
+    }
+    this.bindAgentToOwner(claim.agent_id, account.owner_id); // 1:1 guard
+    this.db
+      .prepare(`UPDATE agent_claims SET status = 'claimed', claimed_at = ?, owner_id = ? WHERE claim_token = ?`)
+      .run(this.nowIso(), account.owner_id, claimToken);
+    const owner = this.db.prepare(`SELECT x_handle FROM owners WHERE id = ?`).get(account.owner_id) as {
+      x_handle: string;
+    };
+    return { agentId: claim.agent_id, handle: owner.x_handle };
   }
 
   /**

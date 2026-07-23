@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { createSettlementChain } from './chain';
 import type { Config } from './config';
@@ -12,7 +12,9 @@ import { INTROSPECTION } from './routes/introspection';
 import { getPublicSession, listSessions, readEvents } from './routes/spectate';
 import { createTournamentChain } from './tournament-chain';
 import { createXOAuth } from './xoauth';
+import { createGoogleOAuth } from './googleoauth';
 import { renderClaimError, renderClaimPage } from './routes/claim-page';
+import { SESSION_COOKIE, parseCookies, serializeCookie } from './cookies';
 import {
   actionSchema,
   enterSchema,
@@ -79,12 +81,17 @@ export function buildServer(options: BuildOptions): BuiltServer {
   // Served from the API origin so the UI needs no CORS and `skill.md` has one
   // stable URL to hand to an agent (T16).
   const repoRoot = join(__dirname, '..', '..', '..');
-  const webIndex = join(__dirname, '..', '..', 'web', 'public', 'index.html');
+  const webDir = join(__dirname, '..', '..', 'web', 'public');
+  const webIndex = join(webDir, 'index.html');
+  const webHome = join(webDir, 'home.html');
+  const sendPage = (reply: FastifyReply, file: string) => {
+    if (!existsSync(file)) return reply.status(404).send({ error: 'WEB_UI_NOT_BUILT' });
+    return reply.type('text/html; charset=utf-8').send(readFileSync(file, 'utf8'));
+  };
 
-  app.get('/', async (_request, reply) => {
-    if (!existsSync(webIndex)) return reply.status(404).send({ error: 'WEB_UI_NOT_BUILT' });
-    return reply.type('text/html; charset=utf-8').send(readFileSync(webIndex, 'utf8'));
-  });
+  // `/` is the marketing homepage (sub-spec 11); the arena app lives at `/arena`.
+  app.get('/', async (_request, reply) => sendPage(reply, webHome));
+  app.get('/arena', async (_request, reply) => sendPage(reply, webIndex));
 
   app.get('/skill.md', async (_request, reply) => {
     const skill = join(repoRoot, 'skill.md');
@@ -175,11 +182,18 @@ export function buildServer(options: BuildOptions): BuiltServer {
     return orchestrator.claimInfo(token);
   });
 
-  // Browser: start "Sign in with X" for a claim token → 302 to X's authorize page.
+  // Browser: start "Sign in with X" → 302 to X's authorize page. Two modes:
+  //  - ?mode=connect : a logged-in account links its X (sub-spec 11)
+  //  - ?claim=<token>: 09's agent claim
   app.get(`${BASE}/auth/x/login`, async (request, reply) => {
-    const claim = (request.query as { claim?: string }).claim;
-    if (!claim) return reply.status(400).send({ error: 'MISSING_CLAIM_TOKEN' });
-    const { authorizeUrl } = orchestrator.startXClaim(claim);
+    const q = request.query as { claim?: string; mode?: string };
+    if (q.mode === 'connect') {
+      const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+      const { authorizeUrl } = orchestrator.startConnectX(token);
+      return reply.redirect(authorizeUrl);
+    }
+    if (!q.claim) return reply.status(400).send({ error: 'MISSING_CLAIM_TOKEN' });
+    const { authorizeUrl } = orchestrator.startXClaim(q.claim);
     return reply.redirect(authorizeUrl);
   });
 
@@ -202,6 +216,11 @@ export function buildServer(options: BuildOptions): BuiltServer {
         .send(renderClaimError('Missing code or state from X.'));
     }
     try {
+      // One callback URL serves both flows — dispatch on the stored flow purpose.
+      if (orchestrator.isConnectFlow(state)) {
+        await orchestrator.completeConnectX({ code, state });
+        return reply.redirect(`${config.publicBaseUrl}/profile`);
+      }
       const { claimToken, handle } = await orchestrator.completeXClaim({ code, state });
       // Bounce back to the claim page in a claimed state (shows "✓ @handle").
       const url = `${config.publicBaseUrl}/claim?token=${encodeURIComponent(claimToken)}&claimed=1&handle=${encodeURIComponent(handle)}`;
@@ -217,6 +236,69 @@ export function buildServer(options: BuildOptions): BuiltServer {
     const token = (request.query as { token?: string }).token ?? '';
     return reply.type('text/html; charset=utf-8').send(renderClaimPage({ token, base: BASE }));
   });
+
+  // ---- web accounts: Google login + profile (sub-spec 11) -------------------
+  const cookieSecure = config.publicBaseUrl.startsWith('https://');
+
+  // Browser: start "Sign in with Google" → 302 to Google's authorize page.
+  app.get(`${BASE}/auth/google/login`, async (_request, reply) => {
+    const { authorizeUrl } = orchestrator.startGoogleLogin();
+    return reply.redirect(authorizeUrl);
+  });
+
+  // Browser: Google redirects back here → open a session cookie, bounce to /arena.
+  app.get(`${BASE}/auth/google/callback`, async (request, reply) => {
+    const { code, state, error } = request.query as { code?: string; state?: string; error?: string };
+    if (error) return reply.type('text/html; charset=utf-8').send(renderClaimError(`Google sign-in was cancelled (${error}).`));
+    if (!code || !state) return reply.type('text/html; charset=utf-8').send(renderClaimError('Missing code or state from Google.'));
+    try {
+      const { sessionToken } = await orchestrator.completeGoogleLogin({ code, state });
+      reply.header('set-cookie', serializeCookie(SESSION_COOKIE, sessionToken, { maxAgeMs: config.webSessionTtlMs, secure: cookieSecure }));
+      return reply.redirect(`${config.publicBaseUrl}/arena`);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : 'Could not complete Google sign-in.';
+      return reply.type('text/html; charset=utf-8').send(renderClaimError(message));
+    }
+  });
+
+  // The logged-in account (or null), its linked X, and its claimed agents. Always 200.
+  app.get(`${BASE}/auth/session`, async (request) => {
+    const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+    return orchestrator.sessionInfo(token);
+  });
+
+  app.post(`${BASE}/auth/logout`, async (request, reply) => {
+    const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+    orchestrator.logoutSession(token);
+    reply.header('set-cookie', serializeCookie(SESSION_COOKIE, '', { maxAgeMs: 0, secure: cookieSecure }));
+    return { ok: true };
+  });
+
+  // Rename the account (the profile's EDIT).
+  app.patch(`${BASE}/auth/account`, async (request) => {
+    const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+    const { name } = (request.body ?? {}) as { name?: string };
+    if (typeof name !== 'string') throw new ApiError(400, 'INVALID_NAME', 'name must be a string');
+    return orchestrator.renameAccount(token, name);
+  });
+
+  // Claim an agent to the logged-in account via its claim link (1:1 rule, D38).
+  app.post(`${BASE}/auth/claim-agent`, async (request) => {
+    const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+    const body = (request.body ?? {}) as { claimToken?: string; claimLink?: string };
+    // Accept a bare token or a full claim URL/link; pull the token out of a path/query.
+    let claimToken = body.claimToken ?? '';
+    if (!claimToken && body.claimLink) {
+      const m = body.claimLink.match(/(?:token=|\/claim\/)([^&/?\s]+)/);
+      claimToken = m ? m[1]! : body.claimLink.trim();
+    }
+    if (!claimToken) throw new ApiError(400, 'MISSING_CLAIM_TOKEN', 'Provide a claim link from your agent');
+    return orchestrator.claimAgentAsAccount(token, claimToken);
+  });
+
+  // The profile page is part of the arena SPA; serve it for /profile and /profile/:id.
+  app.get('/profile', async (_request, reply) => sendPage(reply, webIndex));
+  app.get<{ Params: { id: string } }>('/profile/:id', async (_request, reply) => sendPage(reply, webIndex));
 
   // ---- spectator (no auth — replay-only; finished sessions only, sub-spec 10) --
   // The public feed never exposes a live table: sessions are listed and served
@@ -288,12 +370,17 @@ export async function start(): Promise<void> {
   const tournamentChain = createTournamentChain(config, log);
   const xoauth = createXOAuth(config);
   if (!xoauth.enabled) {
-    log('X login not configured (X_CLIENT_ID unset) — agent claiming is disabled.');
+    log('X login not configured (X_CLIENT_ID unset) — agent claiming / connect-X is disabled.');
+  }
+  const googleoauth = createGoogleOAuth(config);
+  if (!googleoauth.enabled) {
+    log('Google login not configured (GOOGLE_CLIENT_ID unset) — web sign-in is disabled.');
   }
   const orchestrator = new Orchestrator(db, config, {
     chain,
     tournamentChain,
     xoauth,
+    googleoauth,
     hooks: createChainHooks(db, chain, log),
   });
 

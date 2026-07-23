@@ -38,6 +38,16 @@ export function newOwnerId(): string {
   return `owner_${nanoid()}`;
 }
 
+/** A web account id (sub-spec 11) — a person signed in with Google. */
+export function newAccountId(): string {
+  return `acct_${nanoid()}`;
+}
+
+/** An opaque browser-session token (sub-spec 11), stored server-side + in a cookie. */
+export function newSessionToken(): string {
+  return `${nanoid(24)}${randomUUID().replace(/-/g, '')}`;
+}
+
 /**
  * A claim token (sub-spec 09): the unguessable bearer capability inside a claim
  * URL. Long and URL-safe — whoever holds it can start the X sign-in that binds

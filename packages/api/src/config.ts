@@ -25,11 +25,16 @@ export interface Config {
    * X developer app. Defaults to `http://localhost:<port>` for local runs.
    */
   publicBaseUrl: string;
-  /** "Sign in with X" identity (sub-spec 09). Absent → claim/login is disabled. */
+  /** "Sign in with X" identity (sub-spec 09). Absent → claim/link is disabled. */
   xClientId: string | null;
   xClientSecret: string | null;
   xScopes: string;
   claimTokenTtlMs: number;
+  /** Google web sign-in (sub-spec 11). Absent → web login is disabled. */
+  googleClientId: string | null;
+  googleClientSecret: string | null;
+  googleScopes: string;
+  webSessionTtlMs: number;
   /** chain (api + contracts) */
   bscTestnetRpcUrl: string;
   bscChainId: number;
@@ -158,6 +163,10 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     xClientSecret: optional(env, 'X_CLIENT_SECRET'),
     xScopes: withDefault(env, 'X_OAUTH_SCOPES', 'tweet.read users.read'),
     claimTokenTtlMs: toInt('CLAIM_TOKEN_TTL_MS', withDefault(env, 'CLAIM_TOKEN_TTL_MS', '86400000')),
+    googleClientId: optional(env, 'GOOGLE_CLIENT_ID'),
+    googleClientSecret: optional(env, 'GOOGLE_CLIENT_SECRET'),
+    googleScopes: withDefault(env, 'GOOGLE_OAUTH_SCOPES', 'openid email profile'),
+    webSessionTtlMs: toInt('WEB_SESSION_TTL_MS', withDefault(env, 'WEB_SESSION_TTL_MS', '2592000000')),
     bscTestnetRpcUrl: withDefault(
       env,
       'BSC_TESTNET_RPC_URL',

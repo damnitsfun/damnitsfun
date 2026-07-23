@@ -162,7 +162,40 @@ CREATE TABLE IF NOT EXISTS oauth_flows (
   expires_at    TEXT NOT NULL
 );
 
+-- Web accounts (sub-spec 11). A person signs up / signs in with GOOGLE; the
+-- account may later CONNECT X (sub-spec 09's owners), which maps it to a public,
+-- payout-bound identity. `owner_id` is null until the account connects X.
+CREATE TABLE IF NOT EXISTS accounts (
+  id          TEXT PRIMARY KEY,               -- 'acct_' + nanoid
+  google_sub  TEXT NOT NULL UNIQUE,           -- Google's stable subject id
+  email       TEXT,
+  name        TEXT,
+  owner_id    TEXT UNIQUE REFERENCES owners(id), -- set on "connect X"; one X ↔ one account
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Browser login sessions (sub-spec 11). Opaque token stored in an httpOnly cookie.
+CREATE TABLE IF NOT EXISTS web_sessions (
+  token       TEXT PRIMARY KEY,               -- opaque random; the cookie value
+  account_id  TEXT NOT NULL REFERENCES accounts(id),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL
+);
+
+-- OAuth transient for the WEB flows (sub-spec 11): Google login and connect-X.
+-- Kept separate from 09's `oauth_flows` (which is tied to an agent claim token).
+CREATE TABLE IF NOT EXISTS web_oauth_flows (
+  state         TEXT PRIMARY KEY,
+  purpose       TEXT NOT NULL CHECK (purpose IN ('google','connect')),
+  account_id    TEXT REFERENCES accounts(id), -- the account connecting X (null for google login)
+  code_verifier TEXT NOT NULL,
+  redirect_uri  TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at    TEXT NOT NULL
+);
+
 -- Lookups the hot paths depend on.
+CREATE INDEX IF NOT EXISTS idx_web_sessions_account ON web_sessions(account_id);
 CREATE INDEX IF NOT EXISTS idx_session_players_agent ON session_players(agent_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_competition_status ON sessions(competition_id, status);
 CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id, seq);

@@ -19,6 +19,7 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 08 | Agent Wallets, Pooled Tournament & Jackpot *(post-MVP expansion)* | `reference-agent` + `contracts` + `api` | T19–T24 | 04 + 05 + 06 (slots after 07) |
 | 09 | Agent Identity & Payout Claim — "Sign in with X" *(post-08 integrity)* | `api` + `reference-agent` | T25–T29 | 08 |
 | 10 | Spectator Is Replay-Only — anti-scrape hardening *(post-09 integrity)* | `api` + `web` (+ `engine`) | T30–T33 | 04, 06 (slots after 09) |
+| 11 | Homepage & Web Accounts — Google sign-in, X-mapped profile, claim-link agents *(front door + account)* | `web` + `api` | T34–T38 | 09, 10 |
 
 ## Build order (linear, with one allowed parallelization)
 
@@ -58,6 +59,7 @@ need 04+05; T24 (demo) is last.
 | 08 | A paid competition where autonomous agents fund their own entries, play a season, and the pool + RAINBOWSTORM jackpot settle on-chain to the top of the openskill leaderboard, with BscScan links captured. |
 | 09 | An X-verified owner claim so prizes pay only to claimed agents — an unclaimed agent may play and rank but is skipped at settlement; the claim flow reproduces from a fresh `yarn install`. |
 | 10 | A public spectator that shows only completed sessions (live tables absent from every public response, the default view airs the last finished game), the agent's own channel carrying the partial-information view it needs to play, and a test proving no in-progress hidden state is scrapable. |
+| 11 | A marketing homepage at `/` routing into the app at `/arena`, plus a Google web account that connects X (09) and claims one agent via a claim link (arena's one-per-X rule), with a profile page. |
 
 ## Global rules that apply to every sub-spec (do not restate, do not violate)
 1. **Never re-implement rules outside `packages/engine`.** All legal-move logic flows through `GameSession.getLegalMoves` (Requirements NFR-2). This is the number-one integrity rule.
