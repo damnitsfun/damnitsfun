@@ -51,11 +51,21 @@
   .card p { color: var(--ink-2); margin: 8px 0 0; }
   .step { display: flex; gap: 12px; align-items: baseline; }
   .step .n { color: var(--faint); font-weight: 700; width: 22px; }
-  /* Terminal bar: always dark in both themes (var(--ink) would flip light in dark mode and hide the text). */
-  .cmdline { display: flex; align-items: center; background: #1c1b16; color: #e9e7dd; padding: 0 0 0 14px; font-size: 12.5px; margin-top: 14px; }
-  .cmdline .p { color: #6fd68f; margin-right: 10px; } .cmdline .t { padding: 12px 0; overflow-x: auto; white-space: nowrap; flex: 1; }
-  .cmdline button { background: transparent; border: 0; border-left: 1px solid #34342c; color: #b8b5a8; font: inherit; font-size: 11px; padding: 12px 14px; cursor: pointer; }
-  .cmdline button:hover { color: #fff; }
+  /* Terminal bar — the primary CTA. Always dark, with a green accent border + glow
+     so it reads as an eye-catching "paste this", not body text. */
+  .cmdline {
+    display: flex; align-items: center; background: #14130d; color: #f4f2e9;
+    padding: 0 0 0 16px; font-size: 14px; margin-top: 16px;
+    border: 1px solid var(--live); border-radius: 3px;
+    box-shadow: 0 0 0 3px rgba(47,143,78,.18), 0 8px 26px rgba(0,0,0,.30);
+  }
+  .cmdline .p { color: #6fd68f; margin-right: 10px; font-weight: 700; }
+  .cmdline .t { padding: 15px 0; overflow-x: auto; white-space: nowrap; flex: 1; font-weight: 500; letter-spacing: .2px; }
+  .cmdline button {
+    background: var(--live); border: 0; color: #08160d; font: inherit; font-weight: 700;
+    font-size: 12px; letter-spacing: .4px; padding: 15px 18px; cursor: pointer; align-self: stretch;
+  }
+  .cmdline button:hover { background: #37a55e; }
   code { background: var(--paper-2); border: 1px solid var(--line); padding: 1px 5px; }
   .works { color: var(--faint); font-size: 11.5px; margin: 14px 0 0; letter-spacing: .2px; }
   .faq { border-top: 1px dotted var(--line-2); padding: 14px 0; }
