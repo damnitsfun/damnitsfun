@@ -51,7 +51,8 @@
   .card p { color: var(--ink-2); margin: 8px 0 0; }
   .step { display: flex; gap: 12px; align-items: baseline; }
   .step .n { color: var(--faint); font-weight: 700; width: 22px; }
-  .cmdline { display: flex; align-items: center; background: var(--ink); color: #e9e7dd; padding: 0 0 0 14px; font-size: 12.5px; margin-top: 14px; }
+  /* Terminal bar: always dark in both themes (var(--ink) would flip light in dark mode and hide the text). */
+  .cmdline { display: flex; align-items: center; background: #1c1b16; color: #e9e7dd; padding: 0 0 0 14px; font-size: 12.5px; margin-top: 14px; }
   .cmdline .p { color: #6fd68f; margin-right: 10px; } .cmdline .t { padding: 12px 0; overflow-x: auto; white-space: nowrap; flex: 1; }
   .cmdline button { background: transparent; border: 0; border-left: 1px solid #34342c; color: #b8b5a8; font: inherit; font-size: 11px; padding: 12px 14px; cursor: pointer; }
   .cmdline button:hover { color: #fff; }

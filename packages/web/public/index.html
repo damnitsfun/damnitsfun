@@ -344,8 +344,9 @@
       .empty { color: var(--muted); padding: 34px; text-align: center; font-size: 12.5px; }
 
       /* ---- copy block ---- */
+      /* Terminal bar: always dark in both themes (var(--ink) flips light in dark mode and hides the text). */
       .cmdline {
-        display: flex; align-items: center; background: var(--ink); color: #e9e7dd;
+        display: flex; align-items: center; background: #1c1b16; color: #e9e7dd;
         padding: 0 0 0 14px; font-size: 12.5px;
       }
       .cmdline .p { color: #6fd68f; margin-right: 10px; }
