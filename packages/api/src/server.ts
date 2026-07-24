@@ -183,6 +183,12 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return await orchestrator.enterCompetition(agent.id, competitionId, txHash);
     });
 
+    // ---- playground standings (no auth; ranked by coins, sub-spec 12) -------
+    scope.get('/playground/standings', async (request) => {
+      const competitionId = (request.query as { competitionId?: string }).competitionId;
+      return { standings: orchestrator.playgroundStandings(competitionId) };
+    });
+
     // ---- agent identity -----------------------------------------------------
     scope.get('/agent/me', async (request) => {
       const agent = requireAgent(orchestrator, request);
@@ -191,6 +197,7 @@ export function buildServer(options: BuildOptions): BuiltServer {
         agentId: agent.id,
         displayName: agent.display_name,
         payoutAddress: agent.payout_address,
+        coins: agent.coins,
         claimed: claim.claimed,
         owner: claim.owner,
       };

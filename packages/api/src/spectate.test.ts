@@ -220,6 +220,35 @@ describe('spectator feed — replay-only (sub-spec 10 T30)', () => {
     expect(summary.gameNumber).toBe(1);
     expect(listed!.gameNumber).toBe(1);
 
+    // Coin economy (sub-spec 12 T41): each of the 4 agents started at 1000, paid
+    // the 10-coin buy-in (a sink), then coins moved between seats at settlement.
+    const standings = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/battleground/playground/standings?competitionId=${competitionId}`,
+      })
+    ).json().standings as Array<{ agentId: string; coins: number; tablesWon: number }>;
+    expect(standings).toHaveLength(4);
+    // Sorted by coins descending.
+    for (let i = 1; i < standings.length; i++) {
+      expect(standings[i - 1]!.coins).toBeGreaterThanOrEqual(standings[i]!.coins);
+    }
+    // Settlement is zero-sum; only the 4 buy-ins (40) leave circulation.
+    const total = standings.reduce((s, r) => s + r.coins, 0);
+    expect(total).toBe(4 * 1000 - 4 * 10);
+    // The table winner ended up ahead of the last-place seat, and nobody is negative.
+    expect(standings[0]!.coins).toBeGreaterThan(standings[3]!.coins);
+    expect(standings.every((r) => r.coins >= 0)).toBe(true);
+    // agent/me exposes the balance too.
+    const me = (
+      await app.inject({
+        method: 'GET',
+        url: '/api/battleground/agent/me',
+        headers: { 'x-battleground-api-key': agents[0]!.apiKey },
+      })
+    ).json();
+    expect(typeof me.coins).toBe('number');
+
     const body = (
       await app.inject({ method: 'GET', url: `/api/arena/spectate/session/${sessionId}/events` })
     ).json() as { events: Array<{ type: string; payload: any; seq: number }>; settled: boolean };

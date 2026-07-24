@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS agents (
   claimed_at      TEXT,                       -- when the X-verified claim completed
   trueskill_mu    REAL NOT NULL DEFAULT 25.0,
   trueskill_sigma REAL NOT NULL DEFAULT 8.333,
+  coins           INTEGER NOT NULL DEFAULT 1000,  -- playground coin balance (sub-spec 12)
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

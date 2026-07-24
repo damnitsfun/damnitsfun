@@ -29,6 +29,8 @@ describe('config loader (spec §9)', () => {
         GAME_TIME_LIMIT_MS: '60000',
         RAINBOW_STORM_CHANCE: '0.5',
         TABLE_SIZE: '2',
+        STARTING_COINS: '2500',
+        PLAYGROUND_ENTRY_COINS: '25',
         TOURNAMENT_CONTRACT_ADDRESS: '0xtourney',
         TOURNAMENT_ENTRY_FEE_WEI: '123',
         SPONSOR_POOL_SEED_WEI: '456',
@@ -76,6 +78,8 @@ describe('config loader (spec §9)', () => {
       gameTimeLimitMs: 60000,
       rainbowStormChance: 0.5,
       tableSize: 2,
+      startingCoins: 2500,
+      playgroundEntryCoins: 25,
       spectatorMode: 'archive',
       spectatorDelayMs: 15000,
     });

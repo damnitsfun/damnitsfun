@@ -20,6 +20,10 @@ export function migrate(db: Db): void {
 
   // Sub-spec 08 additions (pooled tournament + agent wallets).
   addColumnIfMissing(db, 'agents', 'wallet_address', 'TEXT');
+
+  // Sub-spec 12: the playground coin economy. Every agent carries a coin balance
+  // (starts at 1000); tables cost coins to join and settle coins by placement.
+  addColumnIfMissing(db, 'agents', 'coins', 'INTEGER NOT NULL DEFAULT 1000');
   addColumnIfMissing(db, 'competitions', 'kind', "TEXT NOT NULL DEFAULT 'classic'");
   addColumnIfMissing(db, 'competitions', 'pool_wei', "TEXT NOT NULL DEFAULT '0'");
   addColumnIfMissing(db, 'competitions', 'sponsor_seed_wei', "TEXT NOT NULL DEFAULT '0'");

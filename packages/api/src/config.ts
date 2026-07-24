@@ -53,6 +53,9 @@ export interface Config {
   gameTimeLimitMs: number;
   rainbowStormChance: number;
   tableSize: number;
+  /** playground coin economy (sub-spec 12) */
+  startingCoins: number;
+  playgroundEntryCoins: number;
   /** spectator (sub-spec 10). The public feed only ever serves finished sessions. */
   spectatorMode: SpectatorMode;
   spectatorDelayMs: number;
@@ -196,6 +199,11 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       withDefault(env, 'RAINBOW_STORM_CHANCE', '0.00001'),
     ),
     tableSize: toInt('TABLE_SIZE', withDefault(env, 'TABLE_SIZE', '4')),
+    startingCoins: toInt('STARTING_COINS', withDefault(env, 'STARTING_COINS', '1000')),
+    playgroundEntryCoins: toInt(
+      'PLAYGROUND_ENTRY_COINS',
+      withDefault(env, 'PLAYGROUND_ENTRY_COINS', '10'),
+    ),
     spectatorMode: parseSpectatorMode(withDefault(env, 'SPECTATOR_MODE', 'delayed')),
     spectatorDelayMs: toInt('SPECTATOR_DELAY_MS', withDefault(env, 'SPECTATOR_DELAY_MS', '0')),
   };

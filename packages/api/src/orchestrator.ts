@@ -28,6 +28,7 @@ import {
 import { DISABLED_GOOGLE_OAUTH, type GoogleOAuthProvider } from './googleoauth';
 import { distributePool } from './payout';
 import { conservativeRating, defaultRating, placementsFrom, rateSession } from './ranking';
+import { computeCoinSettlement } from './coins';
 import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
 import {
   DISABLED_XOAUTH,
@@ -74,6 +75,7 @@ export interface AgentRow {
   claimed_at: string | null;
   trueskill_mu: number;
   trueskill_sigma: number;
+  coins: number;
 }
 
 export interface OwnerRow {
@@ -277,10 +279,10 @@ export class Orchestrator {
 
     this.db
       .prepare(
-        `INSERT INTO agents (id, api_key_hash, display_name, trueskill_mu, trueskill_sigma)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO agents (id, api_key_hash, display_name, trueskill_mu, trueskill_sigma, coins)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(agentId, hashApiKey(apiKey), displayName, rating.mu, rating.sigma);
+      .run(agentId, hashApiKey(apiKey), displayName, rating.mu, rating.sigma, this.config.startingCoins);
 
     return { agentId, apiKey };
   }
@@ -1299,6 +1301,21 @@ export class Orchestrator {
       await this.requireEntryFee(agentId, competition, session, txHash);
     }
 
+    // Playground coin buy-in (sub-spec 12): taking a seat costs coins. Guard
+    // against bankruptcy — an agent that can't cover the buy-in can't sit.
+    const entry = this.config.playgroundEntryCoins;
+    if (entry > 0) {
+      const balance = this.getAgent(agentId).coins;
+      if (balance < entry) {
+        throw new ApiError(
+          402,
+          'INSUFFICIENT_COINS',
+          `Need ${entry} coins to join; balance is ${balance}.`,
+        );
+      }
+      this.db.prepare(`UPDATE agents SET coins = coins - ? WHERE id = ?`).run(entry, agentId);
+    }
+
     const seatIndex = this.db
       .prepare(`SELECT COUNT(*) AS n FROM session_players WHERE session_id = ?`)
       .get(session.id) as { n: number };
@@ -1640,6 +1657,7 @@ export class Orchestrator {
       }
 
       this.updateRatings(winner, handValues);
+      this.settleCoins(winner, handValues);
     });
     finalize();
 
@@ -1700,6 +1718,66 @@ export class Orchestrator {
         .prepare(`UPDATE agents SET trueskill_mu = ?, trueskill_sigma = ? WHERE id = ?`)
         .run(updated.rating.mu, updated.rating.sigma, updated.agentId);
     }
+  }
+
+  /**
+   * Move coins between the seats of a settled table (sub-spec 12, T41). The
+   * bottom half forfeits coins by placement; the top half splits the pot,
+   * fewer-points-first. Zero-sum and never negative — see {@link computeCoinSettlement}.
+   * Runs inside the settle() transaction, alongside rating updates.
+   */
+  private settleCoins(winner: string | null, handValues: Record<string, number>): void {
+    const places = placementsFrom(winner, handValues);
+    const agentIds = Object.keys(places);
+    if (agentIds.length === 0) return;
+
+    const balances: Record<string, number> = {};
+    for (const agentId of agentIds) balances[agentId] = this.getAgent(agentId).coins;
+
+    const deltas = computeCoinSettlement({ places, handValues, balances });
+    for (const [agentId, delta] of Object.entries(deltas)) {
+      if (delta !== 0) {
+        this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(delta, agentId);
+      }
+    }
+  }
+
+  // ---- playground standings (coins, sub-spec 12) ----------------------------
+
+  /**
+   * Public playground standings, ranked by coin balance (T41). Unlike the
+   * tournament leaderboard (openskill μ − 3σ, unchanged), this is the "chips"
+   * board: every agent that has played a finished table, sorted by coins desc,
+   * with tables-won / played for context. No auth — coins are public score.
+   */
+  playgroundStandings(competitionId?: string): Array<{
+    agentId: string;
+    displayName: string;
+    coins: number;
+    tablesWon: number;
+    played: number;
+  }> {
+    const clause = competitionId ? `AND s.competition_id = ?` : '';
+    const params = competitionId ? [competitionId] : [];
+    const rows = this.db
+      .prepare(
+        `SELECT a.id AS agentId, a.display_name AS displayName, a.coins AS coins,
+                COUNT(DISTINCT p.session_id) AS played,
+                COUNT(DISTINCT CASE WHEN s.winner_agent_id = a.id THEN s.id END) AS tablesWon
+           FROM agents a
+           JOIN session_players p ON p.agent_id = a.id
+           JOIN sessions s ON s.id = p.session_id AND s.status IN ('settled','archived') ${clause}
+          GROUP BY a.id
+          ORDER BY a.coins DESC, tablesWon DESC, played ASC`,
+      )
+      .all(...params) as Array<{
+      agentId: string;
+      displayName: string;
+      coins: number;
+      tablesWon: number;
+      played: number;
+    }>;
+    return rows;
   }
 
   // ---- leaderboard ----------------------------------------------------------
