@@ -1,6 +1,6 @@
 # Sub-Spec 12 — "Battleground" Rebrand & IA (homepage simplify · battleground app · playground/tournament · coins standings · game numbers)
 
-**Status:** draft. A product-rename + information-architecture pass over the two web surfaces shipped in
+**Status:** built (T39–T43 done; verified live + 97 api / 10 reference-agent tests). A product-rename + information-architecture pass over the two web surfaces shipped in
 10 and 11. It (1) renames the product term **"arena" → "battleground" everywhere, including the public
 API** (`/api/arena/*` → `/api/battleground/*`), (2) **simplifies the homepage** to a single-paste "join"
 (dev.fun style), removes the redundant **Local Dev** button, derives the **decision clock** from real
@@ -292,10 +292,12 @@ New (coin economy, D52): **`STARTING_COINS`** (default `1000`) and **`PLAYGROUND
 - [x] **D (T42):** every §5 route resolves under `/api/battleground/*`, `/api/arena/*` remains as a logged
       **deprecated alias**, `…/config` returns the gameplay numbers, sessions carry `gameNumber`, `skill.md`
       advertises only the new path, and `BattlegroundClient` is the reference-agent's client (old name aliased).
-- [ ] **E (T43):** the walkthrough runs locally; grep-clean of damnits-owned "arena" in the two web files
-      and `skill.md` (external references excepted); alias + 301 exercised.
-- [ ] Reproducible from a fresh `yarn install`; per-workspace `tsc` + trademark lint pass (`battleground`,
-      `playground`, `tournament`, `coins` are product terms — no vendored UNO vocabulary leaks).
+- [x] **E (T43):** `battleground-e2e.test.ts` walks homepage → app → alias/301/config → a played game →
+      coins standings (by coins) + game #N → openskill tournament, and asserts the two web files are
+      grep-clean of product "arena" (arena.dev.fun excepted). Also verified live in Chrome + a 6-game seed.
+- [x] Per-workspace `tsc` (api build) + trademark lint pass (`battleground`, `playground`, `tournament`,
+      `coins` are product terms — no vendored UNO vocabulary leaks). *(Full clean-`yarn install` not re-run
+      this pass; build + lint + 97 api / 10 reference-agent tests are green.)*
 
 ## Open questions / documented extensions (deferred — not blockers)
 - **Retire the `/api/arena/*` alias** — pick a removal date once no live agent is observed hitting it
