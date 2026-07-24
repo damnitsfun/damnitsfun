@@ -15,7 +15,7 @@ import {
 describe('computeCoinSettlement', () => {
   const rich = { a: 1000, b: 1000, c: 1000, d: 1000 };
 
-  it('is zero-sum across the table', () => {
+  it('redistributes only the forfeits when no buy-in pot is passed (sums to 0)', () => {
     const deltas = computeCoinSettlement({
       places: { a: 1, b: 2, c: 3, d: 4 },
       handValues: { a: 0, b: 10, c: 30, d: 55 },
@@ -23,6 +23,23 @@ describe('computeCoinSettlement', () => {
     });
     const sum = Object.values(deltas).reduce((s, x) => s + x, 0);
     expect(sum).toBe(0);
+  });
+
+  it('pools the entry buy-ins into the winnings (deltas sum to entryPot)', () => {
+    const deltas = computeCoinSettlement({
+      places: { a: 1, b: 2, c: 3, d: 4 },
+      handValues: { a: 0, b: 10, c: 30, d: 55 },
+      balances: rich,
+      entryPot: 40,
+    });
+    // Losers still only forfeit their (floored) points…
+    expect(deltas.c).toBeLessThan(0);
+    expect(deltas.d).toBeLessThan(0);
+    const lost = -(deltas.c! + deltas.d!);
+    // …and the winners take those forfeits PLUS the 40-coin pool.
+    expect(deltas.a! + deltas.b!).toBe(lost + 40);
+    // The whole settlement returns exactly the pooled buy-ins to circulation.
+    expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(40);
   });
 
   it('makes the top half win and the bottom half lose', () => {

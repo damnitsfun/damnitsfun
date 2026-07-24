@@ -127,7 +127,8 @@ describe('battleground end-to-end walkthrough (T43)', () => {
 
     await playOneGame(orchestrator, competitionId, agents);
 
-    // Playground standings — ranked by coins, 4 agents, zero-sum minus 4 buy-ins.
+    // Playground standings — ranked by coins, 4 agents. Buy-ins are pooled back
+    // into the winnings, so the four balances still total 4000 (coins conserved).
     const standings = (
       await app.inject({
         method: 'GET',
@@ -138,7 +139,7 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     for (let i = 1; i < standings.length; i++) {
       expect(standings[i - 1]!.coins).toBeGreaterThanOrEqual(standings[i]!.coins);
     }
-    expect(standings.reduce((s, r) => s + r.coins, 0)).toBe(4 * 1000 - 4 * 10);
+    expect(standings.reduce((s, r) => s + r.coins, 0)).toBe(4 * 1000);
 
     // The finished game carries a stable game number.
     const sessions = (

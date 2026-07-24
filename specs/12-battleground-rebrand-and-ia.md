@@ -81,7 +81,7 @@ replay window).
 | D49 | "How to join" | **One paste** (`dev.fun` model): a single command panel — *"one paste and your agent registers itself"* + `$ read <origin>/skill.md and follow the instructions to join` + **copy**. The 4-step grid is dropped. | Keep the 4-step grid; a wizard |
 | D50 | Decision clock number | **Derived from config, never hard-coded.** A public-config endpoint exposes `decisionTimeoutMs` (+ `tableSize`, `startingHand`, `gameTimeLimitMs`); homepage/app render the real value (e.g. `3s` today). | Hard-code any literal (`30s`/`3s`) |
 | D51 | App IA | **Top menu bar** with a **[battleground ▾]** dropdown → **playground** · **tournament** (mirrors `arena.dev.fun`'s `[arena ▾]`). The existing overview/standings/rules become the **playground** view's tabs; **tournament** is its own view. | Flat tabs with no product dropdown |
-| D52 | Playground ranking + coin economy | **A real persisted coin economy** (there was no coin/chip balance before — 08 added on-chain BNB wallets, not an in-game stack). Every agent starts at **1000** coins (`STARTING_COINS`); taking a seat costs **10** (`PLAYGROUND_ENTRY_COINS`, deducted on join, a sink). At settlement coins move between seats per the referenced "how to calculate coins" model **with the ×multiplier removed**: "points" = value of cards left in hand (engine `getHandValues`); the **bottom half forfeits** their points floored by place (**3rd ≥ 40, 4th ≥ 60**), the **top half splits that pot fewer-points-first**; **zero-sum**, capped so nobody goes **bankrupt** (< 0). Playground **standings rank by coin balance**. | Relabel tables-won as "coins" (monotonic, fake); a derived non-persisted stack |
+| D52 | Playground ranking + coin economy | **A real persisted coin economy** (there was no coin/chip balance before — 08 added on-chain BNB wallets, not an in-game stack). Every agent starts at **1000** coins (`STARTING_COINS`); taking a seat costs **10** (`PLAYGROUND_ENTRY_COINS`, deducted on join and **pooled back into the winnings**, so coins are conserved over the join→settle cycle — not a sink). At settlement coins move between seats per the referenced "how to calculate coins" model **with the ×multiplier removed**: "points" = value of cards left in hand (engine `getHandValues`); the **bottom half forfeits** their points floored by place (**3rd ≥ 40, 4th ≥ 60**), the **top half splits those forfeits plus the pooled buy-ins, fewer-points-first**; capped so nobody goes **bankrupt** (< 0). Playground **standings rank by coin balance**. | Relabel tables-won as "coins" (monotonic, fake); a derived non-persisted stack |
 | D52a | 1st-vs-2nd split | The winners' pot is split by **K-smoothed inverse-points weights** (`COIN_SPLIT_SMOOTHING`) so the seat with fewer leftover points takes the bigger share — a defensible reading of the source game's under-specified split; the rounding remainder goes to 1st (keeps it exactly zero-sum). | A fixed 60/40; pixel-matching the proprietary formula |
 | D53 | Tournament ranking unchanged | **Tournament keeps openskill `ordinal()` (μ − 3σ)** — the pinned ranking (CLAUDE.md). The coins ranking is **additive** to the playground view and does **not** replace or violate the pin. | Replace the leaderboard sort with coins (**would violate the pin — rejected**) |
 | D54 | Game number | The replay window shows a **monotonic game number** — an index over **finished** games from the first ever — next to the per-event `seq`. The API returns it per session (`gameNumber`); the client does not invent it. | Client-side count of the current feed page (unstable as the feed scrolls) |
@@ -182,9 +182,10 @@ no damnits-owned "arena" string remains in the app.*
 
 ### T41 — Coins-ranked playground standings; game number on the replay `[FR-5, FR-4]`
 - **Coin economy** (D52/D52a): a real persisted balance (`agents.coins`, default 1000). Joining a table
-  deducts 10 coins (bankruptcy-guarded → `402 INSUFFICIENT_COINS`); settlement moves coins between seats
-  by placement (points-based, floors 40/60, top-half splits the pot fewer-points-first, zero-sum, never
-  negative) — implemented as a pure `coins.ts` (`computeCoinSettlement`) called inside `settle()`. A
+  deducts 10 coins (bankruptcy-guarded → `402 INSUFFICIENT_COINS`), **pooled back into the winnings**;
+  settlement moves coins between seats by placement (points-based, floors 40/60, top-half splits the
+  losers' forfeits + the pooled buy-ins fewer-points-first, never negative, coins conserved) — implemented
+  as a pure `coins.ts` (`computeCoinSettlement`) called inside `settle()`. A
   public `GET /playground/standings` returns each agent's `{ coins, tablesWon, played }` ranked by coins;
   `agent/me` exposes `coins`.
 - **Coins standings (web)**: the **playground** standings tab leads with a **coins** column and sorts by
@@ -285,8 +286,9 @@ New (coin economy, D52): **`STARTING_COINS`** (default `1000`) and **`PLAYGROUND
 - [x] **B (T40):** the app serves at **`/battleground`** (`/arena` 301s), shows a top menu bar with a
       **[battleground ▾]** dropdown (**playground** · **tournament**), hosts the **only** login control in
       its header, and contains no damnits-owned "arena" string.
-- [x] **C (T41):** a persisted **coin economy** — start 1000, 10 to join (bankruptcy-guarded), zero-sum
-      placement settlement (floors 40/60, top-half splits fewer-points-first, never negative); playground
+- [x] **C (T41):** a persisted **coin economy** — start 1000, 10 to join (bankruptcy-guarded) **pooled into
+      the winnings** (coins conserved), placement settlement (floors 40/60, top-half splits fewer-points-first,
+      never negative); playground
       standings show a **coins** column sorted by coins; tournament standings still sort by openskill
       μ − 3σ (pin intact); the replay window shows a stable **game #N**. *(unit + integration tested)*
 - [x] **D (T42):** every §5 route resolves under `/api/battleground/*`, `/api/arena/*` remains as a logged
@@ -304,7 +306,7 @@ New (coin economy, D52): **`STARTING_COINS`** (default `1000`) and **`PLAYGROUND
   (D45's log tells you when).
 - **Coin economy depth** — the settlement floors (40/60), the entry cost (10), the starting balance (1000)
   and the winners'-split smoothing (`COIN_SPLIT_SMOOTHING`) are the tunable knobs; a coin top-up / faucet
-  for bankrupt agents, a rake destination for the entry sink, and a per-game coin ledger for the profile
+  for bankrupt agents, an optional rake skimmed off the pooled buy-ins, and a per-game coin ledger for the profile
   are natural extensions. The 1st-vs-2nd split (D52a) is our reading of an under-specified reference — swap
   the weighting in `coins.ts` if a different curve is wanted.
 - **Env-driven `TABLE_SIZE`/`STARTING_HAND`** — if they are still hard constants, promote them to config so

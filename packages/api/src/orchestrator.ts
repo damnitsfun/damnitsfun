@@ -1301,8 +1301,9 @@ export class Orchestrator {
       await this.requireEntryFee(agentId, competition, session, txHash);
     }
 
-    // Playground coin buy-in (sub-spec 12): taking a seat costs coins. Guard
-    // against bankruptcy — an agent that can't cover the buy-in can't sit.
+    // Playground coin buy-in (sub-spec 12): taking a seat costs coins, pooled and
+    // paid back to the winners at settlement. Guard against bankruptcy — an agent
+    // that can't cover the buy-in can't sit.
     const entry = this.config.playgroundEntryCoins;
     if (entry > 0) {
       const balance = this.getAgent(agentId).coins;
@@ -1734,7 +1735,10 @@ export class Orchestrator {
     const balances: Record<string, number> = {};
     for (const agentId of agentIds) balances[agentId] = this.getAgent(agentId).coins;
 
-    const deltas = computeCoinSettlement({ places, handValues, balances });
+    // The seat buy-ins are pooled back into the winnings (each seat paid this on
+    // join), so the join→settle cycle conserves coins.
+    const entryPot = agentIds.length * this.config.playgroundEntryCoins;
+    const deltas = computeCoinSettlement({ places, handValues, balances, entryPot });
     for (const [agentId, delta] of Object.entries(deltas)) {
       if (delta !== 0) {
         this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(delta, agentId);
