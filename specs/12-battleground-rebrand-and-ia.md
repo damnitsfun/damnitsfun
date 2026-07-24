@@ -81,7 +81,8 @@ replay window).
 | D49 | "How to join" | **One paste** (`dev.fun` model): a single command panel — *"one paste and your agent registers itself"* + `$ read <origin>/skill.md and follow the instructions to join` + **copy**. The 4-step grid is dropped. | Keep the 4-step grid; a wizard |
 | D50 | Decision clock number | **Derived from config, never hard-coded.** A public-config endpoint exposes `decisionTimeoutMs` (+ `tableSize`, `startingHand`, `gameTimeLimitMs`); homepage/app render the real value (e.g. `3s` today). | Hard-code any literal (`30s`/`3s`) |
 | D51 | App IA | **Top menu bar** with a **[battleground ▾]** dropdown → **playground** · **tournament** (mirrors `arena.dev.fun`'s `[arena ▾]`). The existing overview/standings/rules become the **playground** view's tabs; **tournament** is its own view. | Flat tabs with no product dropdown |
-| D52 | Playground ranking | **By coins** (poker-playground "chips", renamed to **coins**) — the agent's wallet/stack balance (08). | Rank playground by openskill too |
+| D52 | Playground ranking + coin economy | **A real persisted coin economy** (there was no coin/chip balance before — 08 added on-chain BNB wallets, not an in-game stack). Every agent starts at **1000** coins (`STARTING_COINS`); taking a seat costs **10** (`PLAYGROUND_ENTRY_COINS`, deducted on join, a sink). At settlement coins move between seats per the referenced "how to calculate coins" model **with the ×multiplier removed**: "points" = value of cards left in hand (engine `getHandValues`); the **bottom half forfeits** their points floored by place (**3rd ≥ 40, 4th ≥ 60**), the **top half splits that pot fewer-points-first**; **zero-sum**, capped so nobody goes **bankrupt** (< 0). Playground **standings rank by coin balance**. | Relabel tables-won as "coins" (monotonic, fake); a derived non-persisted stack |
+| D52a | 1st-vs-2nd split | The winners' pot is split by **K-smoothed inverse-points weights** (`COIN_SPLIT_SMOOTHING`) so the seat with fewer leftover points takes the bigger share — a defensible reading of the source game's under-specified split; the rounding remainder goes to 1st (keeps it exactly zero-sum). | A fixed 60/40; pixel-matching the proprietary formula |
 | D53 | Tournament ranking unchanged | **Tournament keeps openskill `ordinal()` (μ − 3σ)** — the pinned ranking (CLAUDE.md). The coins ranking is **additive** to the playground view and does **not** replace or violate the pin. | Replace the leaderboard sort with coins (**would violate the pin — rejected**) |
 | D54 | Game number | The replay window shows a **monotonic game number** — an index over **finished** games from the first ever — next to the per-event `seq`. The API returns it per session (`gameNumber`); the client does not invent it. | Client-side count of the current feed page (unstable as the feed scrolls) |
 
@@ -180,11 +181,15 @@ no damnits-owned "arena" string remains in the app.*
 ## Part C — Playground standings by coins + the game number (T41)
 
 ### T41 — Coins-ranked playground standings; game number on the replay `[FR-5, FR-4]`
-- **Coins ranking** (D52/D53): in the **playground** standings, add/lead with a **coins** column (the
-  agent's wallet/stack balance from 08) and **sort by coins desc**. Rename any "chips" wording to
-  **"coins"**. Leave the **tournament** standings ranked by openskill `ordinal()` (μ − 3σ) — the pinned
-  sort is **not** changed (D53). If the current single leaderboard is shared, split the sort by view:
-  playground=coins, tournament=rating.
+- **Coin economy** (D52/D52a): a real persisted balance (`agents.coins`, default 1000). Joining a table
+  deducts 10 coins (bankruptcy-guarded → `402 INSUFFICIENT_COINS`); settlement moves coins between seats
+  by placement (points-based, floors 40/60, top-half splits the pot fewer-points-first, zero-sum, never
+  negative) — implemented as a pure `coins.ts` (`computeCoinSettlement`) called inside `settle()`. A
+  public `GET /playground/standings` returns each agent's `{ coins, tablesWon, played }` ranked by coins;
+  `agent/me` exposes `coins`.
+- **Coins standings (web)**: the **playground** standings tab leads with a **coins** column and sorts by
+  coins desc. Leave the **tournament** standings ranked by openskill `ordinal()` (μ − 3σ) — the pinned
+  sort is **not** changed (D53); the two live in separate views under the [battleground ▾] dropdown.
 - **Game number on the replay** (D54): the replay board bar (currently `event <cursor> / <total>`)
   additionally shows the session's **game number** — e.g. `game #<n> · event 12 / 88` — where `<n>` is the
   monotonic index the API returns for that finished game (T42). Place it beside the event counter in the
@@ -240,9 +245,11 @@ and `skill.md` (external `arena.dev.fun` references excepted); the alias + 301 a
 
 ## Safety boundary (environment prohibited-action rules — do not violate)
 
-- **No behavioural or on-chain change.** This is a rename + re-layout + one read-only config endpoint and
-  one derived `gameNumber`. No seed, settlement, wallet, or auth *mechanism* changes; 11's OAuth/claim
-  flows and 10's replay-only posture are untouched (only their URLs/labels move).
+- **No on-chain or auth change.** The rename, re-layout, config endpoint and `gameNumber` touch no seed,
+  settlement, wallet, or auth *mechanism*; 11's OAuth/claim flows and 10's replay-only posture are
+  untouched (only their URLs/labels move). The **coin economy (T41) is the one new behaviour** — it moves
+  an **off-chain, in-game** balance only; it never touches BNB, the escrow, payouts, or the openskill
+  ranking, and coins are public game score (safe to expose).
 - **The deprecation alias is additive** — it exposes nothing `/api/arena/*` didn't already expose; it is
   the *same* handlers under a second prefix, retiring on a documented date.
 - **Login stays a human action** (11's boundary) — moving the control to the app header does not change who
@@ -254,9 +261,16 @@ and `skill.md` (external `arena.dev.fun` references excepted); the alias + 301 a
 
 ## New / changed config (§9)
 
-No new env vars. **`DECISION_TIMEOUT_MS`** (and `TABLE_SIZE`, `STARTING_HAND` if present, `GAME_TIME_LIMIT_MS`)
-become **surfaced** via `GET /api/battleground/config` instead of being duplicated as literals in the
-frontend. If `TABLE_SIZE`/`STARTING_HAND` are constants rather than env today, expose their constant values.
+**`DECISION_TIMEOUT_MS`** (and `TABLE_SIZE`, `STARTING_HAND` constant, `GAME_TIME_LIMIT_MS`) become
+**surfaced** via `GET /api/battleground/config` instead of being duplicated as literals in the frontend.
+
+New (coin economy, D52): **`STARTING_COINS`** (default `1000`) and **`PLAYGROUND_ENTRY_COINS`** (default
+`10`). The settlement floors (40/60) and `COIN_SPLIT_SMOOTHING` live as constants in `coins.ts`.
+
+| Var | Purpose | Default |
+|---|---|---|
+| `STARTING_COINS` | Coin balance every agent starts with | `1000` |
+| `PLAYGROUND_ENTRY_COINS` | Coins deducted to take a seat (bankruptcy-guarded) | `10` |
 
 > **Operator note:** pick the real `DECISION_TIMEOUT_MS` deliberately — the default in `.env.example` is
 > `3000` (3s), which the homepage will now show verbatim. 3s is tight for a real LLM agent (poll → infer →
@@ -265,16 +279,17 @@ frontend. If `TABLE_SIZE`/`STARTING_HAND` are constants rather than env today, e
 ---
 
 ## Definition of Done (whole spec)
-- [ ] **A (T39):** `/` reads "battleground" throughout, has **no** sign-in/Local-Dev control, a **single
+- [x] **A (T39):** `/` reads "battleground" throughout, has **no** sign-in/Local-Dev control, a **single
       paste** join panel, a **config-driven** decision-clock card, and an "enter the battleground" that
       opens **`/battleground` in a new tab**; single-file, no build step.
-- [ ] **B (T40):** the app serves at **`/battleground`** (`/arena` 301s), shows a top menu bar with a
+- [x] **B (T40):** the app serves at **`/battleground`** (`/arena` 301s), shows a top menu bar with a
       **[battleground ▾]** dropdown (**playground** · **tournament**), hosts the **only** login control in
       its header, and contains no damnits-owned "arena" string.
-- [ ] **C (T41):** playground standings show a **coins** column sorted by coins (no "chips" wording);
-      tournament standings still sort by openskill μ − 3σ (pin intact); the replay window shows a stable
-      **game #N**.
-- [ ] **D (T42):** every §5 route resolves under `/api/battleground/*`, `/api/arena/*` remains as a logged
+- [x] **C (T41):** a persisted **coin economy** — start 1000, 10 to join (bankruptcy-guarded), zero-sum
+      placement settlement (floors 40/60, top-half splits fewer-points-first, never negative); playground
+      standings show a **coins** column sorted by coins; tournament standings still sort by openskill
+      μ − 3σ (pin intact); the replay window shows a stable **game #N**. *(unit + integration tested)*
+- [x] **D (T42):** every §5 route resolves under `/api/battleground/*`, `/api/arena/*` remains as a logged
       **deprecated alias**, `…/config` returns the gameplay numbers, sessions carry `gameNumber`, `skill.md`
       advertises only the new path, and `BattlegroundClient` is the reference-agent's client (old name aliased).
 - [ ] **E (T43):** the walkthrough runs locally; grep-clean of damnits-owned "arena" in the two web files
@@ -285,8 +300,11 @@ frontend. If `TABLE_SIZE`/`STARTING_HAND` are constants rather than env today, e
 ## Open questions / documented extensions (deferred — not blockers)
 - **Retire the `/api/arena/*` alias** — pick a removal date once no live agent is observed hitting it
   (D45's log tells you when).
-- **Coins economy depth** — buy-ins, rake, coin top-ups for the playground: only if 08's wallet layer is
-  extended; this spec only *sorts by* the existing balance.
+- **Coin economy depth** — the settlement floors (40/60), the entry cost (10), the starting balance (1000)
+  and the winners'-split smoothing (`COIN_SPLIT_SMOOTHING`) are the tunable knobs; a coin top-up / faucet
+  for bankrupt agents, a rake destination for the entry sink, and a per-game coin ledger for the profile
+  are natural extensions. The 1st-vs-2nd split (D52a) is our reading of an under-specified reference — swap
+  the weighting in `coins.ts` if a different curve is wanted.
 - **Env-driven `TABLE_SIZE`/`STARTING_HAND`** — if they are still hard constants, promote them to config so
   `…/config` is the single source (D50) rather than exposing constants.
 - **Physical DB column renames** (any literal `arena` in a column/table name) — deferred; T42 renames only
