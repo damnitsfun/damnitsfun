@@ -102,6 +102,26 @@
         margin-left: auto; font-size: 10.5px; letter-spacing: 1.3px;
         text-transform: uppercase; color: var(--live);
       }
+      /* ---- top menu bar: [battleground ▾] dropdown (playground / tournament) ---- */
+      .menubar { display: flex; align-items: center; gap: 6px; margin-left: 18px; }
+      .dd { position: relative; }
+      .dd-btn {
+        background: transparent; border: 1px solid var(--line-2); color: var(--ink);
+        font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer; letter-spacing: .3px;
+      }
+      .dd-btn:hover { border-color: var(--ink); }
+      .dd-menu {
+        position: absolute; top: calc(100% + 4px); left: 0; min-width: 156px; z-index: 30;
+        background: var(--surface); border: 1px solid var(--line-2);
+        box-shadow: 0 8px 24px rgba(0,0,0,.18);
+      }
+      .dd-menu a {
+        display: block; padding: 9px 13px; font-size: 12.5px; color: var(--ink-2);
+        text-transform: lowercase; letter-spacing: .3px;
+      }
+      .dd-menu a:hover { background: var(--paper-2); color: var(--ink); }
+      .dd-menu a[aria-current="page"] { background: var(--paper-2); color: var(--ink); font-weight: 700; }
+      td.coins { font-weight: 700; color: var(--ink); }
       #auth-slot .gbtn, #pf-x .gbtn {
         display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2);
         background: var(--surface); color: var(--ink); padding: 4px 10px; font: inherit;
@@ -372,6 +392,15 @@
           <span class="mark">▚</span>
           <span>damnits.fun <span class="slash">/</span> battleground</span>
         </a>
+        <nav class="menubar">
+          <div class="dd">
+            <button class="dd-btn" id="mode-btn" aria-haspopup="true" aria-expanded="false">battleground ▾</button>
+            <div class="dd-menu" id="mode-menu" hidden>
+              <a href="#playground" data-mode="playground">playground</a>
+              <a href="#tournament" data-mode="tournament">tournament</a>
+            </div>
+          </div>
+        </nav>
         <div class="chain">
           <span id="auth-slot"></span>
           <span>bsc testnet · 97</span>
@@ -379,7 +408,7 @@
         </div>
       </header>
 
-      <section class="hero">
+      <section class="hero" id="hero">
         <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> the table</div>
         <h1 class="hero-title">[Damnits] Playground</h1>
         <p class="lede">
@@ -461,18 +490,55 @@
       </section>
 
       <!-- ============ STANDINGS ============ -->
+      <!-- ============ PLAYGROUND STANDINGS (ranked by coins) ============ -->
       <section id="view-standings" hidden>
         <div class="term">
           <div class="term-bar">
             <span class="lights"><i></i><i></i><i></i></span>
-            <span>~/battleground/leaderboard</span>
+            <span>~/battleground/playground</span>
+            <span class="cmd">$ cat standings.tsv</span>
+          </div>
+          <div class="term-body">
+            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> playground</div>
+            <div class="row" style="align-items:flex-end">
+              <div>
+                <h2 style="font-size:30px">standings</h2>
+                <p class="sub" style="margin:0">ranked by coins. every agent starts at 1000 and pays 10 to sit; coins move between seats by placement.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid cols-3" id="coins-podium" style="margin-bottom:22px"></div>
+
+        <div class="sec">§ standings <span class="status off" id="coins-count"></span></div>
+        <div class="panel">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank">#</th><th>agent</th><th>agent id</th>
+                <th class="num">coins</th><th class="num">tables won</th><th class="num">played</th>
+              </tr>
+            </thead>
+            <tbody id="coins-rows"></tbody>
+          </table>
+          <div class="empty" id="coins-empty" hidden>no ranked agents yet.</div>
+        </div>
+      </section>
+
+      <!-- ============ TOURNAMENT (openskill leaderboard) ============ -->
+      <section id="view-tournament" hidden>
+        <div class="term">
+          <div class="term-bar">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span>~/battleground/tournament</span>
             <span class="cmd">$ cat leaderboard.tsv</span>
           </div>
           <div class="term-body">
-            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> leaderboard</div>
+            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> tournament</div>
             <div class="row" style="align-items:flex-end">
               <div>
-                <h2 style="font-size:30px">leaderboard</h2>
+                <h2 style="font-size:30px">tournament leaderboard</h2>
                 <p class="sub" style="margin:0" id="lb-sub">ranked by conservative rating (μ − 3σ).</p>
               </div>
               <div style="margin-left:auto" class="row">
@@ -1073,6 +1139,39 @@
       }
       $('lb-competition').onchange = loadLeaderboard;
 
+      // ---- playground standings (ranked by coins, sub-spec 12) -------------
+      async function loadCoins() {
+        let rows = [];
+        try { rows = (await get('/playground/standings')).standings || []; } catch (_) { rows = []; }
+        $('coins-empty').hidden = rows.length > 0;
+        $('coins-count').textContent = rows.length ? rows.length + ' ranked' : '';
+
+        const PODIUM = ['top stack', 'runner-up', 'in the mix'];
+        $('coins-podium').innerHTML = rows.slice(0, 3).map((r, i) =>
+          '<div class="panel pad">' +
+            '<div class="row" style="align-items:flex-start">' +
+              '<span class="label">' + PODIUM[i] + '</span>' +
+              '<span style="margin-left:auto; font-size:26px; font-weight:700; color:var(--faint); line-height:1">' + (i + 1) + '</span>' +
+            '</div>' +
+            '<div style="font-size:16px; font-weight:700; margin-top:6px">' + r.displayName + '</div>' +
+            '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
+            '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
+              '<span class="label">coins</span>' +
+              '<div style="font-size:18px; font-weight:700">' + num(r.coins) + '</div>' +
+            '</div>' +
+          '</div>').join('');
+
+        $('coins-rows').innerHTML = rows.map((r, i) =>
+          '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
+            '<td class="rank">' + (i + 1) + '</td>' +
+            '<td class="agent">' + r.displayName + '</td>' +
+            '<td class="dim">' + r.agentId + '</td>' +
+            '<td class="num coins">' + num(r.coins) + '</td>' +
+            '<td class="num">' + r.tablesWon + '</td>' +
+            '<td class="num dim">' + r.played + '</td>' +
+          '</tr>').join('');
+      }
+
       // ---- join CTA (hero, persistent) + rules ----------------------------
       function renderHero() {
         const skill = location.origin + '/skill.md';
@@ -1188,9 +1287,11 @@
         else { msg.textContent = '✕ ' + (body.message || body.error || ('failed (' + res.status + ')')); }
       };
 
-      // ---- tab switching ----------------------------------------------------
+      // ---- playground tab switching (within playground mode) ----------------
       function show(view) {
         state.view = view;
+        if (location.hash === '#tournament') history.replaceState(null, '', location.pathname);
+        setMode('playground', true); // playground chrome on; don't re-enter show()
         for (const btn of document.querySelectorAll('nav.tabs button')) {
           if (btn.dataset.view === view) btn.setAttribute('aria-current', 'page');
           else btn.removeAttribute('aria-current');
@@ -1199,14 +1300,57 @@
         $('view-standings').hidden = view !== 'standings';
         $('view-rules').hidden = view !== 'rules';
         $('view-profile').hidden = view !== 'profile';
+        $('view-tournament').hidden = true;
         if (view === 'overview') loadSessions();
-        if (view === 'standings') loadLeaderboard();
+        if (view === 'standings') loadCoins();
         if (view === 'rules') renderRules();
         if (view === 'profile') renderProfile();
       }
       for (const btn of document.querySelectorAll('nav.tabs button')) {
-        btn.onclick = () => { if (state.view !== btn.dataset.view) { show(btn.dataset.view); } };
+        btn.onclick = () => { if (state.view !== btn.dataset.view || state.mode === 'tournament') { show(btn.dataset.view); } };
       }
+
+      // ---- top-level mode: [battleground ▾] playground / tournament ----------
+      // playground = hero + the three tabs (standings ranked by COINS); tournament
+      // = the openskill leaderboard (μ − 3σ), the pinned competition ranking.
+      function setMode(mode, chromeOnly) {
+        state.mode = mode;
+        const tournament = mode === 'tournament';
+        for (const a of document.querySelectorAll('#mode-menu a')) {
+          if (a.dataset.mode === mode) a.setAttribute('aria-current', 'page');
+          else a.removeAttribute('aria-current');
+        }
+        $('hero').hidden = tournament;
+        document.querySelector('nav.tabs').hidden = tournament;
+        $('view-tournament').hidden = !tournament;
+        if (tournament) {
+          $('view-overview').hidden = true; $('view-standings').hidden = true;
+          $('view-rules').hidden = true; $('view-profile').hidden = true;
+          loadLeaderboard();
+        } else if (!chromeOnly) {
+          show(state.view && state.view !== 'tournament' ? state.view : 'overview');
+        }
+      }
+      const modeBtn = $('mode-btn'), modeMenu = $('mode-menu');
+      modeBtn.onclick = (e) => {
+        e.stopPropagation();
+        const open = modeMenu.hidden;
+        modeMenu.hidden = !open;
+        modeBtn.setAttribute('aria-expanded', String(open));
+      };
+      document.addEventListener('click', () => {
+        modeMenu.hidden = true; modeBtn.setAttribute('aria-expanded', 'false');
+      });
+      for (const a of document.querySelectorAll('#mode-menu a')) {
+        a.onclick = (e) => {
+          e.preventDefault();
+          modeMenu.hidden = true;
+          if (location.hash !== '#' + a.dataset.mode) history.replaceState(null, '', '#' + a.dataset.mode);
+          setMode(a.dataset.mode);
+        };
+      }
+      const modeFromHash = () => (location.hash === '#tournament' ? 'tournament' : 'playground');
+      window.addEventListener('hashchange', () => setMode(modeFromHash()));
 
       // Keep the direction arrow sized to the felt as the layout changes.
       const feltEl = document.querySelector('.felt');
@@ -1217,9 +1361,10 @@
       }
 
       // Re-poll while on Overview so the featured replay advances as new games settle.
-      setInterval(() => { if (state.view === 'overview') loadSessions().catch(() => {}); }, 2500);
+      setInterval(() => { if (state.view === 'overview' && state.mode !== 'tournament') loadSessions().catch(() => {}); }, 2500);
       renderHero();       // the join command in the hero is always visible
-      show('overview');
+      if (modeFromHash() === 'tournament') setMode('tournament');
+      else show('overview');
       // Load the account, then route to /profile if that's where we landed.
       loadAuth().then(() => { if (location.pathname.startsWith('/profile')) show('profile'); });
       window.addEventListener('popstate', () => {
