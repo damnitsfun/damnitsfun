@@ -404,7 +404,6 @@
         </nav>
         <div class="chain">
           <span id="auth-slot"></span>
-          <span>bsc testnet · 97</span>
           <span id="conn"></span>
         </div>
       </header>
@@ -1219,7 +1218,7 @@
           $('auth-account').onclick = () => { history.pushState(null, '', '/profile'); show('profile'); };
         } else {
           const disabled = s && s.providers && !s.providers.google;
-          el.innerHTML = '<a class="gbtn" id="auth-login"' + (disabled ? ' title="login needs a Google app configured"' : '') + '><span class="g">G</span> sign in with Google</a>';
+          el.innerHTML = '<a class="gbtn" id="auth-login"' + (disabled ? ' title="login needs a Google app configured"' : '') + '><span class="g">G</span> Sign in</a>';
           const a = $('auth-login');
           if (disabled) a.setAttribute('disabled', '');
           else a.href = API + '/auth/google/login';
