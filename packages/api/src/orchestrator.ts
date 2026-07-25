@@ -850,6 +850,39 @@ export class Orchestrator {
     }));
   }
 
+  /**
+   * Public competition metadata (sub-spec 13 D56) — the active competitions with
+   * their kind + prize economics + entry count, for the web's playground/tournament
+   * split. No secrets: pool/jackpot/fee are public (they mirror the on-chain state).
+   */
+  publicCompetitions(): Array<{
+    id: string;
+    name: string;
+    kind: 'classic' | 'tournament';
+    entryFeeWei: string;
+    poolWei: string;
+    jackpotWei: string;
+    entriesCloseAt: string | null;
+    entriesCount: number;
+    requiresClaim: boolean;
+  }> {
+    return this.listActiveCompetitions().map((c) => ({
+      id: c.id,
+      name: c.name,
+      kind: c.kind,
+      entryFeeWei: c.entryFeeWei,
+      poolWei: c.poolWei,
+      jackpotWei: c.jackpotWei,
+      entriesCloseAt: c.entriesCloseAt,
+      entriesCount: (
+        this.db
+          .prepare(`SELECT COUNT(*) AS n FROM competition_entries WHERE competition_id = ?`)
+          .get(c.id) as { n: number }
+      ).n,
+      requiresClaim: c.requiresClaim,
+    }));
+  }
+
   private getCompetition(competitionId: string): CompetitionRow {
     const row = this.db.prepare(`SELECT * FROM competitions WHERE id = ?`).get(competitionId) as
       | CompetitionRow
@@ -1302,9 +1335,10 @@ export class Orchestrator {
     }
 
     // Playground coin buy-in (sub-spec 12): taking a seat costs coins, pooled and
-    // paid back to the winners at settlement. Guard against bankruptcy — an agent
-    // that can't cover the buy-in can't sit.
-    const entry = this.config.playgroundEntryCoins;
+    // paid back to the winners at settlement. PLAYGROUND ONLY (sub-spec 13 D58) —
+    // a tournament seat is staked by its on-chain buy-in (08), not coins. Guard
+    // against bankruptcy — an agent that can't cover the buy-in can't sit.
+    const entry = competition.kind === 'classic' ? this.config.playgroundEntryCoins : 0;
     if (entry > 0) {
       const balance = this.getAgent(agentId).coins;
       if (balance < entry) {
@@ -1633,10 +1667,18 @@ export class Orchestrator {
   private settle(sessionId: string, entry: LiveSession): void {
     this.live.delete(sessionId);
 
-    const current = this.db.prepare(`SELECT status FROM sessions WHERE id = ?`).get(sessionId) as
-      | { status: string }
-      | undefined;
+    const current = this.db
+      .prepare(
+        `SELECT s.status AS status, c.kind AS kind
+           FROM sessions s JOIN competitions c ON c.id = s.competition_id
+          WHERE s.id = ?`,
+      )
+      .get(sessionId) as { status: string; kind: 'classic' | 'tournament' } | undefined;
     if (!current || current.status === 'settled' || current.status === 'archived') return;
+
+    // Coins are a PLAYGROUND currency (sub-spec 13 D58): only classic tables move
+    // coins at settlement; a tournament seat is staked by its on-chain buy-in (08).
+    const chargeCoins = current.kind === 'classic';
 
     const winner = entry.game.winnerAgentId;
     const handValues = entry.game.getHandValues();
@@ -1658,7 +1700,7 @@ export class Orchestrator {
       }
 
       this.updateRatings(winner, handValues);
-      this.settleCoins(winner, handValues);
+      if (chargeCoins) this.settleCoins(winner, handValues);
     });
     finalize();
 
@@ -1763,6 +1805,8 @@ export class Orchestrator {
   }> {
     const clause = competitionId ? `AND s.competition_id = ?` : '';
     const params = competitionId ? [competitionId] : [];
+    // Playground standings count CLASSIC games only (sub-spec 13): coins are the
+    // playground currency, so a tournament table never moves the coins board.
     const rows = this.db
       .prepare(
         `SELECT a.id AS agentId, a.display_name AS displayName, a.coins AS coins,
@@ -1771,6 +1815,7 @@ export class Orchestrator {
            FROM agents a
            JOIN session_players p ON p.agent_id = a.id
            JOIN sessions s ON s.id = p.session_id AND s.status IN ('settled','archived') ${clause}
+           JOIN competitions c ON c.id = s.competition_id AND c.kind = 'classic'
           GROUP BY a.id
           ORDER BY a.coins DESC, tablesWon DESC, played ASC`,
       )

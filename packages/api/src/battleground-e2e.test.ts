@@ -159,6 +159,59 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     expect(typeof lb[0]!.conservativeRating).toBe('number');
   });
 
+  it('playground and tournament are different game types: kinds, classic-only coins, economics (T44/T46)', async () => {
+    const { app, orchestrator } = boot();
+    const classic = orchestrator.createCompetition('Open Playground');
+    const tourn = orchestrator.createTournament('Season 1', '0');
+    await orchestrator.seedTournament(tourn, '2500000000000000000', '500000000000000000');
+
+    const agents: Agent[] = [];
+    for (const n of ['P1', 'P2', 'P3', 'P4']) agents.push(orchestrator.registerAgent(n));
+
+    // A classic game moves coins; a tournament game does not (D58).
+    await playOneGame(orchestrator, classic, agents);
+    for (const a of agents) await orchestrator.enterCompetition(a.agentId, tourn);
+    await playOneGame(orchestrator, tourn, agents);
+
+    // Public competitions expose both kinds + the tournament's economics.
+    const comps = (await app.inject({ method: 'GET', url: '/api/battleground/competitions' })).json()
+      .competitions as Array<Record<string, unknown>>;
+    const classicC = comps.find((c) => c.id === classic)!;
+    const tournC = comps.find((c) => c.id === tourn)!;
+    expect(classicC.kind).toBe('classic');
+    expect(tournC.kind).toBe('tournament');
+    expect(tournC.poolWei).toBe('2500000000000000000');
+    expect(tournC.jackpotWei).toBe('500000000000000000');
+    expect(tournC.entriesCount).toBe(4);
+    // No secrets leaked in the public payload.
+    expect(Object.keys(tournC)).not.toContain('operatorPrivateKey');
+
+    // Sessions carry their competition kind, so the web can split the feed.
+    const sessions = (await app.inject({ method: 'GET', url: '/api/battleground/spectate/sessions' }))
+      .json().sessions as Array<{ competitionKind: string; competitionId: string }>;
+    expect(sessions.some((s) => s.competitionKind === 'classic')).toBe(true);
+    expect(sessions.some((s) => s.competitionKind === 'tournament')).toBe(true);
+
+    // Coins are a playground currency: only the classic table moved them, so each
+    // agent paid+won within a single classic game — the classic four still total 4000.
+    const standings = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/battleground/playground/standings?competitionId=${classic}`,
+      })
+    ).json().standings as Array<{ coins: number }>;
+    expect(standings).toHaveLength(4);
+    expect(standings.reduce((s, r) => s + r.coins, 0)).toBe(4 * 1000);
+    // The tournament game charged no coins, so it contributes nothing to the coins board.
+    const tournStandings = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/battleground/playground/standings?competitionId=${tourn}`,
+      })
+    ).json().standings as unknown[];
+    expect(tournStandings).toHaveLength(0);
+  });
+
   it('the two web files are grep-clean of our product "arena" (arena.dev.fun excepted)', () => {
     for (const file of ['home.html', 'index.html']) {
       const hits = productArenaHits(readFileSync(join(WEB, file), 'utf8'));

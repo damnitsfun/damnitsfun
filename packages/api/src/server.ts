@@ -183,6 +183,11 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return await orchestrator.enterCompetition(agent.id, competitionId, txHash);
     });
 
+    // ---- public competitions list (no auth, sub-spec 13 D56) ----------------
+    // Public metadata so the web can split playground (classic) vs tournament
+    // (pooled) and show the tournament's prize pool / jackpot / buy-in / entries.
+    scope.get('/competitions', async () => ({ competitions: orchestrator.publicCompetitions() }));
+
     // ---- playground standings (no auth; ranked by coins, sub-spec 12) -------
     scope.get('/playground/standings', async (request) => {
       const competitionId = (request.query as { competitionId?: string }).competitionId;

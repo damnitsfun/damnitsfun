@@ -112,6 +112,9 @@ export function toSpectatorEvent(record: SessionEventRecord, settled: boolean): 
 export interface SessionSummary {
   sessionId: string;
   competitionId: string;
+  /** Which game type this session belongs to (sub-spec 13) — lets the web split
+   *  the replay feed + standings into playground (classic) vs tournament. */
+  competitionKind: 'classic' | 'tournament';
   status: SessionStatus;
   tableSize: number;
   seats: Array<{ seatIndex: number; agentId: string; displayName: string }>;
@@ -225,25 +228,33 @@ function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
     }
   ).n;
 
-  // A stable, 1-based index of this game among all finished games (D54): count the
-  // finished sessions ordered before this one (by creation, id as tiebreaker),
-  // inclusive. Only defined once this session is itself finished.
-  const createdAt = row.created_at as string;
+  // A stable, 1-based index of this game among all finished games (D54): its
+  // position in CREATION order (rowid is monotonic with insertion, so this is
+  // deterministic even when many games settle in the same second). Only defined
+  // once this session is itself finished.
   const gameNumber = settled
     ? (
         db
           .prepare(
             `SELECT COUNT(*) AS n FROM sessions
               WHERE status IN ('settled','archived')
-                AND (created_at < ? OR (created_at = ? AND id <= ?))`,
+                AND rowid <= (SELECT rowid FROM sessions WHERE id = ?)`,
           )
-          .get(createdAt, createdAt, sessionId) as { n: number }
+          .get(sessionId) as { n: number }
       ).n
     : null;
+
+  const competitionKind =
+    ((
+      db.prepare(`SELECT kind FROM competitions WHERE id = ?`).get(row.competition_id) as
+        | { kind: 'classic' | 'tournament' }
+        | undefined
+    )?.kind) ?? 'classic';
 
   return {
     sessionId,
     competitionId: row.competition_id as string,
+    competitionKind,
     status,
     tableSize: row.table_size as number,
     seats,

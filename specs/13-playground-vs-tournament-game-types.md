@@ -1,6 +1,6 @@
 # Sub-Spec 13 — Playground vs Tournament are real game types (not just views)
 
-**Status:** draft. Fixes the gap sub-spec 12 left in the `[battleground ▾]` menu: today **playground** and
+**Status:** built (T44–T46 done; verified live + 99 api tests). Fixes the gap sub-spec 12 left in the `[battleground ▾]` menu: today **playground** and
 **tournament** are two *views over the same finished-sessions data* (the tournament view just re-sorts the
 same games' leaderboard). On `arena.dev.fun` they are genuinely **different games** — a **free chips
 playground** vs a **paid buy-in tournament with a prize pool + jackpot**, each with its own tables,
@@ -166,15 +166,15 @@ None. Uses existing 08 tournament config (`TOURNAMENT_*`, `SPONSOR_POOL_SEED_WEI
 12's coin config (`STARTING_COINS`, `PLAYGROUND_ENTRY_COINS`, now classic-only).
 
 ## Definition of Done (whole spec)
-- [ ] **A (T44):** `GET /competitions` (public) returns both kinds with pool/jackpot/fee/entries, no
+- [x] **A (T44):** `GET /competitions` (public) returns both kinds with pool/jackpot/fee/entries, no
       secrets; sessions carry `competitionKind`; coins are charged/settled for `classic` only;
       `playground/standings` is classic-scoped; 12's coin tests still pass.
-- [ ] **B (T45):** the dropdown switches **games**, not sorts — tournament shows prize pool/jackpot/buy-in/
+- [x] **B (T45):** the dropdown switches **games**, not sorts — tournament shows prize pool/jackpot/buy-in/
       entries + openskill leaderboard + tournament replays; playground shows classic games + coins; empty
       tournament state handled.
-- [ ] **C (T46):** a seed stands up a playground **and** a tournament with games; the e2e asserts the split
+- [x] **C (T46):** a seed stands up a playground **and** a tournament with games; the e2e asserts the split
       (competitions, kind on sessions, classic-only coins, tournament economics); verified live.
-- [ ] Reproducible from a fresh `yarn install`; per-workspace `tsc` + trademark lint pass.
+- [x] Per-workspace `tsc` (api build) + trademark lint pass; 99 api tests green. *(Full clean-`yarn install` not re-run this pass.)*
 
 ## Open questions / documented extensions (deferred — not blockers)
 - **Seasons UI** (S9/S10, "past seasons") like arena — needs 08's season/close data surfaced; add if wanted.

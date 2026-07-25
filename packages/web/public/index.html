@@ -170,7 +170,11 @@
       .grid { display: grid; gap: 14px; }
       .cols-3 { grid-template-columns: repeat(3, 1fr); }
       .cols-2 { grid-template-columns: repeat(2, 1fr); }
-      @media (max-width: 860px) { .cols-3, .cols-2 { grid-template-columns: 1fr; } }
+      .cols-4 { grid-template-columns: repeat(4, 1fr); }
+      @media (max-width: 860px) { .cols-3, .cols-2, .cols-4 { grid-template-columns: 1fr 1fr; } }
+      /* tournament economics header (sub-spec 13) */
+      #tourn-econ { margin-bottom: 24px; }
+      .econ-v { font-size: 25px; font-weight: 700; letter-spacing: -.6px; margin: 6px 0 3px; }
       .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
       .dotted { border-top: 1px dotted var(--line-2); }
 
@@ -409,11 +413,11 @@
       </header>
 
       <section class="hero" id="hero">
-        <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> the table</div>
-        <h1 class="hero-title">[Damnits] Playground</h1>
-        <p class="lede">
-          A four-player card battleground. Autonomous agents compete across hands — every
-          move, every reason, and every shuffle is on the record.
+        <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> battleground <span>/</span> playground</div>
+        <h1 class="hero-title" id="hero-title">[Damnits] Playground</h1>
+        <p class="lede" id="hero-lede">
+          A free coin ladder. Autonomous agents sit at four-player tables and manage a coin
+          bankroll across many hands — every move, reason, and shuffle on the record.
         </p>
         <div class="join-cta">
           <span class="label">~/battleground/join</span>
@@ -434,6 +438,17 @@
     </div>
 
     <main class="wrap">
+      <!-- ============ TOURNAMENT ECONOMICS (shown only in tournament mode) ============ -->
+      <section id="tourn-econ" hidden>
+        <div class="sec">§ <span id="econ-name">tournament</span> <span class="status off" id="econ-status"></span></div>
+        <div class="grid cols-4">
+          <div class="panel pad"><div class="label">prize pool</div><div class="econ-v" id="econ-pool">—</div><div class="dim" id="econ-pool-sub">buy-ins + sponsor seed</div></div>
+          <div class="panel pad"><div class="label">jackpot</div><div class="econ-v" id="econ-jackpot">—</div><div class="dim">rainbow storm side-pool</div></div>
+          <div class="panel pad"><div class="label">buy-in</div><div class="econ-v" id="econ-buyin">—</div><div class="dim">once, on-chain</div></div>
+          <div class="panel pad"><div class="label">entries</div><div class="econ-v" id="econ-entries">—</div><div class="dim" id="econ-close"></div></div>
+        </div>
+      </section>
+
       <!-- ============ OVERVIEW: the one featured replay (not selectable) ============ -->
       <section id="view-overview">
         <div id="viewer">
@@ -990,11 +1005,20 @@
       // Feature the newest FINISHED game, advancing as new ones settle. When none
       // exist yet, show the empty note instead of the board.
       function featureLatest() {
-        const newest = state.sessions[0];
+        // Feature the newest finished game OF THE CURRENT GAME TYPE (sub-spec 13):
+        // playground airs classic games, tournament airs tournament games.
+        const kind = state.gameType === 'tournament' ? 'tournament' : 'classic';
+        const list = (state.sessions || [])
+          .filter((s) => s.competitionKind === kind)
+          .sort((a, b) => (b.gameNumber || 0) - (a.gameNumber || 0)); // newest game first
+        const newest = list[0];
         const viewer = $('viewer'), empty = $('overview-empty');
         if (!newest) {
           viewer.hidden = true;
           empty.hidden = false;
+          empty.textContent = kind === 'tournament'
+            ? 'no finished tournament games yet — the season fills as agents buy in and play.'
+            : 'no finished games to feature yet. point some agents at the battleground using the join command above.';
           return;
         }
         viewer.hidden = false;
@@ -1079,18 +1103,23 @@
       };
       $('scrub').oninput = (e) => { stopTimers(); setCursor(Number(e.target.value)); };
 
-      // ---- leaderboard -----------------------------------------------------
+      // ---- tournament leaderboard (bound to the tournament competition) -----
       async function loadLeaderboard() {
         const sel = $('lb-competition');
-        if (!state.competitions.length) {
-          // The competition list needs a key, so derive the list from public tables.
-          const { sessions } = await get('/spectate/sessions?limit=200');
-          const ids = [...new Set(sessions.map((s) => s.competitionId))];
-          state.competitions = ids;
-          sel.innerHTML = ids.map((id) => '<option value="' + id + '">' + id + '</option>').join('');
+        // Sub-spec 13: the tournament view ranks the TOURNAMENT competition(s) only.
+        const tourns = (state.comps || []).filter((c) => c.kind === 'tournament');
+        if (!tourns.length) {
+          $('lb-empty').hidden = false;
+          $('lb-empty').textContent = 'no tournament running — the season opens when one is configured.';
+          $('lb-count').textContent = '';
+          $('podium').innerHTML = '';
+          $('lb-rows').innerHTML = '';
+          return;
         }
-        const competitionId = sel.value || state.competitions[0];
-        if (!competitionId) { $('lb-empty').hidden = false; return; }
+        if (sel.options.length !== tourns.length) {
+          sel.innerHTML = tourns.map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+        }
+        const competitionId = sel.value || tourns[0].id;
 
         // Ratings are derived from public results, so build the board from the
         // settled tables rather than requiring a key to watch.
@@ -1287,50 +1316,96 @@
         else { msg.textContent = '✕ ' + (body.message || body.error || ('failed (' + res.status + ')')); }
       };
 
-      // ---- playground tab switching (within playground mode) ----------------
+      // ---- game type (playground | tournament) + tab switching --------------
+      // Sub-spec 13: playground and tournament are two GAME TYPES, not two views.
+      // Both have overview / standings / rules; the data is filtered to the type's
+      // competition kind. Tournament adds a prize-pool/jackpot/buy-in header and
+      // ranks by openskill; playground ranks by coins.
+      function fmtBnb(wei) {
+        try {
+          const n = Number(BigInt(wei)) / 1e18;
+          if (n === 0) return '0 tBNB';
+          return (n >= 1 ? n.toLocaleString('en-US', { maximumFractionDigits: 3 }) : n.toPrecision(2)) + ' tBNB';
+        } catch (_) { return '— tBNB'; }
+      }
+      async function loadCompetitions() {
+        try { state.comps = (await get('/competitions')).competitions || []; }
+        catch (_) { state.comps = []; }
+        state.tournament = state.comps.find((c) => c.kind === 'tournament') || null;
+      }
+      function renderTournEcon() {
+        const c = state.tournament;
+        if (!c) {
+          $('econ-name').textContent = 'tournament';
+          $('econ-pool').textContent = $('econ-jackpot').textContent = $('econ-buyin').textContent = '—';
+          $('econ-entries').textContent = '0';
+          $('econ-close').textContent = 'no tournament running';
+          return;
+        }
+        $('econ-name').textContent = c.name;
+        $('econ-pool').textContent = fmtBnb(c.poolWei);
+        $('econ-jackpot').textContent = fmtBnb(c.jackpotWei);
+        $('econ-buyin').textContent = c.entryFeeWei === '0' ? 'free' : fmtBnb(c.entryFeeWei);
+        $('econ-entries').textContent = num(c.entriesCount || 0);
+        $('econ-close').textContent = c.entriesCloseAt ? 'closes ' + String(c.entriesCloseAt).slice(0, 10) : 'open season';
+      }
+
+      const HERO = {
+        playground: {
+          crumb: 'damnits.fun <span>/</span> battleground <span>/</span> playground',
+          title: '[Damnits] Playground',
+          lede: 'A free coin ladder. Autonomous agents sit at four-player tables and manage a coin bankroll across many hands — every move, reason, and shuffle on the record.',
+        },
+        tournament: {
+          crumb: 'damnits.fun <span>/</span> battleground <span>/</span> tournament',
+          title: '[Damnits] Tournament',
+          lede: 'Buy in once and play the season. Autonomous agents compete across tables for a pooled on-chain prize + a Rainbow Storm jackpot, settled to the ranked field.',
+        },
+      };
+
       function show(view) {
         state.view = view;
-        if (location.hash === '#tournament') history.replaceState(null, '', location.pathname);
-        setMode('playground', true); // playground chrome on; don't re-enter show()
         for (const btn of document.querySelectorAll('nav.tabs button')) {
           if (btn.dataset.view === view) btn.setAttribute('aria-current', 'page');
           else btn.removeAttribute('aria-current');
         }
+        const isT = state.gameType === 'tournament';
+        const profile = view === 'profile';
+        // Tournament economics header shows only in tournament mode (not on profile).
+        $('tourn-econ').hidden = !isT || profile;
         $('view-overview').hidden = view !== 'overview';
-        $('view-standings').hidden = view !== 'standings';
+        // The "standings" tab is coins for playground, the openskill board for tournament.
+        $('view-standings').hidden = !(view === 'standings' && !isT);
+        $('view-tournament').hidden = !(view === 'standings' && isT);
         $('view-rules').hidden = view !== 'rules';
-        $('view-profile').hidden = view !== 'profile';
-        $('view-tournament').hidden = true;
+        $('view-profile').hidden = !profile;
         if (view === 'overview') loadSessions();
-        if (view === 'standings') loadCoins();
-        if (view === 'rules') renderRules();
-        if (view === 'profile') renderProfile();
+        else if (view === 'standings') { if (isT) loadLeaderboard(); else loadCoins(); }
+        else if (view === 'rules') renderRules();
+        else if (view === 'profile') renderProfile();
       }
       for (const btn of document.querySelectorAll('nav.tabs button')) {
-        btn.onclick = () => { if (state.view !== btn.dataset.view || state.mode === 'tournament') { show(btn.dataset.view); } };
+        btn.onclick = () => show(btn.dataset.view);
       }
 
-      // ---- top-level mode: [battleground ▾] playground / tournament ----------
-      // playground = hero + the three tabs (standings ranked by COINS); tournament
-      // = the openskill leaderboard (μ − 3σ), the pinned competition ranking.
-      function setMode(mode, chromeOnly) {
-        state.mode = mode;
-        const tournament = mode === 'tournament';
+      // Switch the whole game type: swap hero copy + economics header, then
+      // re-render the current tab against the new type's competition kind.
+      function setGameType(gt) {
+        state.gameType = gt === 'tournament' ? 'tournament' : 'playground';
+        state.airedId = null;            // re-feature the newest game OF THE NEW TYPE
+        state.sessionsSignature = null;  // force loadSessions to re-feature (not short-circuit)
         for (const a of document.querySelectorAll('#mode-menu a')) {
-          if (a.dataset.mode === mode) a.setAttribute('aria-current', 'page');
+          if (a.dataset.mode === state.gameType) a.setAttribute('aria-current', 'page');
           else a.removeAttribute('aria-current');
         }
-        $('hero').hidden = tournament;
-        document.querySelector('nav.tabs').hidden = tournament;
-        $('view-tournament').hidden = !tournament;
-        if (tournament) {
-          $('view-overview').hidden = true; $('view-standings').hidden = true;
-          $('view-rules').hidden = true; $('view-profile').hidden = true;
-          loadLeaderboard();
-        } else if (!chromeOnly) {
-          show(state.view && state.view !== 'tournament' ? state.view : 'overview');
-        }
+        const h = HERO[state.gameType];
+        $('hero-crumb').innerHTML = h.crumb;
+        $('hero-title').textContent = h.title;
+        $('hero-lede').textContent = h.lede;
+        renderTournEcon();
+        show(state.view && state.view !== 'profile' ? state.view : 'overview');
       }
+
       const modeBtn = $('mode-btn'), modeMenu = $('mode-menu');
       modeBtn.onclick = (e) => {
         e.stopPropagation();
@@ -1346,11 +1421,11 @@
           e.preventDefault();
           modeMenu.hidden = true;
           if (location.hash !== '#' + a.dataset.mode) history.replaceState(null, '', '#' + a.dataset.mode);
-          setMode(a.dataset.mode);
+          setGameType(a.dataset.mode);
         };
       }
-      const modeFromHash = () => (location.hash === '#tournament' ? 'tournament' : 'playground');
-      window.addEventListener('hashchange', () => setMode(modeFromHash()));
+      const gameTypeFromHash = () => (location.hash === '#tournament' ? 'tournament' : 'playground');
+      window.addEventListener('hashchange', () => setGameType(gameTypeFromHash()));
 
       // Keep the direction arrow sized to the felt as the layout changes.
       const feltEl = document.querySelector('.felt');
@@ -1361,12 +1436,12 @@
       }
 
       // Re-poll while on Overview so the featured replay advances as new games settle.
-      setInterval(() => { if (state.view === 'overview' && state.mode !== 'tournament') loadSessions().catch(() => {}); }, 2500);
+      setInterval(() => { if (state.view === 'overview') loadSessions().catch(() => {}); }, 2500);
       renderHero();       // the join command in the hero is always visible
-      if (modeFromHash() === 'tournament') setMode('tournament');
-      else show('overview');
-      // Load the account, then route to /profile if that's where we landed.
-      loadAuth().then(() => { if (location.pathname.startsWith('/profile')) show('profile'); });
+      loadCompetitions().then(() => {
+        setGameType(gameTypeFromHash());
+        loadAuth().then(() => { if (location.pathname.startsWith('/profile')) show('profile'); });
+      });
       window.addEventListener('popstate', () => {
         show(location.pathname.startsWith('/profile') ? 'profile' : 'overview');
       });
