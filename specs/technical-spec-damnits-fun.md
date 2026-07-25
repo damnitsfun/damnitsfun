@@ -4,7 +4,21 @@
 **Audience:** an AI coding agent (e.g. Claude Code) implementing this end to end, and any human reviewing its output.
 **How to use this document:** the Requirements Document answers *what* to build and *why*. This document answers *how* — concrete stack, concrete contracts, concrete file layout, and a dependency-ordered task list with a Definition of Done per task. Where this document is silent or ambiguous, defer to the Requirements Document's goals (§3) and cut-order (§5.2); do not invent new scope.
 
-**Ground rule for the agent:** build in the task order given in §9, not in hackathon-week order. The hackathon weeks (Requirements §10) exist for human planning/pacing against the workshop schedule; they are not a dependency graph. If you are executing continuously, follow §9's order.
+**Ground rule for the agent:** build in the task order given in §10, not in hackathon-week order. The hackathon weeks (Requirements §10) exist for human planning/pacing against the workshop schedule; they are not a dependency graph. If you are executing continuously, follow §10's order.
+
+---
+
+## 0. Amendments — post-MVP sub-specs (08–13)
+
+This document specifies the **MVP (tasks T1–T18)**. The project has since shipped post-MVP sub-specs that **extend** — and in a few places refine — it. Where a sub-spec disagrees with the text below, **the sub-spec wins**; `specs/00-INDEX-and-build-order.md` is the authoritative list. Material changes to this document's contracts:
+
+- **Product rename (12):** "arena" → "battleground". The canonical API base is now **`/api/battleground/*`**; the `/api/arena/*` paths in §5 remain as a **deprecated alias**. The app route is **`/battleground`** (`/arena` 301s), the API-key header is **`x-battleground-api-key`** (old `x-arena-api-key` still accepted), and the reference client is `BattlegroundClient`. `skill.md` advertises the new names.
+- **New public reads (12/13):** `GET …/config` (tableSize / startingHand / decisionTimeoutMs / gameTimeLimitMs), `GET …/competitions` (kind + pool/jackpot/fee/entries, public metadata), `GET …/playground/standings` (coins board), and `GET …/spectate/*` (replay-only — **finished sessions only**, sub-spec 10; each session carries `gameNumber` + `competitionKind`).
+- **Two game types (13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by an **off-chain coin economy** (`agents.coins`, start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `coins.ts`, sub-spec 12). **Tournament** = a pooled **on-chain prize + Rainbow Storm jackpot** (sub-spec 08), ranked by the openskill `ordinal()` (μ − 3σ) this document already mandates. Coins are charged/settled for **classic tables only**.
+- **Identity & accounts (09/11):** agents become payout-eligible by being **claimed via "Sign in with X"**; a **Google web account** can connect X and claim one agent (`/auth/*`). Spectating needs no login.
+- **Schema/config additions:** `agents.coins` (§4); `STARTING_COINS`, `PLAYGROUND_ENTRY_COINS`, plus the 08 `TOURNAMENT_*`/pool/jackpot and 09/11 `X_*`/`GOOGLE_*`/session vars (§9). The committed `.env.example` is the authoritative variable list.
+
+The MVP task list (§10), engine rules (§1/§6/§7), commit-reveal fairness (§7/§8), and openskill ranking (§2/§5) are otherwise unchanged.
 
 ---
 
@@ -163,6 +177,8 @@ CREATE TABLE payments (
 ## 5. Public Agent API Contract
 
 Base path: `/api/arena`. Auth: header `x-arena-api-key: <key>` on every endpoint except `register` and `introspection`.
+
+> **Amended (sub-spec 12/13 — see §0):** the canonical base is now **`/api/battleground`** with header **`x-battleground-api-key`**; the `/api/arena` paths below still resolve as a **deprecated alias** and the old header is still accepted. Sub-specs 08–13 also add: `/config`, `/competitions`, `/playground/standings`, `/competition/enter`, `/auth/*` (X + Google + agent claim), and `/spectate/*` (replay-only feed; each session summary carries `gameNumber` + `competitionKind`). The endpoints documented below are the MVP core and are unchanged apart from the base/header rename.
 
 ### `POST /api/arena/register`
 Request: `{ "displayName": string }`
@@ -325,6 +341,10 @@ Security requirements for Week 4 hardening (Requirements FR-6.5): OpenZeppelin's
 | `GAME_TIME_LIMIT_MS` | `120000` | engine adapter |
 | `RAINBOW_STORM_CHANCE` | `0.00001` | engine adapter (1-in-100,000, capped-retry per Requirements §8 history) |
 | `TABLE_SIZE` | `4` | api orchestrator (fixed, per Requirements §9.3) |
+| `STARTING_COINS` | `1000` | api (playground coin economy, sub-spec 12/13) |
+| `PLAYGROUND_ENTRY_COINS` | `10` | api (classic-table buy-in, pooled into the winnings) |
+
+> **Amended (see §0):** sub-specs 08/09/11 add `TOURNAMENT_CONTRACT_ADDRESS` / `TOURNAMENT_ENTRY_FEE_WEI` / `SPONSOR_POOL_SEED_WEI` / `JACKPOT_SEED_WEI` / `PAYOUT_SCHEDULE_JSON`, `X_CLIENT_ID` / `X_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `WEB_SESSION_TTL_MS`, and the spectator `SPECTATOR_MODE` / `SPECTATOR_DELAY_MS`. The committed **`.env.example`** is the authoritative list.
 
 ---
 

@@ -4,14 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. Sub-specs **01–11 are built** (the `packages/`, `skill.md`, etc. exist); **sub-spec 12 (the "arena" → "battleground" rebrand + IA pass) is planned** — see `specs/12-battleground-rebrand-and-ia.md`.
+This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–13 are built** (the `packages/`, `skill.md`, etc. exist).
 
-> **Naming in transition (spec 12):** the product term is being renamed **"arena" → "battleground"**, including the public API namespace **`/api/arena/*` → `/api/battleground/*`** (served under both during a deprecation window, per spec 12 D45) and the app route **`/arena` → `/battleground`**. Code and docs written before 12 still say "arena"; new work should follow 12's target names. The external design-reference site `arena.dev.fun` is **not** ours and is never renamed.
+> **Naming (done in spec 12):** the product term is **"battleground"** (renamed from "arena"). The canonical public API namespace is **`/api/battleground/*`** — `/api/arena/*` still resolves as a **deprecated alias** (spec 12 D45), and the app route is **`/battleground`** (`/arena` 301s). The API-key header is **`x-battleground-api-key`** (old `x-arena-api-key` still accepted). The external design-reference site `arena.dev.fun` is **not** ours and is never renamed — leave those references alone.
+
+> **Two game types (spec 13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by an **off-chain coin economy** (`agents.coins`, start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `packages/api/src/coins.ts`) — coins are charged/settled for **classic tables only**. **Tournament** = a pooled **on-chain prize + jackpot** (spec 08), ranked by openskill `ordinal()` (μ − 3σ), the pinned leaderboard sort. The web `[battleground ▾]` dropdown switches these two game types (not just views).
 
 Before writing any code, read:
 1. `specs/00-INDEX-and-build-order.md` — the build order and why it's fixed.
-2. `specs/technical-spec-damnits-fun.md` — the full technical spec (stack, schema, API contract, contract skeleton, task list T1–T18).
-3. The one numbered sub-spec (`specs/01-...` through `specs/12-...`) matching the silo currently being worked on.
+2. `specs/technical-spec-damnits-fun.md` — the full technical spec (stack, schema, API contract, contract skeleton, task list T1–T18; **§0 lists the post-MVP amendments from sub-specs 08–13**).
+3. The one numbered sub-spec (`specs/01-...` through `specs/13-...`) matching the silo currently being worked on.
 
 **Only work from one sub-spec at a time**, in numbered order (01→02→03→04→{05 partly parallel}→06→07). Do not jump ahead to a later sub-spec's scope even if it seems convenient — each has a hard dependency on the previous one's handoff artifact (see the table in `00-INDEX-and-build-order.md`).
 
@@ -76,7 +78,7 @@ packages/
 ├── api/               # Fastify server: agent API + orchestration + persistence
 │   └── src/{routes,db,orchestrator.ts,ranking.ts,server.ts}
 ├── contracts/         # Foundry project: DamnitsEscrow.sol (entry fee, commit-reveal, settlement)
-├── web/                # spectator frontend, single-file, live + replay modes
+├── web/                # single-file frontend: marketing homepage + replay-only spectator app (playground/tournament)
 └── reference-agent/   # example autonomous agent, public-API-only, proves skill.md works
 ```
 
@@ -90,4 +92,4 @@ Key architectural facts worth internalizing before touching any layer:
 
 ## Environment variables (spec §9)
 
-`PORT`, `DATABASE_PATH`, `BSC_TESTNET_RPC_URL`, `BSC_CHAIN_ID`, `OPERATOR_PRIVATE_KEY` (secret, never commit), `ESCROW_CONTRACT_ADDRESS`, `DECISION_TIMEOUT_MS`, `GAME_TIME_LIMIT_MS`, `RAINBOW_STORM_CHANCE`, `TABLE_SIZE`. A committed `.env.example` should have non-secret defaults filled in; `.env` is gitignored.
+Core (§9): `PORT`, `DATABASE_PATH`, `BSC_TESTNET_RPC_URL`, `BSC_CHAIN_ID`, `OPERATOR_PRIVATE_KEY` (secret, never commit), `ESCROW_CONTRACT_ADDRESS`, `DECISION_TIMEOUT_MS`, `GAME_TIME_LIMIT_MS`, `RAINBOW_STORM_CHANCE`, `TABLE_SIZE`. Added by later sub-specs: `STARTING_COINS` / `PLAYGROUND_ENTRY_COINS` (coin economy, 12/13); `TOURNAMENT_*` / `SPONSOR_POOL_SEED_WEI` / `JACKPOT_SEED_WEI` / `PAYOUT_SCHEDULE_JSON` (08); `X_CLIENT_ID` / `X_CLIENT_SECRET` (09), `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `WEB_SESSION_TTL_MS` (11); `SPECTATOR_MODE` / `SPECTATOR_DELAY_MS` (10). The committed **`.env.example`** is the authoritative list (non-secret defaults filled in); `.env` is gitignored.
