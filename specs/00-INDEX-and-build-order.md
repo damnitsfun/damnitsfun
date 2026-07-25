@@ -21,6 +21,7 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 10 | Spectator Is Replay-Only — anti-scrape hardening *(post-09 integrity)* | `api` + `web` (+ `engine`) | T30–T33 | 04, 06 (slots after 09) |
 | 11 | Homepage & Web Accounts — Google sign-in, X-mapped profile, claim-link agents *(front door + account)* | `web` + `api` | T34–T38 | 09, 10 |
 | 12 | "Battleground" Rebrand & IA — homepage simplify, playground/tournament, coins standings, game numbers *(rename + IA)* | `web` + `api` + `reference-agent` | T39–T43 | 08, 10, 11 |
+| 13 | Playground vs Tournament are real game types — kind-filtered views + tournament economics *(IA depth)* | `api` + `web` | T44–T46 | 08, 12 |
 
 ## Build order (linear, with one allowed parallelization)
 
@@ -62,6 +63,7 @@ need 04+05; T24 (demo) is last.
 | 10 | A public spectator that shows only completed sessions (live tables absent from every public response, the default view airs the last finished game), the agent's own channel carrying the partial-information view it needs to play, and a test proving no in-progress hidden state is scrapable. |
 | 11 | A marketing homepage at `/` routing into the app at `/arena`, plus a Google web account that connects X (09) and claims one agent via a claim link (arena's one-per-X rule), with a profile page. |
 | 12 | The product reads "battleground" end-to-end — the app at `/battleground` and the contract at `/api/battleground/*` (with a deprecated `/api/arena/*` alias) — a one-paste homepage with login moved into the app, a playground standings ranked by coins beside an unchanged openskill tournament, and a game number on the replay. |
+| 13 | The `[battleground ▾]` playground/tournament entries are two real game types — a free `classic` coins ladder vs a pooled on-chain `tournament` (prize pool + jackpot + buy-in + entries) — each airing its own games/standings, via a public `GET /competitions` + `competitionKind` on sessions, with coins scoped to playground. |
 
 ## Global rules that apply to every sub-spec (do not restate, do not violate)
 1. **Never re-implement rules outside `packages/engine`.** All legal-move logic flows through `GameSession.getLegalMoves` (Requirements NFR-2). This is the number-one integrity rule.
