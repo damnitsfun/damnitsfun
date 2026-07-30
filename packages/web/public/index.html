@@ -1371,6 +1371,10 @@
         }
         const isT = state.gameType === 'tournament';
         const profile = view === 'profile';
+        // The profile is a standalone page (cf. arena.dev.fun/profile): hide the
+        // playground/tournament hero + tab bar so no game content bleeds into it.
+        $('hero').hidden = profile;
+        document.querySelector('nav.tabs').hidden = profile;
         // Tournament economics header shows only in tournament mode (not on profile).
         $('tourn-econ').hidden = !isT || profile;
         $('view-overview').hidden = view !== 'overview';
