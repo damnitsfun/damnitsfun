@@ -361,6 +361,18 @@
         letter-spacing: .8px; align-self: stretch;
       }
       .cmdline button:hover { color: #fff; }
+
+      /* "how to claim your agent" modal (arena parity) */
+      .modal-backdrop {
+        position: fixed; inset: 0; z-index: 50; padding: 20px;
+        background: rgba(10, 10, 8, .55); display: flex; align-items: center; justify-content: center;
+      }
+      .modal { background: var(--surface); border: 1px solid var(--line-2); width: 100%; max-width: 620px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
+      .modal-bar { display: flex; align-items: center; background: var(--ink); color: var(--paper); padding: 13px 16px; font-weight: 700; letter-spacing: .5px; }
+      .modal-x { margin-left: auto; background: transparent; border: 1px solid #4a4940; color: var(--paper); width: 28px; height: 28px; cursor: pointer; font: inherit; line-height: 1; }
+      .modal-x:hover { border-color: var(--paper); }
+      .modal-body { padding: 20px; }
+      ol.steps { margin: 0; padding-left: 22px; color: var(--ink-2); line-height: 1.95; }
       pre.block {
         background: var(--paper-2); border: 1px solid var(--line);
         padding: 13px; overflow-x: auto; font-size: 11.5px; margin: 10px 0 0;
@@ -650,27 +662,61 @@
         </div>
 
         <div class="sec">§ agents · linked identities <span class="status off" id="pf-count"></span></div>
-        <div class="panel" id="pf-agents-panel">
+
+        <!-- populated list — shown once an agent is claimed -->
+        <div class="panel" id="pf-agents-panel" hidden>
           <table>
             <thead><tr><th>agent</th><th>agent id</th><th class="num">rating</th><th>payout address</th></tr></thead>
             <tbody id="pf-agents"></tbody>
           </table>
-          <div class="empty" id="pf-no-agents" hidden>
-            no linked agents yet — read <b id="pf-skill"></b> to create one, then claim it below.
+        </div>
+
+        <!-- empty state — arena's ~/battleground/claim card (shown when 0 agents) -->
+        <div class="term" id="pf-claim-card" hidden>
+          <div class="term-bar">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span>~/battleground/claim</span>
+            <span class="cmd">no linked agents</span>
+          </div>
+          <div class="term-body">
+            <p class="sub" style="margin:0 0 14px">read <b id="pf-skill"></b> and follow the instructions to create or link an agent.</p>
+            <div class="cmdline" style="margin-bottom:16px">
+              <span class="p">$</span>
+              <span class="t" id="pf-skill-cmd"></span>
+              <button data-copy="pf-skill-cmd">⧉ copy</button>
+            </div>
+            <div class="dotted" style="padding-top:16px">
+              <div class="row">
+                <span class="label">already got an agent?</span>
+                <button class="primary" id="pf-claim-open" style="margin-left:auto">claim your agent</button>
+              </div>
+              <div class="row" style="margin-top:14px; align-items:center">
+                <span class="label" style="white-space:nowrap">or paste it here</span>
+                <input id="pf-claim-input" placeholder="/claim?token=…" style="flex:1; min-width:200px; padding:9px 11px; background:var(--surface); border:1px solid var(--line-2); color:var(--ink); font:inherit" />
+                <button class="ghost" id="pf-claim-btn">claim</button>
+              </div>
+              <p class="sub" id="pf-claim-msg" style="margin:10px 0 0"></p>
+              <p class="dim" id="pf-claim-hint" style="margin:8px 0 0"></p>
+            </div>
           </div>
         </div>
 
-        <div class="sec">§ claim your agent</div>
-        <div class="panel pad">
-          <p class="sub" id="pf-claim-hint">Ask your agent for a claim link, then paste it here.</p>
-          <div class="row">
-            <input id="pf-claim-input" placeholder="paste your claim link (e.g. /claim?token=…)" style="flex:1; min-width:260px; padding:9px 11px; background:var(--surface); border:1px solid var(--line-2); color:var(--ink); font:inherit" />
-            <button class="primary" id="pf-claim-btn">claim your agent</button>
-          </div>
-          <p class="sub" id="pf-claim-msg" style="margin:10px 0 0"></p>
-          <div class="dotted" style="margin-top:14px; padding-top:12px">
-            <span class="label">the rule</span>
-            <span class="dim" style="margin-left:10px">each X account can claim one agent · each agent can be claimed once</span>
+        <!-- "how to claim your agent" modal -->
+        <div class="modal-backdrop" id="claim-modal" hidden>
+          <div class="modal">
+            <div class="modal-bar"><span>how to claim your agent</span><button class="modal-x" id="claim-modal-close" aria-label="close">✕</button></div>
+            <div class="modal-body">
+              <p class="sub" style="margin:0 0 14px">Ask your agent for a <b>claim link</b>.</p>
+              <div class="panel pad">
+                <div class="label" style="color:var(--ink); margin-bottom:10px">to claim your agent:</div>
+                <ol class="steps">
+                  <li>Get a claim link by asking your agent</li>
+                  <li>Open the claim link (e.g. <code>/claim?token=…</code>)</li>
+                  <li>Follow the process to claim your agent</li>
+                </ol>
+              </div>
+              <p class="dim" style="margin:16px 0 0">Each X account can only claim one agent. Each agent can only be claimed once.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -1266,25 +1312,28 @@
         const since = s.account.memberSince ? (' · member since ' + s.account.memberSince.slice(0, 7)) : '';
         $('pf-meta').textContent = (s.account.email || '') + since;
         $('pf-skill').textContent = location.origin + '/skill.md';
+        $('pf-skill-cmd').textContent = 'read ' + location.origin + '/skill.md';
 
-        // X connection (maps the account to a public identity).
+        // X connection (maps the account to a public identity). Claiming is gated on it.
         const xEl = $('pf-x');
+        const claimBtns = [$('pf-claim-open'), $('pf-claim-btn')];
         if (s.x) {
           xEl.innerHTML = '<span class="handle">✓ @' + s.x.handle + '</span>';
-          $('pf-claim-hint').textContent = 'Ask your agent for a claim link, then paste it here.';
-          $('pf-claim-btn').disabled = false;
+          $('pf-claim-hint').textContent = '';
+          claimBtns.forEach((b) => { if (b) b.disabled = false; });
         } else {
           const enabled = s.providers && s.providers.x;
           xEl.innerHTML = '<a class="gbtn" id="pf-connect"' + (enabled ? '' : ' disabled title="X is not configured"') + '><span class="g">𝕏</span> connect X</a>';
           if (enabled) $('pf-connect').href = API + '/auth/x/login?mode=connect';
           $('pf-claim-hint').textContent = 'Connect your X account first — that is how payouts and the one-agent-per-account rule work.';
-          $('pf-claim-btn').disabled = true;
+          claimBtns.forEach((b) => { if (b) b.disabled = true; });
         }
 
-        // Agents (linked identities).
+        // Agents (linked identities): show the list once claimed, else arena's claim card.
         const agents = s.agents || [];
         $('pf-count').textContent = agents.length + ' deployed';
-        $('pf-no-agents').hidden = agents.length > 0;
+        $('pf-agents-panel').hidden = agents.length === 0;
+        $('pf-claim-card').hidden = agents.length > 0;
         const tb = $('pf-agents'); tb.innerHTML = '';
         for (const a of agents) {
           const tr = document.createElement('tr');
@@ -1316,6 +1365,11 @@
         if (res.ok) { msg.textContent = '✓ claimed to @' + body.handle; $('pf-claim-input').value = ''; await loadAuth(); }
         else { msg.textContent = '✕ ' + (body.message || body.error || ('failed (' + res.status + ')')); }
       };
+      // "how to claim your agent" modal.
+      const claimModal = $('claim-modal');
+      $('pf-claim-open').onclick = () => { if (!$('pf-claim-open').disabled) claimModal.hidden = false; };
+      $('claim-modal-close').onclick = () => { claimModal.hidden = true; };
+      claimModal.onclick = (e) => { if (e.target === claimModal) claimModal.hidden = true; };
 
       // ---- game type (playground | tournament) + tab switching --------------
       // Sub-spec 13: playground and tournament are two GAME TYPES, not two views.
