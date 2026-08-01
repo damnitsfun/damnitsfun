@@ -77,6 +77,13 @@ contract DamnitsTournament is ReentrancyGuard {
         address jackpotWinner,
         uint256 jackpotAmount
     );
+    event JackpotAwarded(
+        bytes32 indexed competitionId,
+        address indexed winner,
+        uint256 amount,
+        bytes32 resultHash,
+        bytes32 seedReveal
+    );
     event JackpotRolledOver(
         bytes32 indexed fromCompetitionId, bytes32 indexed toCompetitionId, uint256 amount
     );
@@ -99,6 +106,7 @@ contract DamnitsTournament is ReentrancyGuard {
     error NoJackpotToRollover();
     error NothingOwed();
     error WithdrawFailed();
+    error JackpotPayoutFailed();
 
     modifier onlyOperator() {
         if (msg.sender != operator) revert NotOperator();
@@ -231,6 +239,44 @@ contract DamnitsTournament is ReentrancyGuard {
         c.state = CompetitionState.Settled;
 
         emit CompetitionSettled(competitionId, resultRoot, total, jackpotWinner, jackpotAmount);
+    }
+
+    /**
+     * @notice Immediately pay a capped amount from the jackpot side-pool to a single
+     *         winner, WITHOUT closing the competition (sub-spec 14, D65/D66). This is
+     *         the playground's Rainbow-Storm jackpot: an always-on `classic` season
+     *         stays `Open` and can award again from whatever pool remains, so no
+     *         season-close/settlement step is needed to pay a storm the instant it
+     *         fires. Distinct from {settleCompetition} (which distributes the main
+     *         pool at season close and moves the competition to `Settled`).
+     * @param winner The storm triggerer's wallet — a server-generated custodial EOA
+     *        (no code), so a push transfer cannot be used to reenter; `nonReentrant`
+     *        plus effects-before-interaction guard it regardless.
+     * @param amount Wei from the jackpot pool; must be `<= jackpotPool`.
+     * @param resultHash / seedReveal The settling session's result hash and revealed
+     *        seed, emitted so the payout is auditable against the provably-fair,
+     *        commit-revealed storm. The contract does not re-verify the seed (the
+     *        playground season has no per-session commit here) — the event is the trail.
+     */
+    function awardJackpot(
+        bytes32 competitionId,
+        address winner,
+        uint256 amount,
+        bytes32 resultHash,
+        bytes32 seedReveal
+    ) external onlyOperator nonReentrant {
+        Competition storage c = competitions[competitionId];
+        if (c.state != CompetitionState.Open) revert CompetitionNotOpen();
+        if (winner == address(0)) revert InvalidJackpotWinner();
+        if (amount == 0) revert ZeroValue();
+        if (amount > c.jackpotPool) revert JackpotOverDistribution(c.jackpotPool, amount);
+
+        c.jackpotPool -= amount; // effects before interaction
+
+        (bool ok,) = winner.call{value: amount}("");
+        if (!ok) revert JackpotPayoutFailed();
+
+        emit JackpotAwarded(competitionId, winner, amount, resultHash, seedReveal);
     }
 
     /**

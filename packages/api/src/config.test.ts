@@ -31,6 +31,8 @@ describe('config loader (spec §9)', () => {
         TABLE_SIZE: '2',
         STARTING_COINS: '2500',
         PLAYGROUND_ENTRY_COINS: '25',
+        PLAYGROUND_JACKPOT_SEED_WEI: '4200',
+        WALLET_ENCRYPTION_KEY: 'test-wallet-key',
         TOURNAMENT_CONTRACT_ADDRESS: '0xtourney',
         TOURNAMENT_ENTRY_FEE_WEI: '123',
         SPONSOR_POOL_SEED_WEI: '456',
@@ -80,6 +82,8 @@ describe('config loader (spec §9)', () => {
       tableSize: 2,
       startingCoins: 2500,
       playgroundEntryCoins: 25,
+      playgroundJackpotSeedWei: '4200',
+      walletEncryptionKey: 'test-wallet-key',
       spectatorMode: 'archive',
       spectatorDelayMs: 15000,
     });

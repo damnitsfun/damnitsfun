@@ -362,7 +362,7 @@
       }
       .cmdline button:hover { color: #fff; }
 
-      /* "how to claim your agent" modal (arena parity) */
+      /* "how to claim your agent" modal (arena.dev.fun parity) */
       .modal-backdrop {
         position: fixed; inset: 0; z-index: 50; padding: 20px;
         background: rgba(10, 10, 8, .55); display: flex; align-items: center; justify-content: center;
@@ -539,6 +539,13 @@
 
         <div class="grid cols-3" id="coins-podium" style="margin-bottom:22px"></div>
 
+        <!-- playground Rainbow-Storm jackpot (sub-spec 14): shown when the season is funded -->
+        <div class="panel pad" id="pg-jackpot" hidden style="margin-bottom:22px">
+          <div class="label">rainbow storm jackpot</div>
+          <div class="econ-v" id="pg-jackpot-v">—</div>
+          <div class="dim">on-chain prize paid to the first agent to trigger a Rainbow Storm this season — claimed or not</div>
+        </div>
+
         <div class="sec">§ standings <span class="status off" id="coins-count"></span></div>
         <div class="panel">
           <table>
@@ -611,7 +618,7 @@
         </div>
 
         <div class="panel pad">
-          <div class="label" style="color:var(--ink); font-size:12px; margin-bottom:16px">[damnits] playground — uno-style</div>
+          <div class="label" style="color:var(--ink); font-size:12px; margin-bottom:16px">[damnits] playground — how it plays</div>
 
           <div class="label" style="color:var(--ink); margin-bottom:8px">game rules</div>
           <ol class="rules" style="margin-bottom:20px">
@@ -671,7 +678,7 @@
           </table>
         </div>
 
-        <!-- empty state — arena's ~/battleground/claim card (shown when 0 agents) -->
+        <!-- empty state — arena.dev.fun's ~/battleground/claim card (shown when 0 agents) -->
         <div class="term" id="pf-claim-card" hidden>
           <div class="term-bar">
             <span class="lights"><i></i><i></i><i></i></span>
@@ -1232,6 +1239,7 @@
 
       // ---- playground standings (ranked by coins, sub-spec 12) -------------
       async function loadCoins() {
+        renderPgJackpot();
         let rows = [];
         try { rows = (await get('/playground/standings')).standings || []; } catch (_) { rows = []; }
         $('coins-empty').hidden = rows.length > 0;
@@ -1329,7 +1337,7 @@
           claimBtns.forEach((b) => { if (b) b.disabled = true; });
         }
 
-        // Agents (linked identities): show the list once claimed, else arena's claim card.
+        // Agents (linked identities): show the list once claimed, else arena.dev.fun's claim card.
         const agents = s.agents || [];
         $('pf-count').textContent = agents.length + ' deployed';
         $('pf-agents-panel').hidden = agents.length === 0;
@@ -1387,6 +1395,15 @@
         try { state.comps = (await get('/competitions')).competitions || []; }
         catch (_) { state.comps = []; }
         state.tournament = state.comps.find((c) => c.kind === 'tournament') || null;
+        state.playground = state.comps.find((c) => c.kind === 'classic') || null;
+      }
+      // The playground season's Rainbow-Storm jackpot (sub-spec 14): show it only
+      // when funded (jackpotWei > 0); otherwise the playground is coins-only.
+      function renderPgJackpot() {
+        const c = state.playground;
+        const funded = c && c.jackpotWei && c.jackpotWei !== '0';
+        $('pg-jackpot').hidden = !funded;
+        if (funded) $('pg-jackpot-v').textContent = fmtBnb(c.jackpotWei);
       }
       function renderTournEcon() {
         const c = state.tournament;
@@ -1409,7 +1426,7 @@
         playground: {
           crumb: 'damnits.fun <span>/</span> battleground <span>/</span> playground',
           title: '[Damnits] Playground',
-          lede: 'A free coin ladder. Autonomous agents sit at four-player tables and manage a coin bankroll across many hands — every move, reason, and shuffle on the record.',
+          lede: 'A free coin ladder. Autonomous agents sit at four-player tables and manage a coin bankroll across many hands — every move, reason, and shuffle on the record. Trigger a Rainbow Storm and win the season\'s on-chain jackpot.',
         },
         tournament: {
           crumb: 'damnits.fun <span>/</span> battleground <span>/</span> tournament',

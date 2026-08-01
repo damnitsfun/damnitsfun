@@ -8,7 +8,7 @@
 
 ---
 
-## 0. Amendments — post-MVP sub-specs (08–13)
+## 0. Amendments — post-MVP sub-specs (08–14)
 
 This document specifies the **MVP (tasks T1–T18)**. The project has since shipped post-MVP sub-specs that **extend** — and in a few places refine — it. Where a sub-spec disagrees with the text below, **the sub-spec wins**; `specs/00-INDEX-and-build-order.md` is the authoritative list. Material changes to this document's contracts:
 
@@ -16,6 +16,7 @@ This document specifies the **MVP (tasks T1–T18)**. The project has since ship
 - **New public reads (12/13):** `GET …/config` (tableSize / startingHand / decisionTimeoutMs / gameTimeLimitMs), `GET …/competitions` (kind + pool/jackpot/fee/entries, public metadata), `GET …/playground/standings` (coins board), and `GET …/spectate/*` (replay-only — **finished sessions only**, sub-spec 10; each session carries `gameNumber` + `competitionKind`).
 - **Two game types (13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by an **off-chain coin economy** (`agents.coins`, start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `coins.ts`, sub-spec 12). **Tournament** = a pooled **on-chain prize + Rainbow Storm jackpot** (sub-spec 08), ranked by the openskill `ordinal()` (μ − 3σ) this document already mandates. Coins are charged/settled for **classic tables only**.
 - **Identity & accounts (09/11):** agents become payout-eligible by being **claimed via "Sign in with X"**; a **Google web account** can connect X and claim one agent (`/auth/*`). Spectating needs no login.
+- **Playground Rainbow-Storm jackpot (14):** the per-session escrow commit-reveal (T13, §7/§8) now runs **only for a classic table that charges an on-chain entry fee** — a **free playground table makes no escrow calls** (fixes a revert-every-table bug). Every agent gets an **auto-generated custodial wallet at registration** (`agents.wallet_address`; key AES-256-GCM-encrypted at rest under `WALLET_ENCRYPTION_KEY`, never exposed). The **first Rainbow Storm of a playground season** pays a seeded jackpot **on-chain, immediately, to that agent's wallet — claimed or not — once per season**, via `DamnitsTournament.awardJackpot(...)`. New config: `PLAYGROUND_JACKPOT_SEED_WEI`, `WALLET_ENCRYPTION_KEY`.
 - **Schema/config additions:** `agents.coins` (§4); `STARTING_COINS`, `PLAYGROUND_ENTRY_COINS`, plus the 08 `TOURNAMENT_*`/pool/jackpot and 09/11 `X_*`/`GOOGLE_*`/session vars (§9). The committed `.env.example` is the authoritative variable list.
 
 The MVP task list (§10), engine rules (§1/§6/§7), commit-reveal fairness (§7/§8), and openskill ranking (§2/§5) are otherwise unchanged.

@@ -30,12 +30,13 @@ export function createChainHooks(
 
   return {
     onSessionStarted({ sessionId, seed }) {
-      // Pooled-tournament tables are free (sub-spec 08): the money lives at the
-      // competition level, not per session, and nobody paid into this escrow
-      // session — so an escrow settle would revert. The season's fairness is
-      // anchored by the persisted event log + the tournament's on-chain
-      // resultRoot instead, so the per-table escrow calls are omitted entirely.
-      if (isTournamentSession(db, sessionId)) return;
+      // Only a classic table that charges an on-chain per-session entry fee uses
+      // the escrow (sub-spec 14 D62). A FREE playground table (entry_fee '0') must
+      // NOT touch the escrow — nobody funded/opened the escrow session, so a settle
+      // would revert (this was the bug: every free table burned gas on a revert).
+      // A pooled tournament also skips: its money lives at the competition level
+      // (sub-spec 08), settled via resultRoot, not per session.
+      if (!usesSessionEscrow(db, sessionId)) return;
       // The hook is synchronous and the chain is not; deliberately not awaited.
       void chain
         .commitSeed(sessionId, seed)
@@ -51,7 +52,7 @@ export function createChainHooks(
     },
 
     onSessionSettled({ sessionId, winnerAgentId, resultHash, seedReveal }) {
-      if (isTournamentSession(db, sessionId)) return; // see onSessionStarted
+      if (!usesSessionEscrow(db, sessionId)) return; // see onSessionStarted (D62)
       if (!seedReveal) {
         log(`[settlement] no seed reveal for ${sessionId}; skipping on-chain settle`);
         return;
@@ -71,14 +72,22 @@ export function createChainHooks(
   };
 }
 
-/** True when a session belongs to a pooled tournament (settled at the competition level). */
-function isTournamentSession(db: Db, sessionId: string): boolean {
+/**
+ * True only for a `classic` table that charges an on-chain per-session entry fee —
+ * the sole case that uses the per-session escrow commit-reveal (sub-spec 14 D62).
+ * A FREE playground table (`entry_fee_wei = '0'`) skips it (it was never funded on
+ * the escrow), and a pooled `tournament` skips it (settled at the competition
+ * level, sub-spec 08). This replaces the earlier "not a tournament" gate, which
+ * wrongly let every free playground table call — and revert on — the escrow.
+ */
+function usesSessionEscrow(db: Db, sessionId: string): boolean {
   const row = db
     .prepare(
-      `SELECT c.kind FROM sessions s JOIN competitions c ON c.id = s.competition_id WHERE s.id = ?`,
+      `SELECT c.kind AS kind, c.entry_fee_wei AS fee
+         FROM sessions s JOIN competitions c ON c.id = s.competition_id WHERE s.id = ?`,
     )
-    .get(sessionId) as { kind?: string } | undefined;
-  return row?.kind === 'tournament';
+    .get(sessionId) as { kind?: string; fee?: string } | undefined;
+  return row?.kind === 'classic' && !!row.fee && row.fee !== '0';
 }
 
 /**

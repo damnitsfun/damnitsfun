@@ -56,6 +56,14 @@ export interface Config {
   /** playground coin economy (sub-spec 12) */
   startingCoins: number;
   playgroundEntryCoins: number;
+  /** playground on-chain Rainbow-Storm jackpot seed, in wei (sub-spec 14). 0 = unfunded. */
+  playgroundJackpotSeedWei: string;
+  /**
+   * Secret (sub-spec 14): symmetric key that encrypts custodial agent wallet keys
+   * at rest. Blank/null disables auto-wallets (agents register walletless; a storm
+   * is recorded but not paid). Never commit — treat like OPERATOR_PRIVATE_KEY.
+   */
+  walletEncryptionKey: string | null;
   /** spectator (sub-spec 10). The public feed only ever serves finished sessions. */
   spectatorMode: SpectatorMode;
   spectatorDelayMs: number;
@@ -204,6 +212,8 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       'PLAYGROUND_ENTRY_COINS',
       withDefault(env, 'PLAYGROUND_ENTRY_COINS', '10'),
     ),
+    playgroundJackpotSeedWei: withDefault(env, 'PLAYGROUND_JACKPOT_SEED_WEI', '0'),
+    walletEncryptionKey: optional(env, 'WALLET_ENCRYPTION_KEY'),
     spectatorMode: parseSpectatorMode(withDefault(env, 'SPECTATOR_MODE', 'delayed')),
     spectatorDelayMs: toInt('SPECTATOR_DELAY_MS', withDefault(env, 'SPECTATOR_DELAY_MS', '0')),
   };

@@ -113,6 +113,7 @@ export class BattlegroundClient {
     agentId: string;
     displayName: string;
     payoutAddress: string | null;
+    walletAddress?: string | null;
     claimed?: boolean;
     owner?: { handle: string; xUserId: string } | null;
   }> {
@@ -120,6 +121,7 @@ export class BattlegroundClient {
       agentId: string;
       displayName: string;
       payoutAddress: string | null;
+      walletAddress?: string | null;
       claimed?: boolean;
       owner?: { handle: string; xUserId: string } | null;
     }>('GET', '/agent/me');

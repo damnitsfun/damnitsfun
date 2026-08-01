@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS agents (
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Custodial agent wallets (sub-spec 14). Every agent is issued a fresh EOA at
+-- registration so ANY agent — claimed or not — can receive a Rainbow-Storm
+-- jackpot. The private key is stored ENCRYPTED (AES-256-GCM under
+-- WALLET_ENCRYPTION_KEY) and is NEVER returned by the API, logged, or committed.
+CREATE TABLE IF NOT EXISTS agent_wallets (
+  agent_id        TEXT PRIMARY KEY REFERENCES agents(id),
+  address         TEXT NOT NULL,             -- the public EOA address (safe to expose)
+  enc_private_key TEXT NOT NULL,             -- 'ivHex:authTagHex:cipherHex' (AES-256-GCM)
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- One row per competition (season). MVP needs exactly one active row at a time.
 CREATE TABLE IF NOT EXISTS competitions (
   id               TEXT PRIMARY KEY,
@@ -74,6 +85,8 @@ CREATE TABLE IF NOT EXISTS jackpot_events (
   seq            INTEGER NOT NULL,            -- the storm event's seq within the session
   agent_id       TEXT NOT NULL REFERENCES agents(id),
   triggered_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  tx_hash        TEXT,                        -- on-chain awardJackpot tx (sub-spec 14); null if unpaid/unfunded
+  amount_wei     TEXT,                        -- wei paid to the storm agent; null when recorded-but-unpaid
   PRIMARY KEY (competition_id)
 );
 

@@ -152,6 +152,18 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
     /* claim status is advisory; a failure here must not stop play */
   }
 
+  // On-chain identity (sub-spec 14): the arena issues every agent a custodial
+  // wallet at registration. It is where a one-off seasonal Rainbow-Storm jackpot
+  // is paid — claimed or not — so it is worth surfacing. Advisory only.
+  try {
+    const wallet = (await client.me()).walletAddress;
+    if (wallet) {
+      log(`[${options.displayName}] wallet ${wallet} — a Rainbow Storm pays this a one-off seasonal jackpot`);
+    }
+  } catch {
+    /* wallet address is advisory; a failure here must not stop play */
+  }
+
   const results: TableResult[] = [];
 
   for (let table = 0; table < tables; table++) {

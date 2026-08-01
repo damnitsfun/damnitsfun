@@ -290,6 +290,87 @@ contract DamnitsTournamentTest is Test {
         vm.stopPrank();
     }
 
+    // ---- storm jackpot: immediate award, season stays open (sub-spec 14) -----
+
+    function test_AwardJackpotPaysImmediatelyAndKeepsSeasonOpen() public {
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+
+        // A storm fires mid-season: pay part of the pool now, no closeEntries.
+        vm.prank(operator);
+        t.awardJackpot(COMP, payoutB, 0.03 ether, ROOT, keccak256("seed"));
+        assertEq(payoutB.balance, 0.03 ether, "winner paid immediately (push)");
+
+        (,, uint256 jackpotPool,,, DamnitsTournament.CompetitionState state) = t.getCompetition(COMP);
+        assertEq(jackpotPool, 0.02 ether, "pool decremented by the award");
+        assertEq(
+            uint256(state), uint256(DamnitsTournament.CompetitionState.Open), "season stays open"
+        );
+
+        // The remainder is still awardable — the season is live, not settled.
+        vm.prank(operator);
+        t.awardJackpot(COMP, payoutA, 0.02 ether, ROOT, keccak256("seed2"));
+        assertEq(payoutA.balance, 0.02 ether);
+        (,, uint256 remaining,,,) = t.getCompetition(COMP);
+        assertEq(remaining, 0);
+    }
+
+    function test_AwardJackpotRejectsOverPool() public {
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+        vm.prank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DamnitsTournament.JackpotOverDistribution.selector, 0.05 ether, 0.06 ether
+            )
+        );
+        t.awardJackpot(COMP, payoutB, 0.06 ether, ROOT, bytes32(0));
+    }
+
+    function test_AwardJackpotRejectsZeroWinner() public {
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+        vm.prank(operator);
+        vm.expectRevert(DamnitsTournament.InvalidJackpotWinner.selector);
+        t.awardJackpot(COMP, address(0), 0.01 ether, ROOT, bytes32(0));
+    }
+
+    function test_AwardJackpotRejectsZeroAmount() public {
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+        vm.prank(operator);
+        vm.expectRevert(DamnitsTournament.ZeroValue.selector);
+        t.awardJackpot(COMP, payoutB, 0, ROOT, bytes32(0));
+    }
+
+    function test_OnlyOperatorCanAwardJackpot() public {
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+        vm.prank(alice);
+        vm.expectRevert(DamnitsTournament.NotOperator.selector);
+        t.awardJackpot(COMP, payoutB, 0.01 ether, ROOT, bytes32(0));
+    }
+
+    function test_AwardJackpotRejectsWhenNotOpen() public {
+        _enterAll();
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+        vm.startPrank(operator);
+        t.closeEntries(COMP);
+        vm.expectRevert(DamnitsTournament.CompetitionNotOpen.selector);
+        t.awardJackpot(COMP, payoutB, 0.01 ether, ROOT, bytes32(0));
+        vm.stopPrank();
+    }
+
+    function test_AwardJackpotToRejectingRecipientReverts() public {
+        vm.prank(sponsor);
+        t.seedJackpot{value: 0.05 ether}(COMP);
+        RejectingRecipient rejector = new RejectingRecipient();
+        vm.prank(operator);
+        vm.expectRevert(DamnitsTournament.JackpotPayoutFailed.selector);
+        t.awardJackpot(COMP, address(rejector), 0.01 ether, ROOT, bytes32(0));
+    }
+
     // ---- access control ------------------------------------------------------
 
     function test_OnlyOperatorCanOpen() public {

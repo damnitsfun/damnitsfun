@@ -20,16 +20,27 @@ interface SettleCall {
   resultRoot: string;
 }
 
+interface AwardCall {
+  competitionId: string;
+  winner: string;
+  amountWei: string;
+  resultHash: string;
+  seedReveal: string;
+}
+
 interface FakeChain extends TournamentChain {
   settleCalls: SettleCall[];
+  awardCalls: AwardCall[];
 }
 
 function fakeTournamentChain(): FakeChain {
   const settleCalls: SettleCall[] = [];
+  const awardCalls: AwardCall[] = [];
   return {
     enabled: true,
     contractAddress: '0xTOURNEY',
     settleCalls,
+    awardCalls,
     async openCompetition() {
       return { ok: true, txHash: '0xopen' };
     },
@@ -49,6 +60,10 @@ function fakeTournamentChain(): FakeChain {
     async settleCompetition(_id, winners, amounts, jackpotWinner, jackpotAmount, resultRoot) {
       settleCalls.push({ winners, amounts, jackpotWinner, jackpotAmount, resultRoot });
       return { ok: true, txHash: '0xsettle' };
+    },
+    async awardJackpot(competitionId, winner, amountWei, resultHash, seedReveal) {
+      awardCalls.push({ competitionId, winner, amountWei, resultHash, seedReveal });
+      return { ok: true, txHash: '0xaward' };
     },
     async rolloverJackpot() {
       return { ok: true, txHash: '0xroll' };

@@ -202,6 +202,7 @@ export function buildServer(options: BuildOptions): BuiltServer {
         agentId: agent.id,
         displayName: agent.display_name,
         payoutAddress: agent.payout_address,
+        walletAddress: agent.wallet_address,
         coins: agent.coins,
         claimed: claim.claimed,
         owner: claim.owner,

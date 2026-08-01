@@ -51,7 +51,9 @@ function boot(chain: SettlementChain) {
     env: { DECISION_TIMEOUT_MS: '3000', GAME_TIME_LIMIT_MS: '3600000', TABLE_SIZE: '4' },
   });
   const db = openDatabase(':memory:');
-  const orchestrator = new Orchestrator(db, config, { hooks: createChainHooks(db, chain) });
+  // Wire the fake chain BOTH as the orchestrator's chain (so a paid classic table's
+  // entry-fee verification passes) and behind the commit-reveal hooks under test.
+  const orchestrator = new Orchestrator(db, config, { chain, hooks: createChainHooks(db, chain) });
   const { app } = buildServer({ db, config, orchestrator });
   return { app, db, orchestrator };
 }
@@ -68,7 +70,9 @@ async function seatFour(app: any, competitionId: string, agents: Array<{ apiKey:
       method: 'POST',
       url: '/api/arena/session/join',
       headers: { 'x-arena-api-key': agent.apiKey },
-      payload: { competitionId },
+      // A txHash so a PAID classic table seats in one step (the fake chain accepts
+      // it); harmless for a free table, where the entry-fee check is skipped.
+      payload: { competitionId, txHash: `0x${'f'.repeat(64)}` },
     });
     sessionId = res.json().sessionId;
   }
@@ -105,9 +109,12 @@ async function playToEnd(app: any, agents: Array<{ agentId: string; apiKey: stri
   }
 }
 
-async function runTable(chain: SettlementChain) {
+async function runTable(chain: SettlementChain, entryFeeWei = '500000000000000') {
   const { app, db, orchestrator } = boot(chain);
-  const competitionId = orchestrator.createCompetition('Chain Cup');
+  // The per-session escrow commit-reveal now runs ONLY for a classic table that
+  // charges an on-chain entry fee (sub-spec 14 D62) — a free playground table no
+  // longer touches the escrow. So this fairness-wiring table is a PAID classic one.
+  const competitionId = orchestrator.createCompetition('Chain Cup', entryFeeWei, '0xescrow');
   const agents = [
     await register(app, 'C1'),
     await register(app, 'C2'),
@@ -285,7 +292,9 @@ describe('T13 — chain wiring', () => {
     expect(hooks.onSessionStarted).toBeUndefined();
     expect(hooks.onSessionSettled).toBeUndefined();
 
-    const { app, db, sessionId, agents } = await runTable(DISABLED_CHAIN);
+    // A FREE playground table (entry fee 0) so seating needs no chain at all — the
+    // point is that a disabled chain leaves the off-chain game to settle normally.
+    const { app, db, sessionId, agents } = await runTable(DISABLED_CHAIN, '0');
     await playToEnd(app, agents, sessionId);
     const row = db.prepare(`SELECT status FROM sessions WHERE id = ?`).get(sessionId) as {
       status: string;

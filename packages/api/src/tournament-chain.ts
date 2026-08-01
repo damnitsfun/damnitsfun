@@ -9,7 +9,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { bscTestnet } from 'viem/chains';
-import { competitionIdToBytes32 } from './commit';
+import { competitionIdToBytes32, seedAsBytes32 } from './commit';
 import type { Config } from './config';
 
 /**
@@ -80,6 +80,20 @@ export const DAMNITS_TOURNAMENT_ABI = [
       { name: 'jackpotWinner', type: 'address' },
       { name: 'jackpotAmount', type: 'uint256' },
       { name: 'resultRoot', type: 'bytes32' },
+    ],
+    outputs: [],
+  },
+  {
+    // Immediate, pool-capped jackpot award that leaves the season Open (sub-spec 14).
+    type: 'function',
+    name: 'awardJackpot',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'competitionId', type: 'bytes32' },
+      { name: 'winner', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'resultHash', type: 'bytes32' },
+      { name: 'seedReveal', type: 'bytes32' },
     ],
     outputs: [],
   },
@@ -159,6 +173,19 @@ export interface TournamentChain {
     jackpotAmount: bigint,
     resultRoot: string,
   ): Promise<ChainResult>;
+  /**
+   * Immediately pay a pool-capped jackpot to a single winner WITHOUT closing the
+   * competition (sub-spec 14). The playground's Rainbow-Storm prize: an always-on
+   * `classic` season stays open and pays the storm triggerer the instant it fires.
+   * `resultHash`/`seedReveal` anchor the payout to the provably-fair storm session.
+   */
+  awardJackpot(
+    competitionId: string,
+    winner: string,
+    amountWei: string,
+    resultHash: string,
+    seedReveal: string,
+  ): Promise<ChainResult>;
   /** Carry a residual jackpot from a settled competition into an open one. */
   rolloverJackpot(fromCompetitionId: string, toCompetitionId: string): Promise<ChainResult>;
 }
@@ -185,6 +212,9 @@ export const DISABLED_TOURNAMENT_CHAIN: TournamentChain = {
     return { ok: false, error: 'tournament chain disabled' };
   },
   async settleCompetition() {
+    return { ok: false, error: 'tournament chain disabled' };
+  },
+  async awardJackpot() {
     return { ok: false, error: 'tournament chain disabled' };
   },
   async rolloverJackpot() {
@@ -217,7 +247,7 @@ export function createTournamentChain(
   log(`[tournament] enabled — contract ${address}, operator ${account.address}`);
 
   async function send(
-    functionName: 'openCompetition' | 'seedPool' | 'seedJackpot' | 'closeEntries' | 'settleCompetition' | 'rolloverJackpot',
+    functionName: 'openCompetition' | 'seedPool' | 'seedJackpot' | 'closeEntries' | 'settleCompetition' | 'awardJackpot' | 'rolloverJackpot',
     args: readonly unknown[],
     value?: bigint,
   ): Promise<ChainResult> {
@@ -298,6 +328,15 @@ export function createTournamentChain(
         (jackpotWinner ?? ZERO_ADDRESS) as Address,
         jackpotAmount,
         resultRoot.startsWith('0x') ? resultRoot : `0x${resultRoot}`,
+      ]);
+    },
+    awardJackpot(competitionId, winner, amountWei, resultHash, seedReveal) {
+      return send('awardJackpot', [
+        cid(competitionId),
+        winner as Address,
+        BigInt(amountWei),
+        resultHash.startsWith('0x') ? resultHash : `0x${resultHash}`,
+        seedAsBytes32(seedReveal),
       ]);
     },
     rolloverJackpot(fromCompetitionId, toCompetitionId) {

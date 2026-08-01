@@ -53,6 +53,12 @@ function backfillAddedColumns(db: Db): void {
   addColumnIfMissing(db, 'competitions', 'entries_closed_at', 'TEXT');
   addColumnIfMissing(db, 'competitions', 'settled_at', 'TEXT');
   addColumnIfMissing(db, 'competitions', 'settle_tx_hash', 'TEXT');
+
+  // Sub-spec 14: the playground Rainbow-Storm jackpot records its on-chain payout
+  // on the (already-existing) jackpot_events row. The agent_wallets table is new,
+  // so CREATE TABLE IF NOT EXISTS in schema.sql handles it on any database.
+  addColumnIfMissing(db, 'jackpot_events', 'tx_hash', 'TEXT');
+  addColumnIfMissing(db, 'jackpot_events', 'amount_wei', 'TEXT');
 }
 
 function addColumnIfMissing(db: Db, table: string, column: string, type: string): void {

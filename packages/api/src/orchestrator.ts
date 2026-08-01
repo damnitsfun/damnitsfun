@@ -29,6 +29,7 @@ import { DISABLED_GOOGLE_OAUTH, type GoogleOAuthProvider } from './googleoauth';
 import { distributePool } from './payout';
 import { conservativeRating, defaultRating, placementsFrom, rateSession } from './ranking';
 import { computeCoinSettlement } from './coins';
+import { createWalletStore, type WalletStore } from './agent-wallet';
 import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
 import {
   DISABLED_XOAUTH,
@@ -233,6 +234,7 @@ export class Orchestrator {
   private readonly tournament: TournamentChain;
   private readonly xoauth: XOAuthProvider;
   private readonly googleoauth: GoogleOAuthProvider;
+  private readonly wallets: WalletStore;
   private readonly live = new Map<string, LiveSession>();
 
   constructor(
@@ -249,6 +251,8 @@ export class Orchestrator {
       xoauth?: XOAuthProvider;
       /** "Sign in with Google" web login (sub-spec 11). Defaults to disabled. */
       googleoauth?: GoogleOAuthProvider;
+      /** Custodial agent-wallet store (sub-spec 14). Defaults to config-derived. */
+      walletStore?: WalletStore;
     } = {},
   ) {
     this.db = db;
@@ -259,6 +263,7 @@ export class Orchestrator {
     this.tournament = options.tournamentChain ?? DISABLED_TOURNAMENT_CHAIN;
     this.xoauth = options.xoauth ?? DISABLED_XOAUTH;
     this.googleoauth = options.googleoauth ?? DISABLED_GOOGLE_OAUTH;
+    this.wallets = options.walletStore ?? createWalletStore(config.walletEncryptionKey);
   }
 
   /** Run a lifecycle hook without letting its failure affect the game. */
@@ -277,12 +282,35 @@ export class Orchestrator {
     const apiKey = newApiKey();
     const rating = defaultRating();
 
-    this.db
-      .prepare(
-        `INSERT INTO agents (id, api_key_hash, display_name, trueskill_mu, trueskill_sigma, coins)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(agentId, hashApiKey(apiKey), displayName, rating.mu, rating.sigma, this.config.startingCoins);
+    // Issue a custodial wallet (sub-spec 14) so any agent — claimed or not — can
+    // receive a Rainbow-Storm jackpot. When the store is disabled (no encryption
+    // key) the agent registers walletless and a storm is recorded but not paid.
+    const wallet = this.wallets.generate();
+
+    const insert = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO agents (id, api_key_hash, display_name, trueskill_mu, trueskill_sigma, coins, wallet_address)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          agentId,
+          hashApiKey(apiKey),
+          displayName,
+          rating.mu,
+          rating.sigma,
+          this.config.startingCoins,
+          wallet?.address ?? null,
+        );
+      if (wallet) {
+        this.db
+          .prepare(
+            `INSERT INTO agent_wallets (agent_id, address, enc_private_key) VALUES (?, ?, ?)`,
+          )
+          .run(agentId, wallet.address, wallet.encPrivateKey);
+      }
+    });
+    insert();
 
     return { agentId, apiKey };
   }
@@ -823,6 +851,28 @@ export class Orchestrator {
     return id;
   }
 
+  /**
+   * Fund a classic playground season's Rainbow-Storm jackpot (sub-spec 14). Opens
+   * the season on-chain and seeds the jackpot side-pool when the tournament chain
+   * is enabled, and always mirrors the amount in the DB — which is what {@link
+   * settle} reads to size the immediate storm award. Chain-off ⇒ DB-only, so a
+   * storm records but does not pay (D67). Operator tooling (seed/CLI), not an API.
+   */
+  async seedPlaygroundJackpot(competitionId: string, jackpotWei: string): Promise<void> {
+    const c = this.getCompetition(competitionId);
+    if (c.kind !== 'classic') {
+      throw new ApiError(400, 'NOT_PLAYGROUND', `${competitionId} is not a classic playground season`);
+    }
+    if (BigInt(jackpotWei) > 0n && this.tournament.enabled) {
+      // A free season on-chain (fee 0): the pool holds only the jackpot side-pool.
+      await this.tournament.openCompetition(competitionId, '0');
+      await this.tournament.seedJackpot(competitionId, jackpotWei);
+    }
+    this.db
+      .prepare(`UPDATE competitions SET jackpot_seed_wei = ? WHERE id = ?`)
+      .run(jackpotWei, competitionId);
+  }
+
   listActiveCompetitions(): Array<{
     id: string;
     name: string;
@@ -1235,23 +1285,31 @@ export class Orchestrator {
   }
 
   /**
-   * Record the FIRST Rainbow Storm of a tournament as the jackpot claim (D6/D23).
-   * Provably fair: the storm is in this session's event log, whose seed is
-   * commit-revealed. Idempotent — the PK on `jackpot_events` keeps the first, so
-   * this is safe to call more than once per session.
+   * Record the FIRST Rainbow Storm of a SEASON as the jackpot claim. Records for
+   * BOTH kinds now (sub-spec 14 D65): a tournament reads it back at
+   * `settleTournament` (D6/D23), a classic playground season pays it immediately
+   * (D65 — see {@link settle}). Provably fair: the storm is in this session's event
+   * log, whose seed is commit-revealed. Idempotent — the PK on `jackpot_events`
+   * keeps the first — so it is safe to call more than once per session.
+   *
+   * @returns the newly-recorded storm (`{competitionId, agentId, seq}`) ONLY when
+   *   THIS call recorded the season's first storm; `null` otherwise (already
+   *   recorded, no storm this session, or a malformed payload).
    */
-  captureJackpotFromSession(sessionId: string): void {
+  captureJackpotFromSession(
+    sessionId: string,
+  ): { competitionId: string; agentId: string; seq: number } | null {
     const comp = this.db
       .prepare(
         `SELECT c.id, c.kind FROM sessions s JOIN competitions c ON c.id = s.competition_id WHERE s.id = ?`,
       )
       .get(sessionId) as { id: string; kind: string } | undefined;
-    if (!comp || comp.kind !== 'tournament') return;
+    if (!comp) return null;
 
     const already = this.db
       .prepare(`SELECT 1 AS ok FROM jackpot_events WHERE competition_id = ?`)
       .get(comp.id) as { ok: number } | undefined;
-    if (already) return;
+    if (already) return null;
 
     const storm = this.db
       .prepare(
@@ -1259,22 +1317,75 @@ export class Orchestrator {
           WHERE session_id = ? AND event_type = 'RAINBOW_STORM' ORDER BY seq LIMIT 1`,
       )
       .get(sessionId) as { seq: number; payload_json: string } | undefined;
-    if (!storm) return;
+    if (!storm) return null;
 
     let agentId: string | undefined;
     try {
       agentId = (JSON.parse(storm.payload_json) as { agentId?: string }).agentId;
     } catch {
-      return;
+      return null;
     }
-    if (!agentId) return;
+    if (!agentId) return null;
 
-    this.db
+    const info = this.db
       .prepare(
         `INSERT OR IGNORE INTO jackpot_events (competition_id, session_id, seq, agent_id)
          VALUES (?, ?, ?, ?)`,
       )
       .run(comp.id, sessionId, storm.seq, agentId);
+    if (info.changes === 0) return null; // lost a race — first storm already recorded
+
+    return { competitionId: comp.id, agentId, seq: storm.seq };
+  }
+
+  /**
+   * Pay the playground's Rainbow-Storm jackpot on-chain, immediately, to the
+   * triggering agent's custodial wallet — regardless of claim (sub-spec 14
+   * D64/D65/D66). Called from {@link settle} only for a `classic` session that
+   * just recorded the season's first storm. Fire-and-forget and fully swallowed:
+   * a chain failure must never corrupt the settled game (sub-spec 05's rule), and
+   * an unfunded/walletless/chain-off case is a graceful record-but-don't-pay (D67).
+   */
+  private awardPlaygroundStormJackpot(
+    captured: { competitionId: string; agentId: string },
+    sessionId: string,
+    resultHash: string,
+  ): void {
+    if (!this.tournament.enabled) return; // chain off → recorded, not paid (D67)
+
+    const comp = this.getCompetition(captured.competitionId);
+    const poolWei = BigInt(comp.jackpot_seed_wei ?? '0');
+    if (poolWei <= 0n) return; // unfunded season → recorded, not paid (D67)
+
+    const agent = this.getAgent(captured.agentId);
+    if (!agent.wallet_address) return; // no custodial wallet (auto-wallets off) → recorded, not paid
+
+    const seedReveal =
+      (
+        this.db.prepare(`SELECT seed_reveal FROM sessions WHERE id = ?`).get(sessionId) as
+          | { seed_reveal: string | null }
+          | undefined
+      )?.seed_reveal ?? '';
+
+    const competitionId = captured.competitionId;
+    const winner = agent.wallet_address;
+    const amountWei = poolWei.toString();
+    void this.tournament
+      .awardJackpot(competitionId, winner, amountWei, resultHash, seedReveal)
+      .then((res) => {
+        if (res.ok && res.txHash) {
+          // Mirror the payout on the jackpot_events row + drain the DB pool mirror.
+          this.db
+            .prepare(`UPDATE jackpot_events SET tx_hash = ?, amount_wei = ? WHERE competition_id = ?`)
+            .run(res.txHash, amountWei, competitionId);
+          this.db
+            .prepare(`UPDATE competitions SET jackpot_seed_wei = '0' WHERE id = ?`)
+            .run(competitionId);
+        }
+      })
+      .catch(() => {
+        /* swallowed: the storm stays recorded (unpaid); the game is unaffected */
+      });
   }
 
   // ---- joining / matchmaking -------------------------------------------------
@@ -1704,9 +1815,14 @@ export class Orchestrator {
     });
     finalize();
 
-    // Record the first Rainbow Storm of a tournament as the jackpot claim (D23).
-    // Reads the just-persisted event log; a no-op for classic/free competitions.
-    this.captureJackpotFromSession(sessionId);
+    // Record the first Rainbow Storm of the season (both kinds now, sub-spec 14
+    // D65). Reads the just-persisted event log. For a `classic` playground season
+    // this also triggers the immediate on-chain jackpot to the storm agent's
+    // custodial wallet (a tournament instead reads it back at settleTournament).
+    const capturedStorm = this.captureJackpotFromSession(sessionId);
+    if (chargeCoins && capturedStorm) {
+      this.awardPlaygroundStormJackpot(capturedStorm, sessionId, resultHash);
+    }
 
     // Attach point for sub-spec 05 (T13): settle on-chain with the revealed seed
     // and the result hash, now that the outcome is durable.
