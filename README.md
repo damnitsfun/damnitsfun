@@ -119,6 +119,18 @@ Deploying to BSC testnet and recording addresses: see
 `OPERATOR_PRIVATE_KEY` + contract addresses are set, the API logs `[chain] disabled`
 and runs normally with no chain at all.
 
+## Hosting it
+
+Putting the server on a public origin (AWS EC2 + nginx/TLS + systemd, with a
+GitHub Actions pipeline that tests, ships, migrates and restarts on every push to
+`main`): [`docs/deploy-aws-ec2.md`](./docs/deploy-aws-ec2.md). The unit, nginx
+vhost, and remote deploy script live in [`deploy/`](./deploy); the workflows in
+[`.github/workflows/`](./.github/workflows).
+
+> One instance only — the orchestrator runs in-process with real timers and
+> persistence is a single SQLite file, so a second replica would fight the first
+> over both.
+
 ## The demo
 
 One command runs a whole path end-to-end (agents pay real fees, a seed is committed

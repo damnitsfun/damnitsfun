@@ -1,0 +1,110 @@
+name: CI
+
+# Reusable: deploy.yml calls this so a deploy can never outrun a green build.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The Node half of the monorepo. The root `yarn test` / `yarn lint` fan out to
+  # ALL workspaces including `contracts`, whose scripts are forge — so the
+  # workspaces are named explicitly here and Foundry gets its own job below.
+  # ---------------------------------------------------------------------------
+  node:
+    name: lint + test (node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - name: Install
+        run: yarn install --frozen-lockfile
+
+      # Non-negotiable global rule #2: no vendored UNO vocabulary outside
+      # packages/engine. Runs first — it is the cheapest check and a leak is a
+      # hard build failure, not a warning.
+      - name: Trademark lint
+        run: yarn lint:trademark
+
+      - name: Typecheck
+        run: |
+          yarn workspace engine lint
+          yarn workspace api lint
+          yarn workspace reference-agent lint
+
+      - name: Test — engine
+        run: yarn workspace engine test
+
+      - name: Test — api
+        run: yarn workspace api test
+
+      - name: Test — reference-agent
+        run: yarn workspace reference-agent test
+
+  # ---------------------------------------------------------------------------
+  # The T6 real-delay integration test uses real setTimeout delays (hundreds of
+  # ms), so it is the one place flakiness can hide. Global rule #4: run it
+  # repeatedly. Kept in its own job so a flake is instantly attributable and
+  # does not mask an ordinary test failure.
+  # ---------------------------------------------------------------------------
+  timing:
+    name: real-delay soak (10x)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Run adapter-realdelay.test.ts 10 times
+        run: |
+          for i in $(seq 1 10); do
+            echo "::group::run $i/10"
+            yarn workspace engine test --runInBand adapter-realdelay || exit 1
+            echo "::endgroup::"
+          done
+
+  # ---------------------------------------------------------------------------
+  # Foundry. Not required for the app deploy (contracts ship via `forge script`,
+  # see docs/deployment.md) but a contract regression should still fail CI.
+  # ---------------------------------------------------------------------------
+  contracts:
+    name: forge fmt + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      # Rolling release by design — do not pin a version (CLAUDE.md).
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install solidity deps
+        working-directory: packages/contracts
+        run: |
+          forge install --no-git OpenZeppelin/openzeppelin-contracts@v5.6.1
+          forge install --no-git foundry-rs/forge-std
+
+      - name: Format check
+        working-directory: packages/contracts
+        run: forge fmt --check
+
+      - name: Test
+        working-directory: packages/contracts
+        run: forge test -vvv
