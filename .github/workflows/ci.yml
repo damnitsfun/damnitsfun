@@ -1,10 +1,11 @@
 name: CI
 
-# Reusable: deploy.yml calls this so a deploy can never outrun a green build.
+# Reusable: deploy.yml calls this so a production deploy can never outrun a
+# green build. Note there is deliberately no `push: branches: [main]` trigger —
+# deploy.yml already calls this on every push to main, and a standalone trigger
+# would run the ~12-minute soak twice for the same commit.
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_call:
 
 concurrency:

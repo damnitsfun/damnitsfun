@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Deploy — production
 
 on:
   push:
@@ -10,98 +10,12 @@ on:
         type: boolean
         default: false
 
-# One deploy at a time, and never cancel one mid-flight — an interrupted
-# `yarn install` on the box leaves a half-linked node_modules.
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
-
 jobs:
-  verify:
-    if: ${{ !inputs.skip_tests }}
-    uses: ./.github/workflows/ci.yml
-
-  deploy:
-    needs: [verify]
-    # `always()` so the emergency skip_tests path still runs; the second clause
-    # keeps a real CI failure from ever reaching the server.
-    if: ${{ always() && (needs.verify.result == 'success' || inputs.skip_tests) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: production
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Configure SSH
-        env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          # Pinned host key — StrictHostKeyChecking=no would let a hijacked DNS
-          # record receive this deploy.
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-
-      # Ship the whole repo tree: server.ts resolves packages/web/public and the
-      # root skill.md relative to packages/api/dist, so the layout must survive.
-      # node_modules is NOT shipped — better-sqlite3 is native and is rebuilt on
-      # the target architecture by remote-deploy.sh.
-      - name: Sync source to the instance
-        env:
-          HOST: ${{ secrets.EC2_HOST }}
-          USER: ${{ secrets.EC2_USER }}
-        run: |
-          rsync -az --delete \
-            --exclude '.git/' \
-            --exclude 'node_modules/' \
-            --exclude 'dist/' \
-            --exclude 'vendor-dist/' \
-            --exclude '*.tsbuildinfo' \
-            --exclude '.env' \
-            --exclude 'data/' \
-            --exclude 'packages/contracts/lib/' \
-            --exclude 'packages/contracts/out/' \
-            --exclude 'packages/contracts/cache/' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
-            ./ "$USER@$HOST:/opt/damnits/app/"
-
-      - name: Install, build, migrate, restart
-        env:
-          HOST: ${{ secrets.EC2_HOST }}
-          USER: ${{ secrets.EC2_USER }}
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" \
-            'bash -s' < deploy/remote-deploy.sh
-
-      # Independent of the in-server check: proves nginx + TLS + the app agree
-      # from the public internet.
-      - name: Public health check
-        env:
-          URL: ${{ secrets.HEALTHCHECK_URL }}
-        run: |
-          for i in $(seq 1 10); do
-            if curl -fsS --max-time 10 "$URL" > /tmp/health.json; then
-              echo "healthy:"; head -c 400 /tmp/health.json; exit 0
-            fi
-            echo "attempt $i failed, retrying in 5s"; sleep 5
-          done
-          echo "::error::health check never returned 200 at $URL"
-          exit 1
-
-      - name: Report
-        if: always()
-        env:
-          HOST: ${{ secrets.EC2_HOST }}
-        run: |
-          {
-            echo "### Deploy ${{ job.status }}"
-            echo ""
-            echo "| | |"
-            echo "|---|---|"
-            echo "| commit | \`${{ github.sha }}\` |"
-            echo "| host | \`$HOST\` |"
-            echo "| tests | ${{ inputs.skip_tests && '**skipped**' || 'passed' }} |"
-          } >> "$GITHUB_STEP_SUMMARY"
+  production:
+    uses: ./.github/workflows/deploy-target.yml
+    with:
+      environment: production
+      # Production always runs the full suite unless a human explicitly opts out
+      # through workflow_dispatch.
+      run_ci: ${{ !inputs.skip_tests }}
+    secrets: inherit

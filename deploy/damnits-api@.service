@@ -1,0 +1,65 @@
+# /etc/systemd/system/damnits-api@.service
+#
+# A systemd TEMPLATE unit — `%i` is the environment name, so one file serves
+# both instances:
+#
+#   systemctl enable --now damnits-api@production   → /opt/damnits/production/app
+#   systemctl enable --now damnits-api@staging      → /opt/damnits/staging/app
+#
+# Each instance gets its own directory, its own .env (and therefore its own PORT
+# and DATABASE_PATH), and its own SQLite file. Install: docs/deploy-aws-ec2.md §2.8.
+#
+# Exactly ONE instance per environment may run. The orchestrator lives in-process
+# with real timers and persistence is a single better-sqlite3 file; a second
+# process pointed at the same database would drive the same tables and corrupt it.
+
+[Unit]
+Description=damnits.fun API + spectator (%i)
+Documentation=https://github.com/damnitsfun/damnitsfun/blob/main/docs/deploy-aws-ec2.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=damnits
+Group=damnits
+
+# loadConfig() reads .env from process.cwd(), and a relative DATABASE_PATH would
+# resolve from here too — both depend on this being the environment's repo root.
+WorkingDirectory=/opt/damnits/%i/app
+
+# Absolute node path: nvm's shell shims are invisible to systemd, which is why
+# the tutorial installs Node 24 from NodeSource via apt.
+ExecStart=/usr/bin/node packages/api/dist/server.js
+
+Restart=always
+RestartSec=5
+# Don't hammer a genuinely broken build: 5 restarts in 60s and systemd gives up
+# (visible in `systemctl status`) instead of looping forever.
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+# `journalctl -t damnits-api-staging` isolates one environment's logs.
+SyslogIdentifier=damnits-api-%i
+
+Environment=NODE_ENV=production
+
+# --- hardening -------------------------------------------------------------
+# The process writes only to its own data dir (SQLite + WAL) and reads .env;
+# everything else can be read-only. Note the data dir sits OUTSIDE the app dir,
+# so a deploy's `rsync --delete` can never touch the database.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/damnits/%i/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

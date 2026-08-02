@@ -1,0 +1,59 @@
+name: Deploy — staging
+
+# Staging is ONE shared slot, not an environment per PR: the app is a single
+# process over a single SQLite file, so there is nothing to spin up per branch.
+# Whichever PR deploys last owns staging until the next one takes it.
+#
+# That is why this is opt-in by label rather than automatic on every PR — an
+# auto-deploy would have PRs silently stealing the slot from each other.
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to put on staging'
+        required: false
+        type: string
+
+jobs:
+  guard:
+    name: gate
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'deploy:staging') }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # A fork PR must never reach the server. `pull_request` withholds
+          # secrets from forks anyway, but deploying means running that PR's
+          # code — and its install scripts — on our box, so refuse explicitly.
+          if [ "$SAME_REPO" != "true" ]; then
+            echo "::notice::fork PR — staging deploy refused"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$LABELED" != "true" ]; then
+            echo "::notice::add the 'deploy:staging' label to claim the staging slot"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+  staging:
+    needs: [guard]
+    if: ${{ needs.guard.outputs.go == 'true' }}
+    uses: ./.github/workflows/deploy-target.yml
+    with:
+      environment: staging
+      ref: ${{ inputs.ref }}
+      # The PR's own CI run is already reporting on this same commit, right
+      # there in the checks list. Re-running it here would duplicate a ~12-minute
+      # soak and defeat the point of a fast preview. Production keeps the gate.
+      run_ci: false
+    secrets: inherit
