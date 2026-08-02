@@ -9,7 +9,7 @@ import { buildServer } from './server';
 /**
  * Sub-spec 12 (T43): the whole "battleground" walkthrough as one path —
  * homepage → app → alias/301/config → a played game → coins standings + game
- * number → tournament (openskill) — plus the rename being grep-clean. This ties
+ * number → tournament (coins) — plus the rename being grep-clean. This ties
  * the individual task DoDs together into the demo the spec's Part E describes.
  */
 interface Agent {
@@ -107,7 +107,7 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     expect(alias.headers['deprecation']).toBe('true');
   });
 
-  it('a played game feeds coins standings (ranked by coins) and game numbers; tournament stays openskill', async () => {
+  it('a played game feeds coins standings (ranked by coins) and game numbers; tournament ranks by coins', async () => {
     const { app, orchestrator } = boot();
     const competitionId = orchestrator.createCompetition('E2E Cup');
     const agents: Agent[] = [];
@@ -147,19 +147,21 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     ).json().sessions as Array<{ gameNumber: number | null }>;
     expect(sessions[0]!.gameNumber).toBe(1);
 
-    // The tournament ranking is openskill (μ − 3σ), unchanged by the coin economy.
+    // The tournament now ranks by COINS (openskill removed): the board is
+    // coins-sorted and the on-chain prize pays the top of it.
     const lb = (
       await app.inject({
         method: 'GET',
         url: `/api/battleground/competition/leaderboard?competitionId=${competitionId}`,
         headers: { 'x-battleground-api-key': agents[0]!.apiKey },
       })
-    ).json().leaderboard as Array<{ conservativeRating: number }>;
+    ).json().leaderboard as Array<{ coins: number }>;
     expect(lb.length).toBeGreaterThan(0);
-    expect(typeof lb[0]!.conservativeRating).toBe('number');
+    expect(typeof lb[0]!.coins).toBe('number');
+    for (let i = 1; i < lb.length; i++) expect(lb[i - 1]!.coins).toBeGreaterThanOrEqual(lb[i]!.coins);
   });
 
-  it('playground and tournament are different game types: kinds, classic-only coins, economics (T44/T46)', async () => {
+  it('playground and tournament are different game types: kinds, coins on both, economics (T44/T46)', async () => {
     const { app, orchestrator } = boot();
     const classic = orchestrator.createCompetition('Open Playground');
     const tourn = orchestrator.createTournament('Season 1', '0');
@@ -168,7 +170,7 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     const agents: Agent[] = [];
     for (const n of ['P1', 'P2', 'P3', 'P4']) agents.push(orchestrator.registerAgent(n));
 
-    // A classic game moves coins; a tournament game does not (D58).
+    // Both game types move coins now (the tournament follows the playground).
     await playOneGame(orchestrator, classic, agents);
     for (const a of agents) await orchestrator.enterCompetition(a.agentId, tourn);
     await playOneGame(orchestrator, tourn, agents);
@@ -192,8 +194,8 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     expect(sessions.some((s) => s.competitionKind === 'classic')).toBe(true);
     expect(sessions.some((s) => s.competitionKind === 'tournament')).toBe(true);
 
-    // Coins are a playground currency: only the classic table moved them, so each
-    // agent paid+won within a single classic game — the classic four still total 4000.
+    // Coins are conserved across BOTH games (zero-sum among the same 4 agents who
+    // started at 1000 each): the total is still 4000 no matter how many tables ran.
     const standings = (
       await app.inject({
         method: 'GET',
@@ -202,7 +204,21 @@ describe('battleground end-to-end walkthrough (T43)', () => {
     ).json().standings as Array<{ coins: number }>;
     expect(standings).toHaveLength(4);
     expect(standings.reduce((s, r) => s + r.coins, 0)).toBe(4 * 1000);
-    // The tournament game charged no coins, so it contributes nothing to the coins board.
+
+    // The tournament now ALSO ranks by coins: its leaderboard lists the 4 entrants
+    // coins-sorted (the on-chain prize pays the top of it).
+    const lb = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/battleground/competition/leaderboard?competitionId=${tourn}`,
+        headers: { 'x-battleground-api-key': agents[0]!.apiKey },
+      })
+    ).json().leaderboard as Array<{ coins: number }>;
+    expect(lb).toHaveLength(4);
+    for (let i = 1; i < lb.length; i++) expect(lb[i - 1]!.coins).toBeGreaterThanOrEqual(lb[i]!.coins);
+
+    // /playground/standings stays the PLAYGROUND board (classic only), so it never
+    // lists a tournament competition even though tournaments now move coins.
     const tournStandings = (
       await app.inject({
         method: 'GET',

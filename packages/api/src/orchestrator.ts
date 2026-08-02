@@ -27,7 +27,7 @@ import {
 } from './ids';
 import { DISABLED_GOOGLE_OAUTH, type GoogleOAuthProvider } from './googleoauth';
 import { distributePool } from './payout';
-import { conservativeRating, defaultRating, placementsFrom, rateSession } from './ranking';
+import { placementsFrom } from './ranking';
 import { computeCoinSettlement } from './coins';
 import { createWalletStore, type WalletStore } from './agent-wallet';
 import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
@@ -103,7 +103,7 @@ export interface WebSessionInfo {
     agentId: string;
     displayName: string;
     payoutAddress: string | null;
-    rating: number;
+    coins: number;
     claimed: boolean;
   }>;
   providers: { google: boolean; x: boolean };
@@ -280,25 +280,24 @@ export class Orchestrator {
   registerAgent(displayName: string): { agentId: string; apiKey: string } {
     const agentId = newAgentId();
     const apiKey = newApiKey();
-    const rating = defaultRating();
 
     // Issue a custodial wallet (sub-spec 14) so any agent — claimed or not — can
     // receive a Rainbow-Storm jackpot. When the store is disabled (no encryption
     // key) the agent registers walletless and a storm is recorded but not paid.
     const wallet = this.wallets.generate();
 
+    // trueskill_* columns keep their schema defaults (openskill is gone — both
+    // game types now score by coins); they are left in place, unused.
     const insert = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO agents (id, api_key_hash, display_name, trueskill_mu, trueskill_sigma, coins, wallet_address)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO agents (id, api_key_hash, display_name, coins, wallet_address)
+           VALUES (?, ?, ?, ?, ?)`,
         )
         .run(
           agentId,
           hashApiKey(apiKey),
           displayName,
-          rating.mu,
-          rating.sigma,
           this.config.startingCoins,
           wallet?.address ?? null,
         );
@@ -708,21 +707,20 @@ export class Orchestrator {
       if (owner) x = { handle: owner.x_handle, xUserId: owner.x_user_id };
       const rows = this.db
         .prepare(
-          `SELECT id, display_name, payout_address, trueskill_mu, trueskill_sigma
+          `SELECT id, display_name, payout_address, coins
              FROM agents WHERE owner_id = ? ORDER BY created_at`,
         )
         .all(account.owner_id) as Array<{
         id: string;
         display_name: string;
         payout_address: string | null;
-        trueskill_mu: number;
-        trueskill_sigma: number;
+        coins: number;
       }>;
       agents = rows.map((r) => ({
         agentId: r.id,
         displayName: r.display_name,
         payoutAddress: r.payout_address,
-        rating: conservativeRating({ mu: r.trueskill_mu, sigma: r.trueskill_sigma }),
+        coins: r.coins,
         claimed: true,
       }));
     }
@@ -1225,9 +1223,15 @@ export class Orchestrator {
    * eligible to be paid — an unclaimed agent may top the sort but is skipped here,
    * exactly like arena's "claimed + X-verified" gate.
    */
+  /**
+   * The payout-eligible field for a tournament, ranked by **coins** (the on-chain
+   * prize is split among the top coin-holders — openskill is gone). Eligibility is
+   * unchanged: an X-verified owner (`owner_id`), a payout address to receive the
+   * prize, and at least `minRankedSessions` settled games in this competition.
+   */
   eligibleRanked(
     competitionId: string,
-  ): Array<{ agentId: string; displayName: string; conservativeRating: number; payoutAddress: string; games: number }> {
+  ): Array<{ agentId: string; displayName: string; coins: number; payoutAddress: string; games: number }> {
     const rows = this.db
       .prepare(
         `SELECT a.*, COUNT(DISTINCT s.id) AS games
@@ -1246,11 +1250,11 @@ export class Orchestrator {
       .map((r) => ({
         agentId: r.id,
         displayName: r.display_name,
-        conservativeRating: conservativeRating({ mu: r.trueskill_mu, sigma: r.trueskill_sigma }),
+        coins: r.coins,
         payoutAddress: r.payout_address as string,
         games: r.games,
       }))
-      .sort((a, b) => b.conservativeRating - a.conservativeRating);
+      .sort((a, b) => b.coins - a.coins);
   }
 
   private resolveJackpotWinner(
@@ -1276,11 +1280,9 @@ export class Orchestrator {
   /** Hash the final leaderboard so the payout order is verifiable against the event log. */
   private leaderboardRoot(
     competitionId: string,
-    ranked: Array<{ agentId: string; conservativeRating: number }>,
+    ranked: Array<{ agentId: string; coins: number }>,
   ): string {
-    const canonical = ranked
-      .map((r, i) => `${i}|${r.agentId}|${r.conservativeRating.toFixed(6)}`)
-      .join('\n');
+    const canonical = ranked.map((r, i) => `${i}|${r.agentId}|${r.coins}`).join('\n');
     return keccak256(toHex(`${competitionId}\n${canonical}`));
   }
 
@@ -1445,11 +1447,13 @@ export class Orchestrator {
       await this.requireEntryFee(agentId, competition, session, txHash);
     }
 
-    // Playground coin buy-in (sub-spec 12): taking a seat costs coins, pooled and
-    // paid back to the winners at settlement. PLAYGROUND ONLY (sub-spec 13 D58) —
-    // a tournament seat is staked by its on-chain buy-in (08), not coins. Guard
-    // against bankruptcy — an agent that can't cover the buy-in can't sit.
-    const entry = competition.kind === 'classic' ? this.config.playgroundEntryCoins : 0;
+    // Coin buy-in (sub-spec 12): taking a seat costs coins, pooled and paid back to
+    // the winners at settlement. Now charged for BOTH game types (hackathon change):
+    // the tournament follows the playground and is ranked by coins, so its tables
+    // move coins too. Guard against bankruptcy — an agent that can't cover the
+    // buy-in can't sit. (A tournament seat still ALSO requires its one-time on-chain
+    // entry, handled by the `/competition/enter` gate above.)
+    const entry = this.config.playgroundEntryCoins;
     if (entry > 0) {
       const balance = this.getAgent(agentId).coins;
       if (balance < entry) {
@@ -1787,9 +1791,11 @@ export class Orchestrator {
       .get(sessionId) as { status: string; kind: 'classic' | 'tournament' } | undefined;
     if (!current || current.status === 'settled' || current.status === 'archived') return;
 
-    // Coins are a PLAYGROUND currency (sub-spec 13 D58): only classic tables move
-    // coins at settlement; a tournament seat is staked by its on-chain buy-in (08).
-    const chargeCoins = current.kind === 'classic';
+    // Coins now score BOTH game types (hackathon simplification): the tournament
+    // follows the playground — its on-chain prize is split among the top coin
+    // holders. So every settled table moves coins. The Rainbow-Storm jackpot,
+    // however, stays a PLAYGROUND (classic) feature.
+    const isClassic = current.kind === 'classic';
 
     const winner = entry.game.winnerAgentId;
     const handValues = entry.game.getHandValues();
@@ -1810,8 +1816,7 @@ export class Orchestrator {
           .run(value, sessionId, agentId);
       }
 
-      this.updateRatings(winner, handValues);
-      if (chargeCoins) this.settleCoins(winner, handValues);
+      this.settleCoins(winner, handValues);
     });
     finalize();
 
@@ -1820,7 +1825,7 @@ export class Orchestrator {
     // this also triggers the immediate on-chain jackpot to the storm agent's
     // custodial wallet (a tournament instead reads it back at settleTournament).
     const capturedStorm = this.captureJackpotFromSession(sessionId);
-    if (chargeCoins && capturedStorm) {
+    if (isClassic && capturedStorm) {
       this.awardPlaygroundStormJackpot(capturedStorm, sessionId, resultHash);
     }
 
@@ -1858,27 +1863,6 @@ export class Orchestrator {
     return createHash('sha256').update(`${sessionId}\n${canonical}`).digest('hex');
   }
 
-  private updateRatings(winner: string | null, handValues: Record<string, number>): void {
-    const places = placementsFrom(winner, handValues);
-    const seats = Object.keys(places);
-    if (seats.length === 0) return;
-
-    const results = seats.map((agentId) => {
-      const row = this.getAgent(agentId);
-      return {
-        agentId,
-        rating: { mu: row.trueskill_mu, sigma: row.trueskill_sigma },
-        place: places[agentId] ?? seats.length,
-      };
-    });
-
-    for (const updated of rateSession(results)) {
-      this.db
-        .prepare(`UPDATE agents SET trueskill_mu = ?, trueskill_sigma = ? WHERE id = ?`)
-        .run(updated.rating.mu, updated.rating.sigma, updated.agentId);
-    }
-  }
-
   /**
    * Move coins between the seats of a settled table (sub-spec 12, T41). The
    * bottom half forfeits coins by placement; the top half splits the pot,
@@ -1907,10 +1891,10 @@ export class Orchestrator {
   // ---- playground standings (coins, sub-spec 12) ----------------------------
 
   /**
-   * Public playground standings, ranked by coin balance (T41). Unlike the
-   * tournament leaderboard (openskill μ − 3σ, unchanged), this is the "chips"
-   * board: every agent that has played a finished table, sorted by coins desc,
-   * with tables-won / played for context. No auth — coins are public score.
+   * Public playground standings, ranked by coin balance (T41). Both boards rank by
+   * coins now (openskill removed); this is the PLAYGROUND "chips" board — every
+   * agent that has played a finished CLASSIC table, sorted by coins desc, with
+   * tables-won / played for context. No auth — coins are public score.
    */
   playgroundStandings(competitionId?: string): Array<{
     agentId: string;
@@ -1947,12 +1931,15 @@ export class Orchestrator {
 
   // ---- leaderboard ----------------------------------------------------------
 
+  /**
+   * The tournament leaderboard — now ranked by **coins**, the same score as the
+   * playground (openskill removed). Lists every agent that has played a table in
+   * this competition, highest coins first; the on-chain prize pays the top of it.
+   */
   leaderboard(competitionId: string): Array<{
     agentId: string;
     displayName: string;
-    mu: number;
-    sigma: number;
-    conservativeRating: number;
+    coins: number;
   }> {
     const rows = this.db
       .prepare(
@@ -1964,14 +1951,8 @@ export class Orchestrator {
       .all(competitionId) as AgentRow[];
 
     return rows
-      .map((r) => ({
-        agentId: r.id,
-        displayName: r.display_name,
-        mu: r.trueskill_mu,
-        sigma: r.trueskill_sigma,
-        conservativeRating: conservativeRating({ mu: r.trueskill_mu, sigma: r.trueskill_sigma }),
-      }))
-      .sort((a, b) => b.conservativeRating - a.conservativeRating);
+      .map((r) => ({ agentId: r.id, displayName: r.display_name, coins: r.coins }))
+      .sort((a, b) => b.coins - a.coins);
   }
 
   /** Test/diagnostic helper: is this session still being played in memory? */

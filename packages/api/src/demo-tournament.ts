@@ -156,11 +156,11 @@ async function main(): Promise<void> {
   orchestrator.captureJackpotFromSession(firstSession);
   log(`Rainbow Storm! ${stormBy.name} triggered it → holds the jackpot claim\n`);
 
-  // 5. Close the season and settle: rank the field, split the pool, pay the jackpot.
-  log('Final leaderboard (eligible, conservative rating):');
+  // 5. Close the season and settle: rank the field by coins, split the pool, pay the jackpot.
+  log('Final leaderboard (eligible, by coins):');
   for (const [i, r] of orchestrator.eligibleRanked(compId).entries()) {
     const name = agents.find((a) => a.agentId === r.agentId)?.name ?? r.agentId;
-    log(`  #${i + 1}  ${name.padEnd(9)} rating ${r.conservativeRating.toFixed(3)}  (${r.games} games)`);
+    log(`  #${i + 1}  ${name.padEnd(9)} ${r.coins} coins  (${r.games} games)`);
   }
   log('');
 

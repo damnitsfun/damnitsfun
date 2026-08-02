@@ -195,9 +195,12 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     payoutSchedule: parseCurve(
       withDefault(env, 'PAYOUT_SCHEDULE_JSON', '[30,20,14,10,8,6,4.5,3,2.5,2]'),
     ),
+    // Fraction of the eligible field paid. Default 1.0 so the on-chain prize goes
+    // to the TOP 10 coin-holders (N = min(curve length = 10, eligible)); the
+    // 10-tier PAYOUT_SCHEDULE_JSON defines the split.
     payoutFieldFraction: toFloat(
       'PAYOUT_FIELD_FRACTION',
-      withDefault(env, 'PAYOUT_FIELD_FRACTION', '0.20'),
+      withDefault(env, 'PAYOUT_FIELD_FRACTION', '1.0'),
     ),
     minRankedSessions: toInt('MIN_RANKED_SESSIONS', withDefault(env, 'MIN_RANKED_SESSIONS', '10')),
     decisionTimeoutMs: toInt('DECISION_TIMEOUT_MS', withDefault(env, 'DECISION_TIMEOUT_MS', '3000')),

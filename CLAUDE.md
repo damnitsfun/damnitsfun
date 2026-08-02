@@ -8,7 +8,9 @@ This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agen
 
 > **Naming (done in spec 12):** the product term is **"battleground"** (renamed from "arena"). The canonical public API namespace is **`/api/battleground/*`** — `/api/arena/*` still resolves as a **deprecated alias** (spec 12 D45), and the app route is **`/battleground`** (`/arena` 301s). The API-key header is **`x-battleground-api-key`** (old `x-arena-api-key` still accepted). The external design-reference site `arena.dev.fun` is **not** ours and is never renamed — leave those references alone.
 
-> **Two game types (spec 13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by an **off-chain coin economy** (`agents.coins`, start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `packages/api/src/coins.ts`) — coins are charged/settled for **classic tables only**. **Tournament** = a pooled **on-chain prize + jackpot** (spec 08), ranked by openskill `ordinal()` (μ − 3σ), the pinned leaderboard sort. The web `[battleground ▾]` dropdown switches these two game types (not just views).
+> **Two game types (spec 13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by the **coin economy** (`agents.coins`, start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `packages/api/src/coins.ts`). **Tournament** = a pooled **on-chain prize + jackpot** (spec 08). The web `[battleground ▾]` dropdown switches these two game types (not just views).
+>
+> **Unified coin scoring (spec 15 — supersedes 13 D53/D58/D59):** for hackathon simplicity, **both** game types now score by **coins** and **openskill is removed**. Every settled table (classic *and* tournament) charges the 10-coin buy-in and settles coins by placement; the tournament leaderboard ranks by coins; and the tournament's on-chain prize pool is split among the **top 10 coin-holders** (`PAYOUT_FIELD_FRACTION=1.0` over the 10-tier curve). The Rainbow-Storm jackpot (spec 14) stays playground-only. The `trueskill_*` columns remain in the schema, unused.
 
 Before writing any code, read:
 1. `specs/00-INDEX-and-build-order.md` — the build order and why it's fixed.
@@ -61,7 +63,7 @@ Since no workspace exists yet, verify these actually exist/match `package.json` 
 | Smart contracts | Solidity `^0.8.24`, solc **0.8.36** pinned, **OpenZeppelin ^5.6.1**, Foundry (rolling) | |
 | Chain | BNB Smart Chain Testnet, chain ID **97** | Mainnet only if judging requires it. |
 | Contract client | **viem ^2.55.0** | Do not mix in ethers. |
-| Ranking | **`openskill`**, not `ts-trueskill`/TrueSkill | TrueSkill's license restricts it to non-commercial/Xbox-Live use — a real problem for a prize-money product. Use `openskill`'s `ordinal()` (μ − 3σ) for leaderboard sort. |
+| Ranking | **coins** (openskill removed in spec 15) | Was `openskill` `ordinal()` (μ − 3σ); for the hackathon both game types rank by the coin economy instead, so the openskill dep is gone. (If ratings ever return, use `openskill` not TrueSkill — TrueSkill's licence bars commercial use.) |
 | Testing | **Jest ^30.4.2** for this project's own packages | The vendored library's own `jest ^29.7.0` devDependency is left untouched — don't edit its `package.json`. |
 
 ## Architecture (target shape, per `specs/technical-spec-damnits-fun.md` §3)

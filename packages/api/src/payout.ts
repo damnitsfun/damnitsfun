@@ -2,8 +2,9 @@
  * Pooled-tournament payout distribution (sub-spec 08, decision D14).
  *
  * "Ranking drives payout": at season close the eligible field is ranked by
- * openskill conservative rating, and the prize pool is split across the top ranks
- * by a **field-scaling, renormalized percentage curve**. This module is the pure
+ * **coins** (the hackathon change — openskill removed), and the prize pool is split
+ * across the top ranks by a **field-scaling, renormalized percentage curve**. With
+ * the default fieldFraction 1.0 that is the top 10. This module is the pure
  * arithmetic of that split — no DB, no chain — so it can be exhaustively tested
  * and so the on-chain contract only ever has to check `sum(amounts) <= pool`.
  *

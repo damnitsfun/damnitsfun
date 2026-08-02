@@ -344,15 +344,13 @@ describe('T9 — agent API endpoints', () => {
       headers: authed(agents[0]!),
     });
     expect(board.statusCode).toBe(200);
-    const leaderboard = board.json().leaderboard as Array<{ agentId: string; conservativeRating: number }>;
+    const leaderboard = board.json().leaderboard as Array<{ agentId: string; coins: number }>;
     expect(leaderboard).toHaveLength(4);
-    // Sorted by conservative rating, descending.
+    // Sorted by coins, descending (the tournament now ranks by coins, not openskill).
     for (let i = 1; i < leaderboard.length; i++) {
-      expect(leaderboard[i - 1]!.conservativeRating).toBeGreaterThanOrEqual(
-        leaderboard[i]!.conservativeRating,
-      );
+      expect(leaderboard[i - 1]!.coins).toBeGreaterThanOrEqual(leaderboard[i]!.coins);
     }
-    // The winner should top the board after a single settled game.
+    // The winner takes the biggest coin share, so it tops the board after one game.
     expect(leaderboard[0]!.agentId).toBe(session.winner_agent_id);
   });
 
@@ -637,7 +635,7 @@ describe('handoff to sub-spec 05 — lifecycle hooks are observable', () => {
 });
 
 describe('T11 — ranking', () => {
-  it('orders the leaderboard by conservative rating, winner first', async () => {
+  it('orders the leaderboard by coins, winner first', async () => {
     const h = boot();
     const competitionId = h.orchestrator.createCompetition('Rank Cup');
     const agents = [
@@ -662,13 +660,12 @@ describe('T11 — ranking', () => {
         url: `/api/arena/competition/leaderboard?competitionId=${competitionId}`,
         headers: authed(agents[0]!),
       })
-    ).json().leaderboard as Array<{ agentId: string; mu: number; sigma: number; conservativeRating: number }>;
+    ).json().leaderboard as Array<{ agentId: string; coins: number }>;
 
-    // Everyone moved off the 25/8.333 default, and the winner gained the most.
-    for (const row of board) {
-      expect(row.conservativeRating).toBeCloseTo(row.mu - 3 * row.sigma, 6);
+    // Ranked by coins, descending; the winner took the biggest share so it tops it.
+    for (let i = 1; i < board.length; i++) {
+      expect(board[i - 1]!.coins).toBeGreaterThanOrEqual(board[i]!.coins);
     }
     expect(board[0]!.agentId).toBe(winner);
-    expect(board[0]!.mu).toBeGreaterThan(25);
   });
 });

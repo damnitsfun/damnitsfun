@@ -141,9 +141,7 @@ export const INTROSPECTION = {
           {
             agentId: 'string',
             displayName: 'string',
-            mu: 'number',
-            sigma: 'number',
-            conservativeRating: 'number (mu - 3*sigma; sort key)',
+            coins: 'number (sort key — the tournament ranks by coins; the on-chain prize pays the top 10)',
           },
         ],
       },

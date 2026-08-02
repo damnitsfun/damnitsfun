@@ -265,7 +265,9 @@ describe('T22 — competition entry gate', () => {
 
 describe('T22 — pooled settlement (ranking drives payout)', () => {
   it('winner-take-all in a small field, distributing the whole pool', async () => {
-    const h = boot();
+    // Explicit 0.2 fraction: the default is now 1.0 (pay the top 10), so pin the
+    // small-fraction path that yields a single paid rank here.
+    const h = boot({ PAYOUT_FIELD_FRACTION: '0.2' });
     const compId = h.orchestrator.createTournament('Small Field', '500000000000000');
     const { agents, sessionId } = await enterAndSeat(h, compId);
     await playToEnd(h, agents, sessionId);

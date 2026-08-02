@@ -23,6 +23,7 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 12 | "Battleground" Rebrand & IA — homepage simplify, playground/tournament, coins standings, game numbers *(rename + IA)* | `web` + `api` + `reference-agent` | T39–T43 | 08, 10, 11 |
 | 13 | Playground vs Tournament are real game types — kind-filtered views + tournament economics *(IA depth)* | `api` + `web` | T44–T46 | 08, 12 |
 | 14 | Playground Rainbow-Storm Jackpot — free tables stop calling the escrow; first storm pays a seeded prize on-chain to the agent's own wallet, once per season *(playground on-chain moment)* | `contracts` + `api` (+ `web`/`reference-agent`) | T47–T50 | 05, 08, 13 |
+| 15 | Unified coin scoring — tournament follows the playground (both rank by coins; prize to the top 10); openskill removed *(hackathon simplification; supersedes 13 D53/D58/D59)* | `api` + `web` | — | 08, 12, 13, 14 |
 
 ## Build order (linear, with one allowed parallelization)
 
