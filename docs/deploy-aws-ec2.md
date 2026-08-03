@@ -294,7 +294,8 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 ```
 
-**staging** — `/opt/damnits/staging/app/.env`:
+**staging** — `/opt/damnits/staging/app/.env`. Same chain (BNB testnet, ID 97),
+**its own contracts and its own operator key**:
 
 ```ini
 PORT=8081
@@ -302,15 +303,23 @@ DATABASE_PATH=/opt/damnits/staging/data/damnits.sqlite
 PUBLIC_BASE_URL=https://staging.damnits.fun
 DECISION_TIMEOUT_MS=30000
 
-# Chain DISABLED on staging — see the warning below. The API boots fine and
-# logs `[chain] disabled`; the playground and coin economy work completely.
-OPERATOR_PRIVATE_KEY=
-ESCROW_CONTRACT_ADDRESS=
-TOURNAMENT_CONTRACT_ADDRESS=
-PLAYGROUND_JACKPOT_SEED_WEI=0
+# Same network as production — this is a testnet, staging belongs on it.
+BSC_TESTNET_RPC_URL=https://bsc-testnet-dataseed.bnbchain.org
+BSC_CHAIN_ID=97
+
+# A SECOND operator key, and the contracts IT deployed. Never production's —
+# see the warning below. Fund it from the faucet like any other.
+OPERATOR_PRIVATE_KEY=0x<staging operator key>
+ESCROW_CONTRACT_ADDRESS=0x<staging escrow, from §2.7>
+TOURNAMENT_CONTRACT_ADDRESS=0x<staging tournament, from §2.7>
+
+# Keep staging's on-chain money small — it is spent on every test run.
+TOURNAMENT_ENTRY_FEE_WEI=100000000000000    # 0.0001 tBNB
+JACKPOT_SEED_WEI=1000000000000000           # 0.001 tBNB
+PLAYGROUND_JACKPOT_SEED_WEI=1000000000000000
 
 # Its OWN key. Sharing production's would let a staging database decrypt
-# production wallets.
+# production's custodial wallets.
 WALLET_ENCRYPTION_KEY=<a different openssl rand -hex 32>
 
 # Same OAuth apps, different registered callback (see below).
@@ -320,14 +329,26 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 ```
 
-> ### ⚠ Do not point staging at production's contracts
+> ### ⚠ Staging shares the chain, never the contracts or the operator key
 >
-> Session IDs are allocated **per database**, so staging would call
-> `openSession` / `commitSeed` with IDs that collide with production's on the
-> same contract — corrupting production's commit-reveal record and spending the
-> operator's testnet balance. If you genuinely need to exercise the chain path
-> on staging, deploy a **second set of contracts** with a **second operator
-> key**. Blank is the safe default.
+> Both environments live on BNB testnet 97. What must **not** be shared is the
+> `ESCROW_CONTRACT_ADDRESS` / `TOURNAMENT_CONTRACT_ADDRESS` pair or the
+> `OPERATOR_PRIVATE_KEY`. Two independent reasons, either one sufficient:
+>
+> 1. **Session IDs are allocated per database.** Point both at one escrow and
+>    staging will call `openSession` / `commitSeed` with IDs that collide with
+>    production's — overwriting or reverting against production's commit-reveal
+>    record. That record is the fairness guarantee; a collision makes production
+>    matches unverifiable.
+> 2. **One key signing from two processes means nonce contention.** Each
+>    instance builds transactions from its own view of the operator's nonce.
+>    Concurrent settlements produce `replacement transaction underpriced` /
+>    `nonce too low` failures — and the loser is whichever settlement happened
+>    to be production's.
+>
+> Fund the staging operator from the same faucet
+> (<https://www.bnbchain.org/en/testnet-faucet>) and keep its entry fees and
+> jackpot seeds small, since every test run spends them.
 
 > ### Re-register the OAuth callbacks
 >
@@ -344,7 +365,48 @@ GOOGLE_CLIENT_SECRET=
 > Leaving the credentials blank simply disables sign-in; the battleground still
 > runs.
 
-### 2.7 Build, migrate, seed
+### 2.7 Deploy staging's own contract set
+
+Do this **from your laptop**, not the server — Foundry is a build tool and the
+app server never needs it. You already have the toolchain from
+[`docs/deployment.md`](./deployment.md).
+
+```bash
+# 1. A second throwaway operator key, distinct from production's
+cast wallet new
+# → fund the printed address at https://www.bnbchain.org/en/testnet-faucet
+
+# 2. Deploy both contracts under THAT key. The scripts read OPERATOR_PRIVATE_KEY
+#    from the environment and make the deployer the operator, so overriding it
+#    for the command is all that is needed — production's .env is untouched.
+cd packages/contracts
+set -a && source ../../.env && set +a
+export OPERATOR_PRIVATE_KEY=0x<staging operator key>
+
+forge script script/Deploy.s.sol:Deploy \
+  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast
+forge script script/DeployTournament.s.sol:DeployTournament \
+  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast
+```
+
+Copy the two printed addresses into **staging's** `.env` (§2.6), and record them
+in [`docs/deployment.md`](./deployment.md) alongside production's so it stays
+obvious which address belongs to which environment.
+
+> `export` in a shell you also use for production work is a foot-gun — that
+> variable now shadows production's key for every later `forge script` in the
+> same session. Run this in a throwaway terminal, or `unset
+> OPERATOR_PRIVATE_KEY` when you're done.
+
+Verify the two sets really are distinct before moving on:
+
+```bash
+cast call <staging-escrow> "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_URL"
+cast call <production-escrow> "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_URL"
+# two different addresses, or something is wired wrong
+```
+
+### 2.8 Build, migrate, seed
 
 ```bash
 for env in production staging; do
@@ -360,7 +422,7 @@ done
 Each environment's SQLite file is created here and then **never touched by a
 deploy again**.
 
-### 2.8 The systemd template unit
+### 2.9 The systemd template unit
 
 One template file, two instances — `%i` expands to the environment name.
 
@@ -382,7 +444,7 @@ sudo journalctl -u damnits-api@production -f
 sudo journalctl -u damnits-api@staging -f
 ```
 
-### 2.9 nginx + TLS
+### 2.10 nginx + TLS
 
 The vhost ships in this repo already configured for all three names — no editing
 needed.
@@ -603,11 +665,17 @@ sudo -u damnits sqlite3 /opt/damnits/production/data/damnits.sqlite \
 sudo systemctl start damnits-api@staging
 ```
 
-Two things to know before you do: the copied rows include **custodial wallet
-keys encrypted under production's `WALLET_ENCRYPTION_KEY`**, which staging can't
-decrypt — expect wallet operations to fail there, which is the correct and safe
-outcome. And the copy carries production's session IDs, so it must not be
-combined with live contract addresses on staging.
+Two things to know before you do:
+
+- The copied rows include **custodial wallet keys encrypted under production's
+  `WALLET_ENCRYPTION_KEY`**, which staging can't decrypt — expect wallet
+  operations to fail there. That is the correct and safe outcome; don't "fix" it
+  by copying the production key over.
+- The copy also carries production's **session and competition rows**, including
+  ones production already committed and settled against *its* escrow. Staging's
+  escrow has never seen those IDs, so anything mid-flight in the copy will fail
+  to settle on staging. Refresh from a quiet moment, and treat the copy as
+  read-mostly test data rather than a resumable state.
 
 ### Rollback
 
@@ -655,15 +723,20 @@ re-encryption migration. Back it up somewhere durable.
 | 502 from nginx | That environment's Node process is down: `systemctl status damnits-api@staging`, `journalctl -u damnits-api@staging -n 50`. |
 | certbot fails with "Invalid response … 404" or a timeout | DNS hasn't propagated, port 80 is closed, or Cloudflare's orange-cloud proxy is intercepting the challenge (§1.4). Fix, then retry — Let's Encrypt rate-limits failures. |
 | Public IP changed after a stop/start | You skipped the Elastic IP. Re-associate one and update DNS + OAuth callbacks. |
+| `replacement transaction underpriced` / `nonce too low` in the chain log | Both environments are signing with the **same** `OPERATOR_PRIVATE_KEY`. Each instance tracks the nonce independently, so they collide. Give staging its own key (§2.6/§2.7). |
+| Staging logs `NotOperator` on commit or settle | Staging's `.env` points at production's contract addresses, whose operator is production's key. Both addresses must be the pair staging deployed. |
+| Staging settlement reverts with an unknown session | Its database was copied from production (see *Refreshing staging*) and references sessions staging's escrow never opened. Expected — start from a quiet copy. |
+| Either environment logs `[chain] disabled` unexpectedly | That `.env` is missing `OPERATOR_PRIVATE_KEY` or `ESCROW_CONTRACT_ADDRESS`. The API runs fine without them; it just won't touch the chain. |
 
 ---
 
 ## Appendix — what is *not* deployed by this pipeline
 
-- **The smart contracts.** `DamnitsEscrow` / `DamnitsTournament` are deployed
-  once with `forge script` against BSC testnet and their addresses pasted into
-  production's `.env`. See [`docs/deployment.md`](./deployment.md). Deliberately
-  manual: an accidental redeploy would orphan every committed seed and pooled
-  prize.
+- **The smart contracts.** Each environment gets its **own** `DamnitsEscrow` +
+  `DamnitsTournament` pair on BNB testnet 97, deployed once with `forge script`
+  under that environment's operator key and pasted into that environment's
+  `.env` (§2.7). See [`docs/deployment.md`](./deployment.md) for the address
+  record. Deliberately manual and outside CI: an accidental redeploy would
+  orphan every committed seed and pooled prize on that environment.
 - **Agents.** Every agent is an independent process, run by whoever owns it,
   anywhere. The server only exposes the public HTTP contract.

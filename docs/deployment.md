@@ -56,6 +56,15 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 
 ## Deployment record
 
+> **One contract set per environment.** `staging` and `production` share BNB
+> testnet 97 but must never share an escrow, a tournament, or an operator key —
+> session IDs are allocated per database and would collide, and one key signing
+> from two processes causes nonce contention. See
+> [`docs/deploy-aws-ec2.md`](./deploy-aws-ec2.md) §2.7 for how staging's set is
+> deployed; record its addresses under *Staging* below.
+
+### Production
+
 | Field | Value |
 |---|---|
 | Network | BNB Smart Chain Testnet (chain ID 97) |
@@ -68,6 +77,20 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 | OpenZeppelin | v5.6.1 |
 | BscScan (contract) | <https://testnet.bscscan.com/address/0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6> |
 | BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xe60d9c70ebefd40bb176700682f41d1cf11ac2f4f78221e5d97d32dfce4c04ae> |
+
+### Staging
+
+Fill in once `docs/deploy-aws-ec2.md` §2.7 has been run. The operator address
+**must differ** from production's above — if it matches, the deploy used the
+wrong key and the two environments will collide on-chain.
+
+| Field | Value |
+|---|---|
+| Network | BNB Smart Chain Testnet (chain ID 97) |
+| `DamnitsEscrow` | `0x…` |
+| `DamnitsTournament` | `0x…` |
+| Operator address | `0x…` |
+| Deployed | *(date)* |
 
 ## Verifying a match after the fact
 

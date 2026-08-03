@@ -7,7 +7,7 @@
 #   systemctl enable --now damnits-api@staging      → /opt/damnits/staging/app
 #
 # Each instance gets its own directory, its own .env (and therefore its own PORT
-# and DATABASE_PATH), and its own SQLite file. Install: docs/deploy-aws-ec2.md §2.8.
+# and DATABASE_PATH), and its own SQLite file. Install: docs/deploy-aws-ec2.md §2.9.
 #
 # Exactly ONE instance per environment may run. The orchestrator lives in-process
 # with real timers and persistence is a single better-sqlite3 file; a second

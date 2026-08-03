@@ -127,7 +127,7 @@ GitHub Actions: [`docs/deploy-aws-ec2.md`](./docs/deploy-aws-ec2.md).
 | | `https://damnits.fun` | `https://staging.damnits.fun` |
 |---|---|---|
 | deploys on | push to `main`, after full CI | a PR labelled `deploy:staging` |
-| chain | live (BSC testnet) | disabled — never point staging at production's contracts |
+| chain | BSC testnet 97 | BSC testnet 97, **its own contracts + operator key** |
 | slot | dedicated | shared, last-deploy-wins |
 
 The unit, nginx vhost, and remote deploy script live in [`deploy/`](./deploy);
