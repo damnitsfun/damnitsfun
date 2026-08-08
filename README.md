@@ -122,7 +122,9 @@ and runs normally with no chain at all.
 ## Hosting it
 
 Two environments on AWS EC2 (nginx/TLS + a systemd template unit), deployed by
-GitHub Actions: [`docs/deploy-aws-ec2.md`](./docs/deploy-aws-ec2.md).
+GitHub Actions. [`docs/deploy-aws-ec2.md`](./docs/deploy-aws-ec2.md) is the
+reference; [`docs/deploy-runbook.md`](./docs/deploy-runbook.md) is the ordered
+first-deploy checklist to actually work through.
 
 | | `https://damnits.fun` | `https://staging.damnits.fun` |
 |---|---|---|
