@@ -95,7 +95,7 @@ deltas inline.
 | Setting | Value | Why |
 |---|---|---|
 | AMI | **Ubuntu Server 24.04 LTS** | Current LTS; NodeSource ships Node 24 for it. |
-| Instance type | **t4g.medium** (arm64) or **t3.medium** (x86_64) | 4 GB. Two Node processes plus a `tsc` build across five workspaces will not fit comfortably in 2 GB. A single-environment box can use `.small`. |
+| Instance type | **t4g.small** (arm64) or **t3.small** (x86_64) | 2 GB — enough, but only with swap (§2.2) and serialised deploys. See the footprint measurements below. Step up to `.medium` if you'd rather not think about it. |
 | Storage | **30 GB gp3** | Two trees × (repo + `node_modules`), plus SQLite, backups and logs. |
 | Key pair | create/choose one | You need SSH for the first-time setup. |
 | Elastic IP | **allocate and associate one** | A stopped/started instance changes its public IP otherwise, breaking DNS *and* your OAuth callbacks. |
@@ -103,6 +103,37 @@ deltas inline.
 > Pick **one** architecture and stick with it. `better-sqlite3` publishes
 > prebuilt binaries for both `linux-x64` and `linux-arm64`, but if a prebuild is
 > missing it compiles from source — that is what `build-essential` is for.
+
+#### Why 2 GB is enough — measured, not estimated
+
+| Phase | Peak RSS |
+|---|---|
+| `tsc -p packages/api` | **~650 MB** ← the spike |
+| `tsc -p packages/engine` (vendor, then main) | ~225 MB, then ~265 MB |
+| API server, steady state | **~48 MB** |
+| API server, after light request load | **~68 MB** |
+
+Runtime is a non-issue: two instances total around 140 MB, so with nginx and
+Ubuntu you idle near 500 MB and have ~1.5 GB free. **The build is the
+constraint.** A deploy runs `tsc` (~650 MB) while both environments' servers are
+still up (~140 MB) — roughly 1.3 GB with OS overhead. It fits, without much
+room, which is why the next two things are not optional:
+
+- **Swap is required at 2 GB** (§2.2), not a nice-to-have.
+- **Deploys are serialised across both environments** by a shared concurrency
+  group in `deploy-target.yml`. Two concurrent `tsc` runs peak near 1.9 GB and
+  would drive the box into swap thrash or an OOM kill. A queued deploy waits its
+  turn rather than being dropped.
+
+One figure is unmeasured: `yarn install` compiling `better-sqlite3` from source,
+which only happens if no `linux-arm64` prebuild matches. node-gyp plus gcc can
+add a few hundred MB — another reason for the swap.
+
+> **T-family instances are burstable.** 2 vCPU at 20% baseline each; a full
+> `yarn install` + build burns CPU credits. Occasional deploys are fine, but
+> frequent staging deploys can exhaust the balance and either throttle (standard
+> mode) or bill surplus (unlimited mode). Check which mode yours launched in
+> under *Instance → Credit specification*.
 
 ### 1.3 Security group
 
@@ -183,10 +214,11 @@ yarn -v    # 1.22.22
 Node comes from apt rather than nvm on purpose: systemd needs a stable absolute
 path (`/usr/bin/node`), and nvm's shell-function shims are invisible to it.
 
-### 2.2 Swap
+### 2.2 Swap — required on a 2 GB box
 
-Two environments building concurrently can spike well past RAM and get
-OOM-killed mid-deploy. Cheap insurance even on a 4 GB box.
+The api `tsc` alone peaks around 650 MB (§1.2). On `t4g.small` that leaves
+little headroom, and an OOM kill mid-deploy leaves a half-linked `node_modules`
+behind. This step is not optional at 2 GB.
 
 ```bash
 sudo fallocate -l 4G /swapfile
@@ -533,8 +565,11 @@ the deployment URL in the Actions UI:
 
 > **Two boxes instead of one?** Move `EC2_HOST` (and `EC2_KNOWN_HOSTS`, and the
 > key if it differs) from repository-level down into each environment, and set
-> both `APP_ROOT`s to `/opt/damnits/production` on their own hosts. Nothing else
-> changes.
+> both `APP_ROOT`s to `/opt/damnits/production` on their own hosts. One more
+> thing: pass a per-environment `concurrency_group` (e.g.
+> `damnits-ec2-${{ inputs.environment }}`) in `deploy.yml` / `deploy-staging.yml`
+> so the two stop queueing behind each other — the shared default only exists
+> because they compete for one box's RAM.
 
 Generate a **dedicated deploy key** rather than reusing your personal one:
 
@@ -689,7 +724,7 @@ migrations here are additive, so keep them that way.
 
 ### Scaling
 
-Vertical only, for the reasons in the preamble. `t4g.medium` → `t4g.large` is a
+Vertical only, for the reasons in the preamble. `t4g.small` → `t4g.medium` is a
 stop/start (the Elastic IP survives). If you genuinely outgrow one box, the
 change is architectural: extract the orchestrator into its own process and move
 persistence off SQLite (the schema is Postgres-portable by design) — not
@@ -709,6 +744,8 @@ re-encryption migration. Back it up somewhere durable.
 | Symptom | Cause / fix |
 |---|---|
 | Staging deploy job never starts | The `deploy:staging` label isn't on the PR, or the PR is from a fork (refused by design — deploying means running that PR's install scripts on your box). Check the `gate` job's notice. |
+| A deploy sits in "Waiting" with no logs | It's queued behind the other environment's deploy — both share one concurrency group so two `tsc` runs never collide on a 2 GB box. It starts when the other finishes; nothing is dropped. |
+| A deploy dies mid-`tsc` with no error, or the box goes unresponsive | OOM. Confirm with `dmesg -T \| grep -i oom` and check `free -h` shows the swap from §2.2 is actually on. |
 | Staging shows someone else's branch | Working as designed — it's a shared, last-deploy-wins slot. Re-push or re-add the label to reclaim it. |
 | A deploy fails with `$APP_DIR does not exist` | That environment's Part 2 setup was never run, or `APP_ROOT` is wrong in the environment secrets. |
 | `WEB_UI_NOT_BUILT` 404 at `/` | `packages/web/public/*.html` didn't make it. Your rsync excludes are too broad — `web` has no build step, its HTML must be copied verbatim. |

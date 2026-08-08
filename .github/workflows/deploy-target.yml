@@ -20,6 +20,15 @@ on:
         required: false
         default: true
         type: boolean
+      concurrency_group:
+        description: >
+          Serialisation key. Defaults to a value SHARED by both environments, so
+          staging and production never build at the same time — two concurrent
+          `tsc` runs peak around 1.9 GB, which does not fit a 2 GB box. Override
+          with a per-environment value once the two live on separate instances.
+        required: false
+        default: damnits-ec2-shared
+        type: string
 
 jobs:
   verify:
@@ -40,10 +49,14 @@ jobs:
       name: ${{ inputs.environment }}
       url: ${{ vars.PUBLIC_URL }}
 
-    # One deploy at a time PER ENVIRONMENT, and never cancelled mid-flight — an
-    # interrupted `yarn install` leaves a half-linked node_modules on the box.
+    # One deploy at a time ACROSS BOTH ENVIRONMENTS by default (see the
+    # concurrency_group input), and never cancelled mid-flight — an interrupted
+    # `yarn install` leaves a half-linked node_modules on the box.
+    #
+    # A queued deploy waits rather than being dropped, so labelling a PR while
+    # main is deploying still lands; it just lands second.
     concurrency:
-      group: deploy-${{ inputs.environment }}
+      group: ${{ inputs.concurrency_group }}
       cancel-in-progress: false
 
     steps:

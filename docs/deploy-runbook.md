@@ -69,8 +69,11 @@ Reference: **§1.1–1.3**.
 
 1. **Launch** (console → EC2 → Launch instance):
    - Ubuntu Server **24.04 LTS**
-   - **t4g.medium** (arm64) or **t3.medium** (x86_64) — 4 GB, because two Node
-     processes plus a `tsc` build won't fit comfortably in 2 GB
+   - **t4g.small** (arm64) or **t3.small** (x86_64) — 2 GB is enough: the two
+     servers total ~140 MB and the `tsc` build peaks ~650 MB (§1.2 has the
+     measurements). It only works because swap is configured in step 3a and
+     deploys are serialised — both are load-bearing. `.medium` if you'd rather
+     have the headroom.
    - **30 GB gp3**
    - a key pair you hold
 2. **Allocate an Elastic IP** and associate it with the instance. Skipping this
