@@ -384,24 +384,33 @@ GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 ```
 
-> ### ⚠ Staging shares the chain, never the contracts or the operator key
+> ### ⚠ Staging shares the chain, but gets its own contracts
 >
-> Both environments live on BNB testnet 97. What must **not** be shared is the
-> `ESCROW_CONTRACT_ADDRESS` / `TOURNAMENT_CONTRACT_ADDRESS` pair or the
-> `OPERATOR_PRIVATE_KEY`. Two independent reasons, either one sufficient:
+> Both environments live on BNB testnet 97. Give staging its **own**
+> `ESCROW_CONTRACT_ADDRESS` / `TOURNAMENT_CONTRACT_ADDRESS` pair, and ideally its
+> own `OPERATOR_PRIVATE_KEY` too. The two reasons are **not** equally strong —
+> know which is which before you trade either away:
 >
-> 1. **Session IDs are allocated per database.** Point both at one escrow and
->    staging will call `openSession` / `commitSeed` with IDs that collide with
->    production's — overwriting or reverting against production's commit-reveal
->    record. That record is the fairness guarantee; a collision makes production
->    matches unverifiable.
-> 2. **One key signing from two processes means nonce contention.** Each
->    instance builds transactions from its own view of the operator's nonce.
->    Concurrent settlements produce `replacement transaction underpriced` /
->    `nonce too low` failures — and the loser is whichever settlement happened
->    to be production's.
+> 1. **Separate contracts — a containment boundary, not a collision fix.** It is
+>    tempting to assume IDs from two databases collide on a shared escrow. They
+>    do not: `newSessionId()` is `sess_` + 16 random bytes
+>    (`packages/api/src/ids.ts`) and both contracts key on
+>    `keccak256(toHex(id))`, so the space is ~8×10²⁴ and per-session accounting
+>    keeps balances apart. What separate contracts *do* buy is containment —
+>    staging's test traffic can never appear in, or strand funds inside, the
+>    contract production settles against — and a production on-chain history
+>    that is clean enough to show a judge.
+> 2. **Separate operator keys — the one that actually bites.** `operator` is
+>    fixed at construction and every state-changing call is `onlyOperator`, so
+>    *sharing the contracts forces sharing the key*. One account signing from two
+>    processes, each tracking its nonce independently, produces
+>    `replacement transaction underpriced` / `nonce too low` on concurrent
+>    settlement — and production is as likely to lose the race as staging. There
+>    is no mitigation short of a second key.
 >
-> Fund the staging operator from the same faucet
+> Reversible either way: both contracts expose `transferOperator(address)`, so
+> staging can start on production's key and be handed a dedicated one later
+> without redeploying. Fund the staging operator from the same faucet
 > (<https://www.bnbchain.org/en/testnet-faucet>) and keep its entry fees and
 > jackpot seeds small, since every test run spends them.
 
@@ -453,12 +462,29 @@ obvious which address belongs to which environment.
 > same session. Run this in a throwaway terminal, or `unset
 > OPERATOR_PRIVATE_KEY` when you're done.
 
-Verify the two sets really are distinct before moving on:
+Verify before moving on. The **addresses** must differ — that is the check that
+matters, and it holds whether or not you reused production's operator key:
 
 ```bash
-cast call <staging-escrow> "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_URL"
+# All four must be distinct. Any repeat means an environment is pointed at the
+# other's contract, or a .env field holds the wrong one of the pair (an easy
+# mistake: pasting the escrow address into TOURNAMENT_CONTRACT_ADDRESS).
+for e in production staging; do
+  ssh <host> "sudo grep -hE '^(ESCROW|TOURNAMENT)_CONTRACT_ADDRESS=' /opt/damnits/$e/app/.env"
+done | cut -d= -f2 | sort -fu | wc -l    # → 4
+
+# Sanity-check each is the contract you think it is: escrow ~2,986 bytes,
+# tournament ~4,752.
+cast codesize <address> --rpc-url "$BSC_TESTNET_RPC_URL"
+```
+
+If you also gave staging its own key, `operator()` on the two escrows returns
+two different addresses. If you reused production's, both return the same one —
+expected, and the tradeoff is spelled out in the ⚠ box above.
+
+```bash
+cast call <staging-escrow>    "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_URL"
 cast call <production-escrow> "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_URL"
-# two different addresses, or something is wired wrong
 ```
 
 ### 2.8 Build, migrate, seed
