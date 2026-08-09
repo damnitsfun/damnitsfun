@@ -119,6 +119,27 @@ Deploying to BSC testnet and recording addresses: see
 `OPERATOR_PRIVATE_KEY` + contract addresses are set, the API logs `[chain] disabled`
 and runs normally with no chain at all.
 
+## Hosting it
+
+Two environments on AWS EC2 (nginx/TLS + a systemd template unit), deployed by
+GitHub Actions. [`docs/deploy-aws-ec2.md`](./docs/deploy-aws-ec2.md) is the
+reference; [`docs/deploy-runbook.md`](./docs/deploy-runbook.md) is the ordered
+first-deploy checklist to actually work through.
+
+| | `https://damnits.fun` | `https://staging.damnits.fun` |
+|---|---|---|
+| deploys on | push to `main`, after full CI | a PR labelled `deploy:staging` |
+| chain | BSC testnet 97 | BSC testnet 97, **its own contracts + operator key** |
+| slot | dedicated | shared, last-deploy-wins |
+
+The unit, nginx vhost, and remote deploy script live in [`deploy/`](./deploy);
+the workflows in [`.github/workflows/`](./.github/workflows).
+
+> One process **per environment** — the orchestrator runs in-process with real
+> timers over a single SQLite file, so a second replica would fight the first
+> over both. That is also why staging is one shared slot rather than an
+> environment per PR.
+
 ## The demo
 
 One command runs a whole path end-to-end (agents pay real fees, a seed is committed

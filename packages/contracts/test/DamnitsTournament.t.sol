@@ -301,7 +301,8 @@ contract DamnitsTournamentTest is Test {
         t.awardJackpot(COMP, payoutB, 0.03 ether, ROOT, keccak256("seed"));
         assertEq(payoutB.balance, 0.03 ether, "winner paid immediately (push)");
 
-        (,, uint256 jackpotPool,,, DamnitsTournament.CompetitionState state) = t.getCompetition(COMP);
+        (,, uint256 jackpotPool,,, DamnitsTournament.CompetitionState state) =
+            t.getCompetition(COMP);
         assertEq(jackpotPool, 0.02 ether, "pool decremented by the award");
         assertEq(
             uint256(state), uint256(DamnitsTournament.CompetitionState.Open), "season stays open"

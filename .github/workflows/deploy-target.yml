@@ -1,0 +1,145 @@
+name: Deploy (reusable)
+
+# The single deploy implementation. Both environments call this; the ONLY thing
+# that differs between them is the value of the environment-scoped secrets
+# (EC2_HOST, APP_ROOT, HEALTHCHECK_URL, ...), so staging and production can live
+# on one box or on two without touching this file.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'GitHub environment name — also the systemd instance and /opt/damnits/<name> directory'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref to deploy (defaults to the calling workflow ref)'
+        required: false
+        type: string
+      run_ci:
+        description: 'Run the full CI suite before deploying'
+        required: false
+        default: true
+        type: boolean
+      concurrency_group:
+        description: >
+          Serialisation key. Defaults to a value SHARED by both environments, so
+          staging and production never build at the same time — two concurrent
+          `tsc` runs peak around 1.9 GB, which does not fit a 2 GB box. Override
+          with a per-environment value once the two live on separate instances.
+        required: false
+        default: damnits-ec2-shared
+        type: string
+
+jobs:
+  verify:
+    if: ${{ inputs.run_ci }}
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: [verify]
+    # `always()` so a run with run_ci=false still proceeds; the second clause is
+    # what keeps a genuine CI failure from ever reaching a server.
+    if: ${{ always() && (needs.verify.result == 'success' || !inputs.run_ci) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Resolves the environment-scoped secrets below. Add required reviewers on
+    # the `production` environment to make every deploy a human decision.
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.PUBLIC_URL }}
+
+    # One deploy at a time ACROSS BOTH ENVIRONMENTS by default (see the
+    # concurrency_group input), and never cancelled mid-flight — an interrupted
+    # `yarn install` leaves a half-linked node_modules on the box.
+    #
+    # A queued deploy waits rather than being dropped, so labelling a PR while
+    # main is deploying still lands; it just lands second.
+    concurrency:
+      group: ${{ inputs.concurrency_group }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host key — StrictHostKeyChecking=no would let a hijacked DNS
+          # record receive this deploy, and the source tree with it.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      # Ship the whole repo tree: server.ts resolves packages/web/public and the
+      # root skill.md relative to packages/api/dist, so the layout must survive.
+      # node_modules is NOT shipped — better-sqlite3 is native and gets rebuilt
+      # on the target architecture by remote-deploy.sh.
+      #
+      # .env is excluded (it lives on the box only) and data/ no longer sits
+      # inside the app dir at all, so --delete can never reach the database.
+      - name: Sync source to ${{ inputs.environment }}
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+          APP_ROOT: ${{ secrets.APP_ROOT }}
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude 'vendor-dist/' \
+            --exclude '*.tsbuildinfo' \
+            --exclude '.env' \
+            --exclude 'data/' \
+            --exclude 'packages/contracts/lib/' \
+            --exclude 'packages/contracts/out/' \
+            --exclude 'packages/contracts/cache/' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            ./ "$USER@$HOST:$APP_ROOT/app/"
+
+      - name: Install, build, migrate, restart
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" \
+            "ENV_NAME='${{ inputs.environment }}' \
+             APP_ROOT='${{ secrets.APP_ROOT }}' \
+             HEALTH_URL='${{ secrets.INTERNAL_HEALTH_URL }}' \
+             bash -s" < deploy/remote-deploy.sh
+
+      # Independent of the in-server check: proves nginx + TLS + the app agree
+      # from the public internet.
+      - name: Public health check
+        env:
+          URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 10 "$URL" > /tmp/health.json; then
+              echo "healthy:"; head -c 400 /tmp/health.json; exit 0
+            fi
+            echo "attempt $i failed, retrying in 5s"; sleep 5
+          done
+          echo "::error::health check never returned 200 at $URL"
+          exit 1
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "### ${{ inputs.environment }} deploy — ${{ job.status }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| environment | \`${{ inputs.environment }}\` |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| url | ${{ vars.PUBLIC_URL }} |"
+            echo "| CI | ${{ inputs.run_ci && 'passed' || '**skipped**' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

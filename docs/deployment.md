@@ -1,7 +1,9 @@
-# DamnitsEscrow — deployment record
+# Contract deployment record
 
-The on-chain half of the arena (sub-spec 05). Fill in the **Deployment record**
-below once the contract is live; sub-spec 07's demo cites these values.
+The on-chain half of the arena: `DamnitsEscrow` (sub-spec 05, per-table entry
+fees and commit-reveal) and `DamnitsTournament` (sub-spec 08, the pooled prize
+and jackpot). Fill in the **Deployment record** below once each contract is
+live; sub-spec 07's demo cites these values.
 
 ## What the contract does
 
@@ -56,6 +58,20 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 
 ## Deployment record
 
+> **One contract set per environment.** `staging` and `production` share BNB
+> testnet 97 but must never share an escrow, a tournament, or an operator key —
+> session IDs are allocated per database and would collide, and one key signing
+> from two processes causes nonce contention. See
+> [`docs/deploy-aws-ec2.md`](./deploy-aws-ec2.md) §2.7 for how staging's set is
+> deployed; record its addresses under *Staging* below.
+
+### Production
+
+Both contracts share one operator, `0xF977F34dB8a986A0A9edec3E744092c715EF793c`
+— that is correct *within* an environment, and only ever wrong across them.
+
+#### `DamnitsEscrow` (sub-spec 05)
+
 | Field | Value |
 |---|---|
 | Network | BNB Smart Chain Testnet (chain ID 97) |
@@ -68,6 +84,60 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 | OpenZeppelin | v5.6.1 |
 | BscScan (contract) | <https://testnet.bscscan.com/address/0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6> |
 | BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xe60d9c70ebefd40bb176700682f41d1cf11ac2f4f78221e5d97d32dfce4c04ae> |
+
+#### `DamnitsTournament` (sub-spec 08)
+
+| Field | Value |
+|---|---|
+| Network | BNB Smart Chain Testnet (chain ID 97) |
+| Contract address | `0x9B03Ae8dbda61f5FA7933cc7329021F533727e90` |
+| Deploy tx | `0xea6cc9581b89ada5e8823c120a2134dbaa00288309b7804aba0bc6ee4163dbce` |
+| Operator address | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` |
+| Block | 124034949 |
+| Gas used | 1,130,754 |
+| Compiler | solc 0.8.36, optimizer on (200 runs) |
+| OpenZeppelin | v5.6.1 |
+| BscScan (contract) | <https://testnet.bscscan.com/address/0x9B03Ae8dbda61f5FA7933cc7329021F533727e90> |
+| BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xea6cc9581b89ada5e8823c120a2134dbaa00288309b7804aba0bc6ee4163dbce> |
+
+### Staging
+
+Its own contract pair, deployed per `docs/deploy-aws-ec2.md` §2.7. **No address
+is shared with production.**
+
+| Field | Value |
+|---|---|
+| Network | BNB Smart Chain Testnet (chain ID 97) |
+| `DamnitsEscrow` | `0xcDB87fB9600f585BbC591e5143c9aEB2693e4Ed9` |
+| Escrow deploy tx | `0xc19bfee01fa9c1bd42917ae5a469acf13bcff0e502929f93bf9f7bdeec541b17` (block 124042936, gas 748,832) |
+| `DamnitsTournament` | `0x121751F6410a78D763D2f2D24704cfb22AeFABc3` |
+| Tournament deploy tx | `0x410fffb65c1344a0fdaf9d949a0a7c7ec798709263c4f4a81a6f563dc4b7d3b3` (block 124043309, gas 1,130,754) |
+| Operator address | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` — **shared with production, deliberately** (see below) |
+| Deployed | 2026-08-09 |
+
+> ### The operator key is shared; the contracts are not
+>
+> A deliberate tradeoff, not an accident. Separate contracts mean staging can
+> never touch production's commit-reveal record or its balances, and
+> production's on-chain history stays demo-clean.
+>
+> What it does **not** fix is nonce contention: one account signing from two
+> processes, each tracking its nonce independently, yields
+> `replacement transaction underpriced` / `nonce too low` when both settle at
+> once — and production is as likely to lose the race as staging. Expect it only
+> under genuinely concurrent settlement.
+>
+> Both contracts expose `transferOperator(address)`, so this is reversible
+> without redeploying. To split the key later: `cast wallet new`, fund it, then
+> point staging's two contracts at it and update staging's
+> `OPERATOR_PRIVATE_KEY`.
+>
+> ```bash
+> cast send <staging-escrow>     "transferOperator(address)" <new-operator> \
+>   --rpc-url "$BSC_TESTNET_RPC_URL" --private-key "$OPERATOR_PRIVATE_KEY"
+> cast send <staging-tournament> "transferOperator(address)" <new-operator> \
+>   --rpc-url "$BSC_TESTNET_RPC_URL" --private-key "$OPERATOR_PRIVATE_KEY"
+> ```
 
 ## Verifying a match after the fact
 

@@ -1,0 +1,21 @@
+name: Deploy — production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Deploy without re-running CI (emergency only)'
+        type: boolean
+        default: false
+
+jobs:
+  production:
+    uses: ./.github/workflows/deploy-target.yml
+    with:
+      environment: production
+      # Production always runs the full suite unless a human explicitly opts out
+      # through workflow_dispatch.
+      run_ci: ${{ !inputs.skip_tests }}
+    secrets: inherit
