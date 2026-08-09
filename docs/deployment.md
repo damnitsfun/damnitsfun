@@ -1,7 +1,9 @@
-# DamnitsEscrow — deployment record
+# Contract deployment record
 
-The on-chain half of the arena (sub-spec 05). Fill in the **Deployment record**
-below once the contract is live; sub-spec 07's demo cites these values.
+The on-chain half of the arena: `DamnitsEscrow` (sub-spec 05, per-table entry
+fees and commit-reveal) and `DamnitsTournament` (sub-spec 08, the pooled prize
+and jackpot). Fill in the **Deployment record** below once each contract is
+live; sub-spec 07's demo cites these values.
 
 ## What the contract does
 
@@ -65,6 +67,11 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 
 ### Production
 
+Both contracts share one operator, `0xF977F34dB8a986A0A9edec3E744092c715EF793c`
+— that is correct *within* an environment, and only ever wrong across them.
+
+#### `DamnitsEscrow` (sub-spec 05)
+
 | Field | Value |
 |---|---|
 | Network | BNB Smart Chain Testnet (chain ID 97) |
@@ -77,6 +84,21 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
 | OpenZeppelin | v5.6.1 |
 | BscScan (contract) | <https://testnet.bscscan.com/address/0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6> |
 | BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xe60d9c70ebefd40bb176700682f41d1cf11ac2f4f78221e5d97d32dfce4c04ae> |
+
+#### `DamnitsTournament` (sub-spec 08)
+
+| Field | Value |
+|---|---|
+| Network | BNB Smart Chain Testnet (chain ID 97) |
+| Contract address | `0x9B03Ae8dbda61f5FA7933cc7329021F533727e90` |
+| Deploy tx | `0xea6cc9581b89ada5e8823c120a2134dbaa00288309b7804aba0bc6ee4163dbce` |
+| Operator address | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` |
+| Block | 124034949 |
+| Gas used | 1,130,754 |
+| Compiler | solc 0.8.36, optimizer on (200 runs) |
+| OpenZeppelin | v5.6.1 |
+| BscScan (contract) | <https://testnet.bscscan.com/address/0x9B03Ae8dbda61f5FA7933cc7329021F533727e90> |
+| BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xea6cc9581b89ada5e8823c120a2134dbaa00288309b7804aba0bc6ee4163dbce> |
 
 ### Staging
 
