@@ -247,17 +247,32 @@ sudo chown -R damnits:damnits /opt/damnits
 Note the shape: **`data/` sits beside `app/`, not inside it.** The deploy's
 `rsync --delete` targets `app/` only, so it can never reach a database.
 
-The deploy user (`ubuntu`) needs to rsync into those trees and run commands as
-`damnits`:
+Now split the two trees by who writes them. **`ubuntu` owns `app/` and builds
+it; `damnits` owns `data/` and only ever *reads* `app/`:**
 
 ```bash
-sudo usermod -aG damnits ubuntu
-sudo chmod -R g+w /opt/damnits
-# new files inherit the group, so rsync-created files stay writable by both
-sudo chmod g+s /opt/damnits/production/app /opt/damnits/staging/app
+sudo usermod -aG damnits ubuntu          # needed just to traverse /opt/damnits
+sudo chown -R ubuntu:damnits /opt/damnits/production/app /opt/damnits/staging/app
 ```
 
 Log out and back in for the group change to apply to your shell.
+
+> **Why the deploy user owns `app/`, not the service user.** `rsync -a` implies
+> `-p` and `-t`: it stamps the *source* root's mode and mtime onto the
+> destination root. Against a tree the deploy user merely had group-write on,
+> that fails two ways — `failed to set times on ".../app/.": Operation not
+> permitted` (setting a directory's mtime needs **ownership**; rsync then exits
+> **23**, failing the CI step even though every file transferred), and, once
+> ownership is granted, each sync silently resets `app/` to the source root's
+> `755`, stripping the setgid/group-write the build depended on. `--chmod` only
+> patches the second half, and macOS's `openrsync` accepts but *ignores* it.
+>
+> Owning the tree outright removes the whole class, and costs nothing: the
+> service already treats `app/` as read-only — see `ProtectSystem=strict` with
+> `ReadWritePaths=/opt/damnits/%i/data` in the unit (§2.9). `damnits` needs only
+> read+execute there, which plain `755` gives it. It keeps writing `data/`, and
+> `remote-deploy.sh` still runs **`migrate`** as `damnits` so the SQLite file
+> (and its `-wal`/`-shm`) is created by the user that later writes it.
 
 ### 2.4 Let the deploy restart the services without a password
 
@@ -298,12 +313,20 @@ and the two files must differ — this is where the environments actually diverg
 
 ```bash
 for env in production staging; do
-  sudo -u damnits cp "/opt/damnits/$env/app/.env.example" "/opt/damnits/$env/app/.env"
-  sudo -u damnits chmod 600 "/opt/damnits/$env/app/.env"
+  cp "/opt/damnits/$env/app/.env.example" "/opt/damnits/$env/app/.env"
+  # ubuntu owns app/ and edits this; damnits reads it via the group. 0640, so
+  # it is never world-readable — it holds OPERATOR_PRIVATE_KEY.
+  chown ubuntu:damnits "/opt/damnits/$env/app/.env"
+  chmod 640 "/opt/damnits/$env/app/.env"
 done
-sudo -u damnits nano /opt/damnits/production/app/.env
-sudo -u damnits nano /opt/damnits/staging/app/.env
+nano /opt/damnits/production/app/.env
+nano /opt/damnits/staging/app/.env
 ```
+
+> Don't reach for `sudo -u damnits nano` here. `app/` is `755 ubuntu`-owned
+> (§2.3), so `damnits` can't create nano's backup or emergency-save files in it
+> and nano opens with `Directory … is not writable`. The service only ever needs
+> to *read* `.env`, which `0640` + group `damnits` gives it.
 
 **production** — `/opt/damnits/production/app/.env`:
 
@@ -443,13 +466,24 @@ cast call <production-escrow> "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_
 ```bash
 for env in production staging; do
   cd "/opt/damnits/$env/app"
-  sudo -u damnits yarn install --frozen-lockfile
-  sudo -u damnits yarn workspace engine build
-  sudo -u damnits yarn workspace api build
-  sudo -u damnits yarn workspace api migrate   # idempotent
-  sudo -u damnits yarn workspace api seed      # creates an active playground competition
+  # build as the deploy user — it owns app/ (§2.3)
+  yarn install --frozen-lockfile
+  yarn workspace engine build
+  yarn workspace api build
+  # but create the database as the SERVICE user, and from THIS directory
+  sudo -u damnits node packages/api/dist/db/migrate.js   # idempotent
+  sudo -u damnits node packages/api/dist/seed.js         # active playground competition
 done
 ```
+
+> **Run the compiled entrypoints, not `yarn workspace api migrate`/`seed`.**
+> `yarn workspace` moves cwd to `packages/api`, and `loadConfig()` reads `.env`
+> from cwd and **skips it silently when absent** — so the workspace form never
+> sees this environment's `DATABASE_PATH` and instead creates a stray
+> `packages/api/data/damnits.sqlite` *inside* `app/`, leaving the real database
+> untouched. (The service auto-migrates on open, so this hides rather than
+> announces itself.) The `sudo -u damnits` matters too: whoever creates the
+> SQLite file must be whoever later writes it and its `-wal`/`-shm` siblings.
 
 Each environment's SQLite file is created here and then **never touched by a
 deploy again**.
@@ -607,10 +641,12 @@ whatever was last pushed to it; the next labelled PR takes the slot.
 `deploy/remote-deploy.sh`, with `ENV_NAME` and `APP_ROOT` passed over SSH:
 
 ```
-yarn install --frozen-lockfile   # native rebuild happens here, on the target arch
+                                       # ---- as ubuntu (owns app/) ----
+yarn install --frozen-lockfile         # native rebuild happens here, on the target arch
 yarn workspace engine build
 yarn workspace api build
-yarn workspace api migrate       # idempotent; safe on every deploy
+                                       # ---- as damnits (owns the database) ----
+node packages/api/dist/db/migrate.js   # idempotent; safe on every deploy
 sudo systemctl restart damnits-api@<env>
 poll the loopback health URL until 200 (30s budget)
 ```
@@ -748,10 +784,15 @@ re-encryption migration. Back it up somewhere durable.
 | A deploy dies mid-`tsc` with no error, or the box goes unresponsive | OOM. Confirm with `dmesg -T \| grep -i oom` and check `free -h` shows the swap from §2.2 is actually on. |
 | Staging shows someone else's branch | Working as designed — it's a shared, last-deploy-wins slot. Re-push or re-add the label to reclaim it. |
 | A deploy fails with `$APP_DIR does not exist` | That environment's Part 2 setup was never run, or `APP_ROOT` is wrong in the environment secrets. |
+| rsync: `failed to set times on ".../app/.": Operation not permitted` | `app/` is owned by `damnits` but the deploy connects as `ubuntu`; group-write doesn't allow setting a directory's mtime. The files do transfer, but rsync exits 23 and the CI step fails. Run the `chown ubuntu:damnits` from §2.3. |
+| rsync: `hostname contains invalid characters` | You pasted a `<elastic-ip>` / `<...>` placeholder literally. Substitute the real value. |
+| rsync: `Permission denied (publickey)` after `WARNING: UNPROTECTED PRIVATE KEY FILE` | `chmod 600` the `.pem`. |
 | `WEB_UI_NOT_BUILT` 404 at `/` | `packages/web/public/*.html` didn't make it. Your rsync excludes are too broad — `web` has no build step, its HTML must be copied verbatim. |
 | `SKILL_FILE_MISSING` at `/skill.md` | `skill.md` lives at the **repo root**; you deployed only `packages/`. |
 | Service fails on boot with a `ConfigError` naming a variable | `.env` isn't being found. It's read from `process.cwd()` — check `WorkingDirectory=/opt/damnits/%i/app` and that `.env` is readable by `damnits`. |
 | Both environments serve identical data | They're sharing a `DATABASE_PATH`. Each `.env` must point at its own `/opt/damnits/<env>/data/damnits.sqlite`. |
+| A stray `packages/api/data/damnits.sqlite` appears inside `app/`, and migrations seem not to apply | Something ran `yarn workspace api migrate`/`seed`, which moves cwd to `packages/api` where there is no `.env`; `loadConfig()` skips a missing `.env` silently and falls back to `./data/damnits.sqlite`. Run `node packages/api/dist/db/migrate.js` from the app root instead (§2.8). |
+| `EACCES` writing `dist/` or `node_modules/` during a deploy | The build is running as `damnits`, but `ubuntu` owns `app/` (§2.3). Only `migrate`/`seed` should use `sudo -u damnits`. |
 | Staging starts, production dies (or vice versa) | Same `PORT` in both `.env` files — one process wins the bind, the other crash-loops. Production 8080, staging 8081. |
 | `yarn install` fails compiling `better-sqlite3` | Missing `build-essential` / `python3`, or the box OOM'd. Add swap (§2.2). |
 | Deploy fails on `forge: command not found` | Something invoked the root `yarn build`/`yarn test`. The app server builds `engine` + `api` explicitly and never runs Foundry. |
