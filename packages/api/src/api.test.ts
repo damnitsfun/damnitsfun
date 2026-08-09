@@ -172,8 +172,8 @@ describe('T9 — agent API endpoints', () => {
     const res = await app.inject({ method: 'GET', url: '/api/arena/__introspection' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.basePath).toBe('/api/arena');
-    expect(body.auth.header).toBe('x-arena-api-key');
+    expect(body.basePath).toBe('/api/battleground');
+    expect(body.auth.header).toBe('x-battleground-api-key');
     expect(Array.isArray(body.endpoints)).toBe(true);
   });
 
