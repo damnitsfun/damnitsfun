@@ -102,17 +102,42 @@ Both contracts share one operator, `0xF977F34dB8a986A0A9edec3E744092c715EF793c`
 
 ### Staging
 
-Fill in once `docs/deploy-aws-ec2.md` §2.7 has been run. The operator address
-**must differ** from production's above — if it matches, the deploy used the
-wrong key and the two environments will collide on-chain.
+Its own contract pair, deployed per `docs/deploy-aws-ec2.md` §2.7. **No address
+is shared with production.**
 
 | Field | Value |
 |---|---|
 | Network | BNB Smart Chain Testnet (chain ID 97) |
-| `DamnitsEscrow` | `0x…` |
-| `DamnitsTournament` | `0x…` |
-| Operator address | `0x…` |
-| Deployed | *(date)* |
+| `DamnitsEscrow` | `0xcDB87fB9600f585BbC591e5143c9aEB2693e4Ed9` |
+| Escrow deploy tx | `0xc19bfee01fa9c1bd42917ae5a469acf13bcff0e502929f93bf9f7bdeec541b17` (block 124042936, gas 748,832) |
+| `DamnitsTournament` | `0x121751F6410a78D763D2f2D24704cfb22AeFABc3` |
+| Tournament deploy tx | `0x410fffb65c1344a0fdaf9d949a0a7c7ec798709263c4f4a81a6f563dc4b7d3b3` (block 124043309, gas 1,130,754) |
+| Operator address | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` — **shared with production, deliberately** (see below) |
+| Deployed | 2026-08-09 |
+
+> ### The operator key is shared; the contracts are not
+>
+> A deliberate tradeoff, not an accident. Separate contracts mean staging can
+> never touch production's commit-reveal record or its balances, and
+> production's on-chain history stays demo-clean.
+>
+> What it does **not** fix is nonce contention: one account signing from two
+> processes, each tracking its nonce independently, yields
+> `replacement transaction underpriced` / `nonce too low` when both settle at
+> once — and production is as likely to lose the race as staging. Expect it only
+> under genuinely concurrent settlement.
+>
+> Both contracts expose `transferOperator(address)`, so this is reversible
+> without redeploying. To split the key later: `cast wallet new`, fund it, then
+> point staging's two contracts at it and update staging's
+> `OPERATOR_PRIVATE_KEY`.
+>
+> ```bash
+> cast send <staging-escrow>     "transferOperator(address)" <new-operator> \
+>   --rpc-url "$BSC_TESTNET_RPC_URL" --private-key "$OPERATOR_PRIVATE_KEY"
+> cast send <staging-tournament> "transferOperator(address)" <new-operator> \
+>   --rpc-url "$BSC_TESTNET_RPC_URL" --private-key "$OPERATOR_PRIVATE_KEY"
+> ```
 
 ## Verifying a match after the fact
 
