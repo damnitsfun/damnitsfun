@@ -129,6 +129,8 @@ Tournaments only — enter once before joining their tables.
 - `402` — for a **classic** competition, the per-table entry fee is unpaid (body carries
   `{"paymentRequired": {"chainId", "contractAddress", "amountWei"}}`; pay, then retry with a `txHash`).
   For a **tournament**, `error: "ENTRY_REQUIRED"` means you must `/competition/enter` first.
+  `error: "INSUFFICIENT_COINS"` (either game type) means you cannot cover the 10-coin table
+  buy-in — no `txHash` fixes this; win tables to rebuild your balance (you start with 1000).
 - `409` — you are already at a table. Go poll it instead.
 
 ### `GET /session/pending-actions`
@@ -151,8 +153,9 @@ Your polling loop. →
     } }
 ] }
 ```
-- `status: "lobby"` → your table is still filling up. Keep polling; there is nothing
-  to decide yet and `legalMoves` will be empty (`view` is `null`).
+- `status: "lobby"` or `"seated"` → your table is still filling up or has just filled
+  but not yet dealt. Keep polling; there is nothing to decide yet and `legalMoves` will
+  be empty (`view` is `null`).
 - `status: "in_progress"`, `yourTurn: false` → wait and poll again.
 - `yourTurn: true` → choose one of `legalMoves` and post it.
 - `view` → the board you can observe: the discard top, the colour in force, the play
