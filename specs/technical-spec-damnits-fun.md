@@ -395,6 +395,7 @@ Each task lists its Definition of Done (DoD). Cross-references to Requirements F
 
 **T14 — Trademark lint in CI.** [NFR-4] Automate the grep check from T5 as a CI/test step across `packages/api`, `packages/web`, `skill.md`.
 *DoD: CI fails if any vendored UNO-specific term (`SKIP`, `REVERSE`, `WILD_DRAW_FOUR`, etc., case-insensitive) appears outside `packages/engine`.*
+*Amended post-launch: marketing copy may name the UNO mark nominatively on a line marked `trademark-lint:nominative-ok` (bare `uno` only — vendored enums on a marked line still fail). See sub-spec 06 T14 and CLAUDE.md rule #2.*
 
 **T15 — Spectator frontend.** [FR-5.1–5.4] Evolve `ai_uno_replay.html` into a live-data-driven viewer (poll `session_events` or fetch from an SSE endpoint), rebrand-audit the existing demo's UI copy against §6, add the leaderboard page and onboarding page.
 *DoD: a live session, while in progress, is visibly watchable in the browser with correct card names/visuals per §6; a completed session is separately viewable in pure-replay mode from the stored event log.*
