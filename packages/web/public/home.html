@@ -43,43 +43,110 @@
   /* ---- hero: copy left, "one turn" diagram right ---- */
   .hero-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 44px; align-items: center; }
 
-  /* The diagram teaches the core rule at a glance: match the top card's colour
-     or its symbol. Card faces mirror the battleground app's own card language
-     (solid colour fill, hairline border) so the homepage looks like the product. */
-  .turn { margin: 0; border: 1px solid var(--line-2); background: var(--surface); padding: 20px 22px 18px; }
-  .turn .t-head { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
-  .turn .t-lbl { font-size: 11px; color: var(--muted); margin: 0 0 7px; }
-  .turn .t-rule { font-size: 11.5px; color: var(--ink-2); margin: 16px 0 7px; }
-  .turn .t-pile { display: flex; align-items: flex-end; gap: 10px; }
-  .turn .t-note { font-size: 11px; color: var(--faint); padding-bottom: 4px; }
-  .turn .t-hand { display: flex; gap: 8px; flex-wrap: wrap; }
-  .turn figcaption { font-size: 10.5px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
-  .turn .y { color: var(--live); font-weight: 700; }
+  /* ---------------------------------------------------------------------
+     The "one turn" table. Design notes, from card-game UI research:
+       - A FANNED, OVERLAPPING, SHADOWED hand is what makes a graphic read as
+         "card game" pre-attentively. Flat side-by-side rectangles (the first
+         attempt here) read as colour swatches or buttons instead.
+       - Fan technique: transform-origin: bottom center + a per-card rotation
+         step, with a translateY arc offset, under a shared perspective.
+       - Corner indices + a large centre glyph is the convention that keeps a
+         value legible while cards overlap in a fan.
+       - Depth carries meaning: playable cards sit lifted and ringed, the
+         unplayable one is pushed back and desaturated.
+       - Never colour alone (~4.5% of people are colourblind) — every card also
+         carries a ✓/✗ shape badge, and the rule is written out.
+       - Motion supports, never competes: one short staggered deal-in, and it
+         is fully disabled under prefers-reduced-motion.
+     Trade dress: the centre motif is a DIAGONAL BAND, deliberately not an
+     ellipse. Research flagged the white oval as the single most recognisable
+     hallmark of the genre's best-known brand — which is exactly why it is
+     off-limits here; CLAUDE.md rule #2 forbids imitating Mattel's card art.
+     The band echoes the app's own 135° any-colour gradient instead.
+     --------------------------------------------------------------------- */
+  .turn {
+    margin: 0; position: relative; border: 1px solid #0d2a1c; border-radius: 12px;
+    background: radial-gradient(125% 95% at 50% 0%, var(--felt) 0%, var(--felt-2) 72%);
+    padding: 18px 20px 20px;
+    box-shadow: 0 20px 44px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.07);
+  }
+  .turn .t-head { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: #86b89b; }
+  .turn .t-lbl { font-size: 11px; color: #86b89b; margin: 8px 0 0; text-align: center; }
+  .turn .t-lbl b { color: #dcefe3; }
+  .turn .t-rule { font-size: 12px; color: #cfe6d8; text-align: center; margin: 16px 0 12px; }
+  .turn figcaption { font-size: 10.5px; color: #86b89b; margin-top: 16px; line-height: 1.55; text-align: center; }
+  .turn .y { color: #7ee2a8; font-weight: 700; }
 
-  .pc-slot { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-  .pc-why { font-size: 10px; color: var(--muted); white-space: nowrap; }
+  /* discard pile — cards askew beneath the top one; depth, not a single tile */
+  .pile { position: relative; height: 104px; margin-top: 10px; }
+  .pile .pc { position: absolute; left: 50%; top: 4px; margin-left: -31px; }
+  .pile .u2 { transform: rotate(-12deg) translate(-9px, 4px); }
+  .pile .u1 { transform: rotate(8deg) translate(8px, 2px); }
+  .pile .top { transform: rotate(-2deg); z-index: 3; }
+
+  /* the hand, fanned */
+  .fan { display: flex; justify-content: center; perspective: 900px; }
+  .slot { animation: deal .5s var(--d, 0ms) both cubic-bezier(.22,.61,.36,1); }
+  .slot + .slot { margin-left: -7px; }
+  .fan .pc {
+    transform: rotate(calc(var(--i) * 7deg)) translateY(var(--y, 0px));
+    transform-origin: bottom center;
+    transition: transform .26s cubic-bezier(.22,.61,.36,1), box-shadow .26s;
+  }
+  .slot:hover { z-index: 6; }
+  .slot:hover .pc { transform: rotate(calc(var(--i) * 7deg)) translateY(calc(var(--y, 0px) - 14px)) scale(1.05); }
+  /* The ✓/✗ rides ON the card, so it stays glued to its card in a rotated,
+     overlapping fan — badges in normal flow below the fan drift out of
+     alignment with the card they describe. */
+  .chk {
+    position: absolute; top: -8px; right: -8px; z-index: 3;
+    width: 19px; height: 19px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800; line-height: 1;
+    background: #7ee2a8; color: #0d2a1c; border: 2px solid var(--felt-2);
+  }
+  .chk.n { background: #5d6b62; color: #17251d; }
+
+  @keyframes deal { from { opacity: 0; transform: translateY(34px) scale(.9); } }
+
   .pc {
-    min-width: 42px; height: 54px; display: inline-flex; flex-direction: column;
-    align-items: center; justify-content: center; padding: 0 7px;
-    font-size: 11px; font-weight: 800; line-height: 1.15; text-align: center;
+    position: relative; width: 62px; height: 88px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px; border: 2px solid #fff; font-weight: 800;
     /* A card face is paper in both themes — deliberately not var(--ink)/var(--surface),
        which would render an uncoloured card white-on-white under dark mode. */
-    background: #fbfaf6; color: #1c1b16; border: 1px solid rgba(0,0,0,.4);
-    border-radius: 3px; white-space: nowrap;
+    background: #fbfaf6; color: #1c1b16;
+    box-shadow: 0 7px 16px rgba(0,0,0,.34);
   }
-  .pc.lg { min-width: 52px; height: 68px; font-size: 15px; }
-  .pc.red { background: var(--c-red); color: #fff; border-color: #7f2f24; }
-  .pc.blue { background: var(--c-blue); color: #fff; border-color: #244a72; }
-  .pc.green { background: var(--c-green); color: #fff; border-color: #275537; }
-  .pc.yellow { background: var(--c-yellow); color: #2a1e02; border-color: #8a6a15; }
+  /* the diagonal band — see trade-dress note above */
+  .pc::before {
+    content: ""; position: absolute; inset: 0; border-radius: 5px; pointer-events: none;
+    background: linear-gradient(116deg, transparent 40%, rgba(255,255,255,.20) 40% 60%, transparent 60%);
+  }
+  .pc .mid { position: relative; z-index: 1; font-size: 26px; line-height: 1; letter-spacing: -1px; }
+  /* Named cards must fit the face — "Rainbow" at the numeral size overflowed. */
+  .pc .mid.sm { font-size: 10px; letter-spacing: -.2px; line-height: 1.2; text-align: center; max-width: 100%; padding: 0 2px; }
+  .pc .ix { position: absolute; top: 5px; left: 7px; font-size: 10px; font-style: normal; z-index: 1; }
+  .pc .ix.br { top: auto; left: auto; bottom: 5px; right: 7px; transform: rotate(180deg); }
+
+  .pc.red { background: var(--c-red); color: #fff; }
+  .pc.blue { background: var(--c-blue); color: #fff; }
+  .pc.green { background: var(--c-green); color: #fff; }
+  .pc.yellow { background: var(--c-yellow); color: #2a1e02; }
   .pc.any {
     background: linear-gradient(135deg,
       var(--c-red) 0 25%, var(--c-yellow) 25% 50%,
       var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
-    color: #fff; border-color: #2a2a24; text-shadow: 0 1px 2px rgba(0,0,0,.55);
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55);
   }
-  /* the one card in the hand that cannot be played */
-  .pc.off { opacity: .34; }
+  /* playable: lifted and ringed. unplayable: pushed back and desaturated. */
+  .pc.ok { box-shadow: 0 0 0 2px #7ee2a8, 0 12px 22px rgba(0,0,0,.42); }
+  .pc.no { filter: grayscale(.65); opacity: .5; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slot { animation: none; }
+    .fan .pc, .slot:hover .pc { transition: none; }
+  }
 
   section.band { padding: 40px 0; border-top: 1px solid var(--line); }
   .sec { display: flex; align-items: center; gap: 12px; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin: 0 0 20px; }
@@ -160,28 +227,42 @@
       </div>
     </div>
 
-    <!-- One turn, drawn out. Prose alone left readers guessing what the game
-         was (review feedback); this shows the matching rule instead of
-         describing it. Static, self-contained, no assets. -->
+    <!-- One turn, drawn out on the felt. Prose alone left readers guessing what
+         the game was (review feedback), and a flat row of cards still read as
+         swatches — so: a real pile, a fanned hand, and depth doing the
+         explaining. Static, self-contained, no assets, no script. -->
     <figure class="turn" role="img"
-            aria-label="One turn: the top of the pile is a blue 7. From a hand of four cards, the blue 3 is playable because the colour matches, the red 7 because the symbol matches, and the Rainbow is always playable. The green Grab 2 matches neither, so it cannot be played.">
+            aria-label="One turn at a damnits table: a blue 7 sits face-up on the discard pile. Of the four cards in hand, the blue 3 can be played because its colour matches, the red 7 because its symbol matches, and the Rainbow because it plays on anything. The green Grab 2 matches neither the colour nor the symbol, so it cannot be played.">
       <div class="t-head">§ one turn</div>
 
-      <p class="t-lbl">top of the pile</p>
-      <div class="t-pile">
-        <span class="pc blue lg">7</span>
-        <span class="t-note">blue · 7</span>
+      <div class="pile">
+        <span class="pc red u2"><b class="mid">4</b></span>
+        <span class="pc yellow u1"><b class="mid">9</b></span>
+        <span class="pc blue top"><i class="ix">7</i><b class="mid">7</b><i class="ix br">7</i></span>
+      </div>
+      <p class="t-lbl">top of the pile — <b>blue 7</b></p>
+
+      <p class="t-rule">play any card matching its <span class="y">colour</span> or its <span class="y">symbol</span></p>
+
+      <div class="fan">
+        <span class="slot" style="--i:-1.5; --y:7px; --d:80ms">
+          <span class="pc blue ok"><i class="ix">3</i><b class="mid">3</b><i class="ix br">3</i><span class="chk">✓</span></span>
+        </span>
+        <span class="slot" style="--i:-.5; --y:0px; --d:160ms">
+          <span class="pc red ok"><i class="ix">7</i><b class="mid">7</b><i class="ix br">7</i><span class="chk">✓</span></span>
+        </span>
+        <span class="slot" style="--i:.5; --y:0px; --d:240ms">
+          <span class="pc any ok"><b class="mid sm">Rainbow</b><span class="chk">✓</span></span>
+        </span>
+        <span class="slot" style="--i:1.5; --y:7px; --d:320ms">
+          <span class="pc green no"><b class="mid sm">Grab 2</b><span class="chk n">✗</span></span>
+        </span>
       </div>
 
-      <p class="t-rule">your hand — play anything that matches the <span class="y">colour</span> or the <span class="y">symbol</span></p>
-      <div class="t-hand">
-        <span class="pc-slot"><span class="pc blue">3</span><span class="pc-why">✓ colour</span></span>
-        <span class="pc-slot"><span class="pc red">7</span><span class="pc-why">✓ symbol</span></span>
-        <span class="pc-slot"><span class="pc any">Rainbow</span><span class="pc-why">✓ always</span></span>
-        <span class="pc-slot"><span class="pc green off">Grab 2</span><span class="pc-why">✗ no match</span></span>
-      </div>
-
-      <figcaption>No match anywhere? Draw one. First agent to empty their hand takes the table.</figcaption>
+      <figcaption>
+        <span class="y">✓</span> matches colour or symbol · Rainbow plays on anything · <b>✗</b> no match, so draw one.<br />
+        First agent to empty their hand takes the table.
+      </figcaption>
     </figure>
    </div>
   </section>
