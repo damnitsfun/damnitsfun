@@ -255,13 +255,18 @@
       .pile-k { font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #7fa590; }
       .pile-n { font-size: 12px; font-weight: 700; color: #eef4ef; }
       .discardwrap { position: relative; }
-      /* the played card sits on top; its backer peeks out from behind */
+      /* The played card sits on top of two cards askew beneath it, so the
+         discard reads as a pile on a table rather than a single tile. */
       .discardwrap .card { position: relative; z-index: 1; }
-      .discardwrap::before {
+      /* :has() guard — with no card yet the wrapper is zero-sized and the
+         backers would render as two stray dots on the empty felt. */
+      .discardwrap:has(.card)::before, .discardwrap:has(.card)::after {
         content: ""; position: absolute; inset: 0; z-index: 0;
-        transform: rotate(-9deg) translate(-5px, 3px);
-        background: #8f3838; border: 1px solid #2a2a24;
+        border: 2px solid #fff; border-radius: 7px;
+        box-shadow: 0 4px 10px rgba(0,0,0,.3);
       }
+      .discardwrap:has(.card)::before { transform: rotate(-10deg) translate(-6px, 3px); background: #8f3838; }
+      .discardwrap:has(.card)::after { transform: rotate(7deg) translate(6px, 2px); background: #9a7a1e; }
 
       /* seats float at the edges of the oval */
       .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
@@ -302,29 +307,67 @@
         .seats { position: static; }
         .seat { position: static; width: auto; margin-bottom: 8px; inset: auto; }
       }
-      .hand { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 9px; min-height: 34px; }
-
-      /* ---- cards: square, hairline, paper-faced ---- */
-      .card {
-        min-width: 30px; height: 38px; display: inline-flex; flex-direction: column;
-        align-items: center; justify-content: center; padding: 0 6px;
-        font-size: 11px; font-weight: 800; line-height: 1.15; text-align: center;
-        background: #fbfaf6; color: var(--ink); border: 1px solid rgba(0,0,0,.4);
-        border-radius: 3px; white-space: nowrap;
+      /* A held hand overlaps like real cards rather than sitting in a grid of
+         tiles; hover lifts one clear. Overlap (not a fan) because a seat can
+         hold twenty-odd cards late in a game and a fan degenerates at that
+         count — the arc is reserved for the homepage's fixed four. */
+      .hand { display: flex; flex-wrap: wrap; margin-top: 9px; min-height: 50px; }
+      .hand .card + .card { margin-left: -8px; }
+      .hand .card {
+        transition: transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .18s;
       }
+      .hand .card:hover { transform: translateY(-9px); z-index: 4; box-shadow: 0 10px 20px rgba(0,0,0,.46); }
+      @media (prefers-reduced-motion: reduce) { .hand .card { transition: none; } }
+
+      /* ---- cards: rounded, white-edged, paper-faced (matches the homepage) ---- */
+      .card {
+        position: relative; flex: none; width: 36px; height: 50px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 9px; font-weight: 800; line-height: 1.15; text-align: center;
+        background: #fbfaf6; color: #1c1b16;
+        border: 2px solid #fff; border-radius: 5px;
+        box-shadow: 0 4px 10px rgba(0,0,0,.32);
+      }
+      /* Centre motif: a diagonal band, deliberately NOT an ellipse — the oval is
+         the genre's best-known brand's trade dress, and rule #2 forbids
+         imitating it. The band echoes the any-colour gradient below. */
+      .card::before {
+        content: ""; position: absolute; inset: 0; border-radius: 3px; pointer-events: none;
+        background: linear-gradient(116deg, transparent 40%, rgba(255,255,255,.20) 40% 60%, transparent 60%);
+      }
+      /* Corner index + large centre glyph: the convention that keeps a value
+         readable while cards overlap in a hand. */
+      .card .mid { position: relative; z-index: 1; padding: 0 2px; max-width: 100%; }
+      .card .mid.n { font-size: 17px; letter-spacing: -.5px; }
+      .card .mid.g { font-size: 15px; letter-spacing: -.5px; }
+      .card .nm { position: absolute; bottom: 5px; left: 0; right: 0; z-index: 1; font-size: 7.5px; letter-spacing: 0; }
+      .card .ix { position: absolute; top: 3px; left: 4px; font-size: 8px; font-style: normal; z-index: 1; }
+      .card .ix.br { top: auto; left: auto; bottom: 3px; right: 4px; transform: rotate(180deg); }
+
       /* the whole card carries its colour — not just a stripe at the top */
-      .card.red { background: var(--c-red); color: #fff; border-color: #7f2f24; }
-      .card.blue { background: var(--c-blue); color: #fff; border-color: #244a72; }
-      .card.green { background: var(--c-green); color: #fff; border-color: #275537; }
-      .card.yellow { background: var(--c-yellow); color: #2a1e02; border-color: #8a6a15; }
+      .card.red { background: var(--c-red); color: #fff; }
+      .card.blue { background: var(--c-blue); color: #fff; }
+      .card.green { background: var(--c-green); color: #fff; }
+      .card.yellow { background: var(--c-yellow); color: #2a1e02; }
       .card.any {
         background: linear-gradient(135deg,
           var(--c-red) 0 25%, var(--c-yellow) 25% 50%,
           var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
-        color: #fff; border-color: #2a2a24; text-shadow: 0 1px 2px rgba(0,0,0,.55);
+        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55);
       }
-      .card.back { background: #123021; color: #4d7d61; border-color: #2f6b48; }
-      .card.lg { height: 66px; min-width: 48px; font-size: 13px; }
+      /* face-down: a woven back, so a hidden hand still reads as cards */
+      .card.back {
+        background: repeating-linear-gradient(116deg, #17402a 0 5px, #1f5637 5px 10px);
+        color: #8fc0a4;
+      }
+      .card.back::before { background: none; }
+      .card.lg { width: 54px; height: 76px; font-size: 10.5px; border-radius: 7px; }
+      .card.lg .mid.n { font-size: 26px; letter-spacing: -1px; }
+      .card.lg .mid.g { font-size: 23px; }
+      /* the named card's glyph shifts up to make room for the spelled-out name */
+      .card.lg .mid.g { transform: translateY(-5px); }
+      .card.lg .ix { font-size: 10px; top: 5px; left: 6px; }
+      .card.lg .ix.br { top: auto; left: auto; bottom: 5px; right: 6px; }
 
       /* ---- reasoning feed (their "table chat") ---- */
       .chat { border-left: 1px solid var(--line-2); display: flex; flex-direction: column; }
@@ -754,6 +797,14 @@
         RAINBOW: 'Rainbow', MEGARAINBOW: 'Mega Rainbow', RAINBOWSTORM: 'Rainbow Storm',
       };
       const label = (sym) => CARD_NAME[sym] || sym;
+      // Face glyphs for the named cards. A 36px face cannot fit "Mega Rainbow",
+      // and a centre symbol is the card-game convention anyway — the full name
+      // still rides on the title attribute, the large card, and the event feed.
+      // Purely functional marks (+2, +4, arrows): no trade dress borrowed.
+      const CARD_GLYPH = {
+        PASS: '⊘', UTURN: '⇄', GRAB2: '+2',
+        RAINBOW: '◈', MEGARAINBOW: '+4', RAINBOWSTORM: '✦',
+      };
       const colourClass = (c) => (c ? c : 'any');
       const COLOUR_HEX = { red: '#c2503f', blue: '#3a6ea8', green: '#3d8552', yellow: '#c99a25' };
       const num = (n) => n.toLocaleString('en-US');
@@ -780,16 +831,40 @@
       };
 
       // ---- rendering helpers ----------------------------------------------
+      const IS_NUMBER = /^[0-9]$/;
+      const part = (tag, cls, text) => {
+        const el = document.createElement(tag);
+        el.className = cls;
+        el.textContent = text;
+        return el;
+      };
       function cardEl(card, big) {
         const el = document.createElement('span');
         el.className = 'card ' + colourClass(card && card.color) + (big ? ' lg' : '');
-        el.textContent = card ? label(card.symbol) : '';
+        if (!card) return el;
+        const text = label(card.symbol);
+        // Numbers get corner indices + a big centre glyph so the value stays
+        // readable where hands overlap; named cards just get the name, which
+        // needs the whole face.
+        if (IS_NUMBER.test(card.symbol)) {
+          el.appendChild(part('i', 'ix', text));
+          el.appendChild(part('b', 'mid n', text));
+          el.appendChild(part('i', 'ix br', text));
+        } else {
+          const glyph = CARD_GLYPH[card.symbol];
+          el.appendChild(part('i', 'ix', glyph || ''));
+          el.appendChild(part('b', 'mid g', glyph || text));
+          // Only the large card has room to spell the name out as well.
+          if (big) el.appendChild(part('span', 'nm', text));
+        }
+        // Overlapped cards can be partly covered — keep the name reachable.
+        el.title = text;
         return el;
       }
       function backEl(n, big) {
         const el = document.createElement('span');
         el.className = 'card back' + (big ? ' lg' : '');
-        el.textContent = n;
+        el.appendChild(part('b', 'mid', n));
         return el;
       }
 
