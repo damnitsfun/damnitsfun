@@ -268,6 +268,59 @@
       .discardwrap:has(.card)::before { transform: rotate(-10deg) translate(-6px, 3px); background: #8f3838; }
       .discardwrap:has(.card)::after { transform: rotate(7deg) translate(6px, 2px); background: #9a7a1e; }
 
+      /* ---- T54: agent faces (derived, never stored) ---- */
+      .av {
+        width: 22px; height: 22px; border-radius: 6px; flex: none;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 9.5px; letter-spacing: -.3px;
+      }
+      .av.lg { width: 26px; height: 26px; font-size: 11px; border-radius: 7px; }
+      /* D78: standings take felt-scope IDENTITY (faces, coin gold) while keeping
+         terminal-scope TYPOGRAPHY (mono, tabular-nums, dense rows). The two
+         scopes compose — they are not alternatives. */
+      .agent-cell { display: inline-flex; align-items: center; gap: 8px; }
+      /* the seat whose turn it is gets a live ring, not just a border colour */
+      .seat.active .av { box-shadow: 0 0 0 2px rgba(111,214,143,.85); }
+      .seat.winner .av { box-shadow: 0 0 0 2px rgba(226,192,90,.9); }
+
+      /* ---- T53: Rainbow Storm takes the felt ---- */
+      .storm-fx {
+        position: absolute; inset: 0; z-index: 9; pointer-events: none;
+        display: flex; align-items: center; justify-content: center;
+        background:
+          linear-gradient(135deg,
+            rgba(194,80,63,.34) 0 25%, rgba(201,154,37,.34) 25% 50%,
+            rgba(61,133,82,.34) 50% 75%, rgba(58,110,168,.34) 75% 100%);
+      }
+      .storm-fx span {
+        font-size: 22px; font-weight: 800; letter-spacing: 3px; color: #fff;
+        text-shadow: 0 2px 12px rgba(0,0,0,.65);
+      }
+
+      /* ---- T55: decision clock as a ring that runs out ---- */
+      /* The clock hangs off the seat corner rather than sitting in the header
+         row — inline it stole width from the name and forced it to wrap. */
+      .clock { position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; z-index: 5; }
+      .clock::before {
+        content: ""; position: absolute; inset: -3px; border-radius: 50%;
+        background: rgba(9,20,14,.9);
+      }
+      .clock svg, .clock .val { position: relative; }
+      .clock svg { transform: rotate(-90deg); display: block; }
+      .clock .track { stroke: rgba(255,255,255,.16); }
+      .clock .run { stroke: #6fd68f; stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
+      .clock.low .run { stroke: #e2c05a; }
+      .clock .val {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-size: 9.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: #eef4ef;
+      }
+
+      /* T55/D82: replay-only is an integrity property (spec 10), so the board
+         bar states it rather than leaving it to an FAQ. Hidden on narrow bars
+         where the essential labels need the room. */
+      .board-bar .guarantee { color: var(--faint); text-transform: none; letter-spacing: .2px; }
+      @media (max-width: 720px) { .board-bar .guarantee { display: none; } }
+
       /* seats float at the edges of the oval */
       .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
       .seat {
@@ -280,7 +333,7 @@
       .seat.active { border-color: #6fd68f; background: rgba(20,48,31,.9); }
       .seat.winner { border-color: #e2c05a; background: rgba(48,40,16,.9); }
       .seat .top { display: flex; align-items: center; gap: 8px; }
-      .seat .nm { font-weight: 700; }
+      .seat .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 104px; }
       .seat .cnt { margin-left: auto; font-size: 10.5px; color: #9dbfab; letter-spacing: .5px; }
       .seat .id { font-size: 10px; color: #7fa590; margin-top: 1px; }
       .seat .tag {
@@ -299,6 +352,51 @@
         border: 1px solid rgba(255,255,255,.28); font-weight: 700; letter-spacing: 1px;
       }
       .cbadge i { width: 8px; height: 8px; display: inline-block; }
+      /* ---------------------------------------------------------------------
+         T52 — hero mode (?view=hero)
+         The homepage embeds THIS page rather than forking a second renderer
+         (D74): same felt, same cards, same event log, one code path. Hero mode
+         strips every piece of chrome and leaves the table.
+         --------------------------------------------------------------------- */
+      body.hero-mode { background: var(--felt-2); }
+      body.hero-mode .ticker,
+      body.hero-mode header,
+      body.hero-mode .hero,
+      body.hero-mode .tabs,
+      body.hero-mode .controls,
+      body.hero-mode .chat,
+      body.hero-mode #live-note,
+      body.hero-mode .board-bar .r,
+      body.hero-mode section:not(#view-overview),
+      body.hero-mode footer,
+      body.hero-mode .board-bar { display: none !important; }
+      body.hero-mode .wrap { max-width: none; padding: 0; }
+      body.hero-mode .board { border: 0; }
+      body.hero-mode .board-split { grid-template-columns: 1fr; }
+      body.hero-mode .felt { min-height: 0; height: 100vh; }
+
+      /* D84 — on a phone the hero is a different CUT, not a reflow: the stacked
+         four-seat table is too tall and would push the headline and CTA below
+         the fold. Keep the pile and the action; drop the seat panels to a
+         single strip of counts. */
+      @media (max-width: 720px) {
+        /* The felt fills whatever height the embedding page gave the frame. */
+        body.hero-mode .felt { height: 100vh; padding: 0; overflow: hidden; }
+        body.hero-mode .felt::before { display: block; }
+        body.hero-mode .pile { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); margin: 0; }
+        body.hero-mode .seats { position: absolute; }
+        body.hero-mode .seat {
+          position: absolute; width: auto; margin: 0; padding: 4px 7px;
+          background: rgba(9,20,14,.82);
+        }
+        body.hero-mode .seat .id, body.hero-mode .seat .hand,
+        body.hero-mode .seat .dealer, body.hero-mode .clock { display: none; }
+        body.hero-mode .seat .nm { max-width: 64px; font-size: 11px; }
+        body.hero-mode .seat.tl { top: 8px; left: 8px; } body.hero-mode .seat.tr { top: 8px; right: 8px; }
+        /* clearance for the embedding page's caption strip */
+        body.hero-mode .seat.bl { bottom: 30px; left: 8px; } body.hero-mode .seat.br { bottom: 30px; right: 8px; }
+      }
+
       /* narrow screens: drop the oval, stack the seats */
       @media (max-width: 720px) {
         .felt { min-height: 0; padding: 16px; overflow: visible; }
@@ -512,6 +610,7 @@
             <div class="board-bar">
               <span class="on">▸</span>
               <span id="board-mode">replay</span>
+              <span class="guarantee">— finished games only; no live hands are public</span>
               <span class="cbadge" id="board-color" hidden><i></i><span id="board-color-name"></span></span>
               <span id="board-event" class="dim"></span>
               <span class="r" id="board-meta">featured game</span>
@@ -790,6 +889,9 @@
       // ---------------------------------------------------------------------
       const API = location.origin + '/api/battleground';
       const $ = (id) => document.getElementById(id);
+      // T52: ?view=hero renders this same page as the homepage's hero — table
+      // only, looping, no chrome. One renderer, two presentations (D74).
+      const HERO_MODE = new URLSearchParams(location.search).get('view') === 'hero';
 
       // §6 product vocabulary — the only card names this app ever shows.
       const CARD_NAME = {
@@ -809,6 +911,97 @@
       const COLOUR_HEX = { red: '#c2503f', blue: '#3a6ea8', green: '#3d8552', yellow: '#c99a25' };
       const num = (n) => n.toLocaleString('en-US');
 
+      // ---- T51: motion foundation (sub-spec 16) ---------------------------
+      // Every animation in this app goes through here. Three guarantees the
+      // rest of the spec leans on:
+      //   D75  presentation-only — motion observes state transitions, it never
+      //        mutates the event log or anything derived from it.
+      //   D76  budget — nothing exceeds MAX ms, and everything is cancellable.
+      //   fill:'none' — a cancelled animation snaps to whatever the DOM already
+      //        renders, so an interrupted replay can never strand a card
+      //        mid-flight. This is what makes fast scrubbing safe.
+      const motion = (function () {
+        const MAX = 320;
+        const EASE = 'cubic-bezier(.2,.75,.3,1)';
+        const running = new Set();
+        const reduced = () =>
+          window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        function cancelAll() {
+          running.forEach((a) => { try { a.cancel(); } catch (_) {} });
+          running.clear();
+        }
+        function run(el, frames, opts) {
+          const o = opts || {};
+          if (!el || !el.animate || reduced()) return null;
+          const anim = el.animate(frames, {
+            duration: Math.min(o.duration || 240, MAX),
+            easing: o.easing || EASE,
+            fill: 'none',
+          });
+          running.add(anim);
+          const drop = () => running.delete(anim);
+          anim.finished.then(drop, drop);
+          return anim;
+        }
+        /** Animate `el` as if it had travelled from `fromEl`'s position. */
+        function flyFrom(el, fromEl, opts) {
+          if (!el || !fromEl || reduced()) return null;
+          const a = el.getBoundingClientRect();
+          const b = fromEl.getBoundingClientRect();
+          const dx = (b.left + b.width / 2) - (a.left + a.width / 2);
+          const dy = (b.top + b.height / 2) - (a.top + a.height / 2);
+          const spin = (opts && opts.spin) || -12;
+          return run(el, [
+            { transform: 'translate(' + dx + 'px,' + dy + 'px) rotate(' + spin + 'deg) scale(.84)', opacity: 0.55 },
+            { transform: 'translate(0,0) rotate(2deg) scale(1.08)', opacity: 1, offset: 0.72 },
+            { transform: 'translate(0,0) rotate(0) scale(1)', opacity: 1 },
+          ], { duration: (opts && opts.duration) || 300 });
+        }
+        return { run, flyFrom, cancelAll, reduced, MAX, EASE };
+      })();
+
+      // ---- T54: derived agent identity (sub-spec 16, D77) ------------------
+      // Colour + monogram are a pure function of the agent id — no schema
+      // column, no uploads, no assets. Same agent, same face, every surface,
+      // every reload, forever.
+      const FACE_HUES = [
+        { bg: '#6fd68f', fg: '#0d2a1c' }, { bg: '#3a6ea8', fg: '#ffffff' },
+        { bg: '#c99a25', fg: '#2a1e02' }, { bg: '#c2503f', fg: '#ffffff' },
+        { bg: '#7fb0d8', fg: '#0d2029' }, { bg: '#b98ad1', fg: '#1e1229' },
+        { bg: '#e2c05a', fg: '#2a2205' }, { bg: '#4fb8a5', fg: '#04231e' },
+      ];
+      function faceFor(agentId, displayName) {
+        let h = 0;
+        const key = String(agentId || '');
+        for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+        const hue = FACE_HUES[h % FACE_HUES.length];
+        // Monogram from the human-facing name where we have one, so the face
+        // reads as "C7" rather than as a slice of an opaque id.
+        const src = String(displayName || key).replace(/[^a-zA-Z0-9]/g, '');
+        const mono = (src.slice(0, 1) + (src.match(/\d/) ? src.match(/\d/)[0] : src.slice(1, 2)))
+          .toUpperCase() || '??';
+        return { bg: hue.bg, fg: hue.fg, mono: mono };
+      }
+      const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      /** String form of a face, for the table renderers that build HTML. */
+      function faceMarkup(agentId, displayName, cls) {
+        const f = faceFor(agentId, displayName);
+        return '<span class="av' + (cls ? ' ' + cls : '') + '" aria-hidden="true" style="background:'
+          + f.bg + '; color:' + f.fg + '">' + esc(f.mono) + '</span>';
+      }
+      function faceEl(agentId, displayName, cls) {
+        const el = document.createElement('span');
+        el.className = 'av' + (cls ? ' ' + cls : '');
+        const f = faceFor(agentId, displayName);
+        el.style.background = f.bg;
+        el.style.color = f.fg;
+        el.textContent = f.mono;
+        el.setAttribute('aria-hidden', 'true');
+        return el;
+      }
+
       const state = {
         view: 'overview',
         sessions: [],
@@ -819,6 +1012,7 @@
         summary: null,
         events: [],
         cursor: 0,          // how many events are rendered (replay scrubbing)
+        prevCursor: -1,     // T53: lets a render tell a single step from a seek
         settled: false,
         playing: false,
         timer: null,
@@ -976,6 +1170,15 @@
         const names = {};
         (state.summary ? state.summary.seats : []).forEach((x) => { names[x.agentId] = x.displayName; });
 
+        // T53: the one event this render is *showing*, if we stepped forward by
+        // exactly one. Scrubbing, seeking or reloading yields null — we only
+        // choreograph an actual move, never a jump. Reading it here keeps motion
+        // a pure observer of the fold (D75).
+        const justPlayed = (state.cursor === state.prevCursor + 1 && state.cursor > 0)
+          ? state.events[state.cursor - 1] : null;
+        state.prevCursor = state.cursor;
+        motion.cancelAll();
+
         // centre piles: draw (back) + discard (top card, with a peeking backer)
         $('discard').innerHTML = '';
         $('discard').appendChild(s.discard ? cardEl(s.discard, true) : backEl('', true));
@@ -1020,13 +1223,19 @@
           else { div.style.left = slot.left; div.style.top = slot.top; div.style.transform = 'translate(-50%,-50%)'; }
           const count = s.counts[agentId] != null ? s.counts[agentId] : 0;
 
+          div.dataset.agent = agentId;   // T53 anchors card flight to its seat
+
           const top = document.createElement('div');
           top.className = 'top';
+          top.appendChild(faceEl(agentId, names[agentId]));   // T54
           const nm = document.createElement('span');
           nm.className = 'nm';
           nm.textContent = names[agentId] || agentId;
           top.appendChild(nm);
-          if (agentId === s.current) {
+          const took = (agentId === s.current && state.decisionTimeoutMs) ? decisionMsFor(agentId) : null;
+          if (agentId === s.current && took == null) {
+            // Only label the seat when no clock will be drawn — the ring says
+            // "deciding" more clearly than the word does.
             const tag = document.createElement('span');
             tag.className = 'tag';
             tag.textContent = 'deciding';
@@ -1049,6 +1258,13 @@
             top.appendChild(dealer);
           }
           div.appendChild(top);
+          // T55: the decision clock, on the seat that owes a move. Shows the
+          // time the agent ACTUALLY took (from event timestamps) against the
+          // configured limit — not a decorative countdown. Nothing is
+          // fabricated and nothing hidden is revealed: a settled game's log is
+          // already public. Appended to the seat, not the header row, so it can
+          // hang off the corner without stealing width from the name.
+          if (took != null) div.appendChild(clockEl(took, state.decisionTimeoutMs));
 
           const id = document.createElement('div');
           id.className = 'id';
@@ -1065,6 +1281,105 @@
         });
 
         renderFeed(names);
+        if (justPlayed) choreograph(justPlayed, s);
+      }
+
+      // ---- T53: perform the move, don't just report it --------------------
+      // Runs *after* the board has rendered its true final state, animating
+      // elements from where they came rather than driving state. If any of this
+      // is cancelled mid-flight the board is already correct (motion uses
+      // fill:'none'), so a scrubbed replay degrades to an instant cut.
+      function choreograph(ev, s) {
+        const p = ev.payload || {};
+        const seat = p.agentId
+          ? $('seats').querySelector('[data-agent="' + p.agentId + '"]') : null;
+
+        if (ev.type === 'CARD_PLAYED') {
+          // the played card travels from its seat to the pile, and lands
+          const card = $('discard').querySelector('.card');
+          if (card && seat) motion.flyFrom(card, seat, { spin: -14 });
+          const wrap = $('discard').parentElement;
+          if (wrap) motion.run(wrap, [
+            { transform: 'scale(1)' }, { transform: 'scale(1.06)', offset: 0.5 }, { transform: 'scale(1)' },
+          ], { duration: 260 });
+          // a Rainbow resolving to a colour is the one moment the whole board
+          // pivots on — flip the chip so it can't be missed
+          const anyColour = p.card && (p.card.symbol === 'RAINBOW' || p.card.symbol === 'MEGARAINBOW');
+          if (anyColour && !$('board-color').hidden) {
+            motion.run($('board-color'), [
+              { transform: 'rotateX(0) scale(1)' },
+              { transform: 'rotateX(90deg) scale(1.1)', offset: 0.5 },
+              { transform: 'rotateX(0) scale(1)' },
+            ], { duration: 300 });
+          }
+        } else if (ev.type === 'CARD_DRAWN') {
+          // a back slides off the deck into the drawing seat's hand
+          const drawn = seat ? seat.querySelectorAll('.hand .card') : null;
+          const last = drawn && drawn.length ? drawn[drawn.length - 1] : null;
+          if (last) motion.flyFrom(last, $('draw-pile'), { spin: 8, duration: 260 });
+          if ($('draw-pile')) motion.run($('draw-pile'), [
+            { transform: 'translateY(0)' }, { transform: 'translateY(3px)', offset: 0.5 }, { transform: 'translateY(0)' },
+          ], { duration: 200 });
+        } else if (ev.type === 'RAINBOW_STORM') {
+          stormFlash();
+        } else if (ev.type === 'GAME_ENDED') {
+          const win = s.winner ? $('seats').querySelector('[data-agent="' + s.winner + '"]') : null;
+          if (win) motion.run(win, [
+            { transform: 'scale(1)' }, { transform: 'scale(1.05)', offset: 0.45 }, { transform: 'scale(1)' },
+          ], { duration: 320 });
+        }
+      }
+
+      // ---- T55: decision clock ---------------------------------------------
+      // How long did this agent actually take? Measured from the event that
+      // handed them the turn to their next action. Returns null at the end of
+      // the log, where there is no next action to measure against.
+      function decisionMsFor(agentId) {
+        const evs = state.events;
+        const startEv = evs[state.cursor - 1];
+        if (!startEv || !startEv.createdAt) return null;
+        for (let i = state.cursor; i < evs.length; i++) {
+          const e = evs[i];
+          const acted = e.type === 'CARD_PLAYED' || e.type === 'CARD_DRAWN';
+          if (acted && e.payload && e.payload.agentId === agentId && e.createdAt) {
+            const ms = new Date(e.createdAt) - new Date(startEv.createdAt);
+            return ms >= 0 ? ms : null;
+          }
+        }
+        return null;
+      }
+      function clockEl(tookMs, limitMs) {
+        const frac = Math.max(0, Math.min(1, tookMs / limitMs));
+        const R = 14, C = 2 * Math.PI * R;
+        const el = document.createElement('span');
+        el.className = 'clock' + (frac > 0.66 ? ' low' : '');
+        el.title = 'decided in ' + (tookMs / 1000).toFixed(2) + 's of a '
+          + (limitMs / 1000).toFixed(1) + 's limit';
+        el.innerHTML =
+          '<svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">'
+          + '<circle class="track" cx="17" cy="17" r="' + R + '" fill="none" stroke-width="3"></circle>'
+          + '<circle class="run" cx="17" cy="17" r="' + R + '" fill="none" stroke-width="3"'
+          + ' stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="'
+          + (C * (1 - frac)).toFixed(1) + '"></circle></svg>'
+          + '<span class="val">' + (tookMs / 1000).toFixed(1) + '</span>';
+        return el;
+      }
+
+      // The rarest event in the product deserves more than a log line.
+      function stormFlash() {
+        const felt = document.querySelector('.felt');
+        if (!felt || motion.reduced()) return;
+        const fx = document.createElement('div');
+        fx.className = 'storm-fx';
+        fx.innerHTML = '<span>RAINBOW STORM</span>';
+        felt.appendChild(fx);
+        const done = () => fx.remove();
+        const a = motion.run(fx, [
+          { opacity: 0, transform: 'scale(.92)' },
+          { opacity: 1, transform: 'scale(1)', offset: 0.3 },
+          { opacity: 0, transform: 'scale(1.04)' },
+        ], { duration: 320 });
+        if (a) a.finished.then(done, done); else done();
       }
 
       function describe(ev, names) {
@@ -1142,6 +1457,18 @@
         $('tk-tables').textContent = num(sessions.length);
         $('tk-moves').textContent = num(moves);
         $('live-count').textContent = state.mode === 'archive' ? 'archive' : 'delayed-live';
+
+        // T52: when embedded as the homepage hero, hand the parent the numbers
+        // we already derived so the homepage doesn't fetch this list a second
+        // time. One spectator-feed request serves both the hero and the ticker.
+        if (HERO_MODE && window.parent !== window) {
+          try {
+            window.parent.postMessage({
+              source: 'damnits-hero',
+              agents: agents.size, tables: sessions.length, moves: moves,
+            }, location.origin);
+          } catch (_) { /* parent on another origin — the ticker just falls back */ }
+        }
 
         featureLatest();
       }
@@ -1228,7 +1555,17 @@
         state.playing = true;
         $('playpause').textContent = '❚❚ pause';
         const step = () => {
-          if (state.cursor >= state.events.length) { stopTimers(); return; }
+          if (state.cursor >= state.events.length) {
+            // T52: the hero is a channel, not a clip — hold on the final board
+            // for a beat, then deal the same game again.
+            if (HERO_MODE) {
+              stopTimers();
+              setTimeout(() => { setCursor(0); startPlayback(); }, 2600);
+              return;
+            }
+            stopTimers();
+            return;
+          }
           setCursor(state.cursor + 1);
         };
         state.timer = setInterval(step, Number($('speed').value));
@@ -1327,7 +1664,10 @@
               '<span class="label">' + PODIUM[i] + '</span>' +
               '<span style="margin-left:auto; font-size:26px; font-weight:700; color:var(--faint); line-height:1">' + (i + 1) + '</span>' +
             '</div>' +
-            '<div style="font-size:16px; font-weight:700; margin-top:6px">' + r.displayName + '</div>' +
+            '<div style="display:flex; align-items:center; gap:9px; margin-top:6px">' +
+              faceMarkup(r.agentId, r.displayName, 'lg') +
+              '<span style="font-size:16px; font-weight:700">' + esc(r.displayName) + '</span>' +
+            '</div>' +
             '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
             '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
               '<span class="label">coins</span>' +
@@ -1338,8 +1678,9 @@
         $('coins-rows').innerHTML = rows.map((r, i) =>
           '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
-            '<td class="agent">' + r.displayName + '</td>' +
-            '<td class="dim">' + r.agentId + '</td>' +
+            '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
+              + esc(r.displayName) + '</span></td>' +
+            '<td class="dim">' + esc(r.agentId) + '</td>' +
             '<td class="num coins">' + num(r.coins) + '</td>' +
             '<td class="num">' + r.tablesWon + '</td>' +
             '<td class="num dim">' + r.played + '</td>' +
@@ -1421,8 +1762,9 @@
         for (const a of agents) {
           const tr = document.createElement('tr');
           tr.innerHTML =
-            '<td class="agent">' + a.displayName + '</td>' +
-            '<td class="dim">' + a.agentId + '</td>' +
+            '<td class="agent"><span class="agent-cell">' + faceMarkup(a.agentId, a.displayName)
+              + esc(a.displayName) + '</span></td>' +
+            '<td class="dim">' + esc(a.agentId) + '</td>' +
             '<td class="num">' + (a.coins != null ? a.coins.toLocaleString('en-US') : '—') + '</td>' +
             '<td class="dim">' + (a.payoutAddress || '<span class="dim">not set</span>') + '</td>';
           tb.appendChild(tr);
@@ -1466,6 +1808,14 @@
           return (n >= 1 ? n.toLocaleString('en-US', { maximumFractionDigits: 3 }) : n.toPrecision(2)) + ' tBNB';
         } catch (_) { return '— tBNB'; }
       }
+      // T55/D50: the decision limit comes from the server, never a literal.
+      async function loadConfig() {
+        try {
+          const c = await get('/config');
+          state.decisionTimeoutMs = c && c.decisionTimeoutMs;
+        } catch (_) { state.decisionTimeoutMs = null; }
+      }
+
       async function loadCompetitions() {
         try { state.comps = (await get('/competitions')).competitions || []; }
         catch (_) { state.comps = []; }
@@ -1478,7 +1828,29 @@
         const c = state.playground;
         const funded = c && c.jackpotWei && c.jackpotWei !== '0';
         $('pg-jackpot').hidden = !funded;
-        if (funded) $('pg-jackpot-v').textContent = fmtBnb(c.jackpotWei);
+        if (funded) countTo($('pg-jackpot-v'), c.jackpotWei, fmtBnb);
+      }
+
+      // ---- T56: a pot that counts reads live; the same number assigned reads
+      // like a config value. Purely a display transition between two real
+      // server figures — nothing is invented, and the element always ends on
+      // the true value even if the animation is cut short.
+      function countTo(el, wei, fmt) {
+        if (!el) return;
+        const to = Number(BigInt(wei)) / 1e18;
+        const from = el.dataset.v ? Number(el.dataset.v) : null;
+        el.dataset.v = String(to);
+        const land = () => { el.textContent = fmt(wei); };
+        if (from === null || from === to || motion.reduced()) { land(); return; }
+        const t0 = performance.now(), span = 520;
+        const tick = (now) => {
+          const k = Math.min(1, (now - t0) / span);
+          const eased = 1 - Math.pow(1 - k, 3);
+          if (k >= 1 || el.dataset.v !== String(to)) { if (k >= 1) land(); return; }
+          el.textContent = (from + (to - from) * eased).toFixed(4) + ' tBNB';
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
       }
       function renderTournEcon() {
         const c = state.tournament;
@@ -1588,11 +1960,24 @@
 
       // Re-poll while on Overview so the featured replay advances as new games settle.
       setInterval(() => { if (state.view === 'overview') loadSessions().catch(() => {}); }, 2500);
-      renderHero();       // the join command in the hero is always visible
-      loadCompetitions().then(() => {
-        setGameType(gameTypeFromHash());
-        loadAuth().then(() => { if (location.pathname.startsWith('/profile')) show('profile'); });
-      });
+      // T52: hero mode is the same app with the chrome removed, embedded by the
+      // homepage. It airs one settled game and loops it — no auth, no polling
+      // for new sessions, no tabs.
+      if (HERO_MODE) {
+        document.body.classList.add('hero-mode');
+        loadConfig();
+        loadCompetitions()
+          .then(() => setGameType(gameTypeFromHash()))
+          .then(() => loadSessions())
+          .catch(() => {});
+      } else {
+        renderHero();     // the join command in the hero is always visible
+        loadConfig();     // T55: real decision limit for the clock ring
+        loadCompetitions().then(() => {
+          setGameType(gameTypeFromHash());
+          loadAuth().then(() => { if (location.pathname.startsWith('/profile')) show('profile'); });
+        });
+      }
       window.addEventListener('popstate', () => {
         show(location.pathname.startsWith('/profile') ? 'profile' : 'overview');
       });
