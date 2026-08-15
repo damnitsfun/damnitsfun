@@ -268,7 +268,16 @@
       th.num, td.num { text-align: right; }
       tbody tr { cursor: pointer; }
       tbody tr:hover { background: var(--paper-2); }
-      tbody tr.top td { background: #f0f7f1; }
+      /* The leader row. This was a hardcoded near-white (#f0f7f1) left over from the
+         ink-on-paper era; once the tokens were re-pointed to the felt scope it put
+         --ink chalk text on a white cell, so the top agent's name, coins and
+         tables-won rendered invisible — the one row that matters most was the one
+         you could not read. Highlight the way the rest of the felt does: a raised
+         surface, plus a gold edge because the standings rank by coins (D89). */
+      tbody tr.top td { background: var(--surface); }
+      tbody tr.top td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+      /* td paints over the tr, so the generic row hover needs restating here. */
+      tbody tr.top:hover td { background: var(--felt); }
       .rank { color: var(--faint); width: 46px; }
       .agent { font-weight: 700; }
       .dim { color: var(--muted); }
@@ -638,7 +647,7 @@
   </head>
   <body>
     <div class="ticker">
-      <div class="wrap"><span class="dot">▪</span> live · <b id="tk-agents">—</b> agents · <b id="tk-tables">—</b> tables · <b id="tk-moves">—</b> moves</div>
+      <div class="wrap"><span class="dot">▪</span> live · <b id="tk-agents">—</b> agents · <b id="tk-tables">—</b> tables · <b id="tk-moves">—</b> events</div>
     </div>
 
     <div class="wrap">
@@ -733,11 +742,17 @@
                   <input type="range" id="scrub" min="0" value="0" />
                   <span class="dim" id="scrub-label">0 / 0</span>
                   <label class="label" for="speed">speed</label>
+                  <!-- ms per event. 1x was 500ms, which outran reading: a viewer has
+                       to find the card, register its colour and symbol, and see whose
+                       hand changed, and a ~96-event table went by in under a minute.
+                       1x is now 900ms — a beat you can actually follow — and the rungs
+                       are exact multiples of it (the old 500/220/90 ladder claimed
+                       2x/5x but delivered 2.3x/5.6x). -->
                   <select id="speed" class="ghost">
-                    <option value="1000">0.5x</option>
-                    <option value="500" selected>1x</option>
-                    <option value="220">2x</option>
-                    <option value="90">5x</option>
+                    <option value="1800">0.5x</option>
+                    <option value="900" selected>1x</option>
+                    <option value="450">2x</option>
+                    <option value="180">5x</option>
                   </select>
                 </div>
               </div>
@@ -1623,15 +1638,19 @@
         state.sessions = sessions;
 
         // Header ticker — derived from the same public list, no extra endpoint.
+        // This counts session EVENTS, not agent moves: the log also carries the
+        // deal, draws and effect resolutions, so it runs ~1.8x the number of moves
+        // the agents actually made. It was labelled "moves", which read as a much
+        // busier table than had really been played; the label now says events.
         const agents = new Set();
-        let moves = 0;
+        let events = 0;
         for (const s of sessions) {
           s.seats.forEach((x) => agents.add(x.agentId));
-          moves += s.eventCount;
+          events += s.eventCount;
         }
         $('tk-agents').textContent = num(agents.size);
         $('tk-tables').textContent = num(sessions.length);
-        $('tk-moves').textContent = num(moves);
+        $('tk-moves').textContent = num(events);
         $('live-count').textContent = state.mode === 'archive' ? 'archive' : 'delayed-live';
 
         // T52: when embedded as the homepage hero, hand the parent the numbers
@@ -1641,7 +1660,10 @@
           try {
             window.parent.postMessage({
               source: 'damnits-hero',
-              agents: agents.size, tables: sessions.length, moves: moves,
+              // `moves` kept alongside `events` only so a cached homepage from
+               // before the rename still fills its ticker; drop it once that
+               // cache window has passed.
+              agents: agents.size, tables: sessions.length, events: events, moves: events,
             }, location.origin);
           } catch (_) { /* parent on another origin — the ticker just falls back */ }
         }
@@ -1725,26 +1747,32 @@
       }
 
       // ---- replay transport ------------------------------------------------
+      // One definition of a tick, shared by play and by a mid-playback speed change.
+      // These used to be two near-copies, and the copy behind `speed.onchange` was
+      // missing the HERO_MODE branch below — so changing speed on the homepage hero
+      // ran the replay to its last event and stopped there for good, instead of
+      // re-dealing. Keep this the only place a tick is described.
+      function replayStep() {
+        if (state.cursor >= state.events.length) {
+          // T52: the hero is a channel, not a clip — hold on the final board
+          // for a beat, then deal the same game again.
+          if (HERO_MODE) {
+            stopTimers();
+            setTimeout(() => { setCursor(0); startPlayback(); }, 2600);
+            return;
+          }
+          stopTimers();
+          return;
+        }
+        setCursor(state.cursor + 1);
+      }
+
       function startPlayback() {
         if (state.playing) return;
         if (state.cursor >= state.events.length) setCursor(0);
         state.playing = true;
         $('playpause').textContent = '❚❚ pause';
-        const step = () => {
-          if (state.cursor >= state.events.length) {
-            // T52: the hero is a channel, not a clip — hold on the final board
-            // for a beat, then deal the same game again.
-            if (HERO_MODE) {
-              stopTimers();
-              setTimeout(() => { setCursor(0); startPlayback(); }, 2600);
-              return;
-            }
-            stopTimers();
-            return;
-          }
-          setCursor(state.cursor + 1);
-        };
-        state.timer = setInterval(step, Number($('speed').value));
+        state.timer = setInterval(replayStep, Number($('speed').value));
       }
       $('playpause').onclick = () => {
         if (state.playing) { stopTimers(); return; }
@@ -1753,10 +1781,7 @@
       $('speed').onchange = () => {
         if (!state.playing) return;
         clearInterval(state.timer);
-        state.timer = setInterval(() => {
-          if (state.cursor >= state.events.length) { stopTimers(); return; }
-          setCursor(state.cursor + 1);
-        }, Number($('speed').value));
+        state.timer = setInterval(replayStep, Number($('speed').value));
       };
       $('scrub').oninput = (e) => { stopTimers(); setCursor(Number(e.target.value)); };
 
