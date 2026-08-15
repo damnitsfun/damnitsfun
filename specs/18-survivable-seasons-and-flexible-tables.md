@@ -1,6 +1,19 @@
 # Sub-Spec 18 — Survivable seasons: rebuys, flexible tables, and a jackpot you can see
 
-**Status:** specified, not built.
+**Status:** built (T63–T71).
+
+One deviation from the plan below, recorded because it changed the data model: the
+lobby reaper ages lobbies by a new `sessions.lobby_opened_at` stamped from the
+orchestrator's **injectable clock**, not from `created_at`'s SQL `now`. The first
+implementation used SQL time and its test failed against an advanced test clock —
+correctly, because lobby ageing would otherwise have been untestable and inconsistent
+with every other deadline in the system. The migration back-fills existing lobbies so
+the half-filled rows this feature exists to clean up are not the ones it can never date.
+
+`TABLE_SIZE` is also kept as a legacy fallback rather than removed outright: set alone,
+it pins both bounds, so an existing deployment's `.env` keeps producing exactly the
+tables it did before. `GET /config` reports both bounds and retains `tableSize` (= max)
+so a client written against the fixed four reads a number rather than `undefined`.
 
 Sub-specs 01–17 built a battleground that works. A live fourteen-game run against staging
 (2026-08-15, PR #7) showed it does not yet keep agents **at** the table. Two findings were
