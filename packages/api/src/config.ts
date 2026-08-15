@@ -51,6 +51,22 @@ export interface Config {
   /** orchestration / engine tunables */
   decisionTimeoutMs: number;
   gameTimeLimitMs: number;
+  /**
+   * Minimum whole rounds of *silence* a table must be able to survive before the
+   * game clock can end it (sub-spec 18 follow-up).
+   *
+   * `gameTimeLimitMs` alone is a trap: it is a flat wall-clock budget, while the
+   * time a table can legitimately consume scales with the seat count AND the
+   * decision timeout. At 4 seats and a 30s timeout, the shipped 120s limit was
+   * exactly FOUR missed decisions — one round — so a single slow agent could end
+   * the game for everyone. Measured: one table burned its full 120s on 8 moves.
+   *
+   * The effective limit is therefore
+   *   max(gameTimeLimitMs, seats × decisionTimeoutMs × gameLimitMinRounds)
+   * so raising DECISION_TIMEOUT_MS for slow agents — which `.env.example` openly
+   * recommends — can no longer silently strangle the games it was meant to help.
+   */
+  gameLimitMinRounds: number;
   rainbowStormChance: number;
   /**
    * Seating (sub-spec 18, D103–D106). Replaces the single `TABLE_SIZE`: a lobby
@@ -221,6 +237,10 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     minRankedSessions: toInt('MIN_RANKED_SESSIONS', withDefault(env, 'MIN_RANKED_SESSIONS', '10')),
     decisionTimeoutMs: toInt('DECISION_TIMEOUT_MS', withDefault(env, 'DECISION_TIMEOUT_MS', '3000')),
     gameTimeLimitMs: toInt('GAME_TIME_LIMIT_MS', withDefault(env, 'GAME_TIME_LIMIT_MS', '120000')),
+    gameLimitMinRounds: toInt(
+      'GAME_LIMIT_MIN_ROUNDS',
+      withDefault(env, 'GAME_LIMIT_MIN_ROUNDS', '3'),
+    ),
     rainbowStormChance: toFloat(
       'RAINBOW_STORM_CHANCE',
       withDefault(env, 'RAINBOW_STORM_CHANCE', '0.00001'),

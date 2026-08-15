@@ -94,6 +94,10 @@ function boot(): Harness {
       TABLE_SIZE: '4',
       GAME_TIME_LIMIT_MS: String(GAME_LIMIT_MS),
       DECISION_TIMEOUT_MS: '999999999', // never auto-play; the test drives every move
+      // Opt out of the derived game-clock floor: this harness pairs an absurd
+      // decision timeout with a deliberately tiny game limit, and the floor
+      // (seats x timeout x rounds) would inflate that into hours.
+      GAME_LIMIT_MIN_ROUNDS: '0',
       RAINBOW_STORM_CHANCE: '1', // a storm on the first card play
       WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key',
     },

@@ -153,7 +153,12 @@ export function buildServer(options: BuildOptions): BuiltServer {
       lobbyCountdownMs: config.lobbyCountdownMs,
       startingHand: STARTING_HAND,
       decisionTimeoutMs: config.decisionTimeoutMs,
-      gameTimeLimitMs: config.gameTimeLimitMs,
+      // The EFFECTIVE limit a full table plays under, not the raw floor: the
+      // configured value is widened when it would not survive
+      // `gameLimitMinRounds` rounds of silence. Reporting the raw number here
+      // would tell agents and the rules page a game ends far sooner than it does.
+      gameTimeLimitMs: orchestrator.effectiveGameTimeLimitMs(config.tableMaxSize),
+      gameTimeLimitFloorMs: config.gameTimeLimitMs,
     }));
 
     // ---- register (no auth) -------------------------------------------------

@@ -48,6 +48,9 @@ describe('battleground rename (T42)', () => {
       startingHand: 7,
       decisionTimeoutMs: 3000,
       gameTimeLimitMs: 120000,
+      // The derived floor (seats x decision timeout x rounds) is well below
+      // this env's limit, so the effective value is the configured one.
+      gameTimeLimitFloorMs: 120000,
     });
     // The config endpoint must not leak secret/operational fields.
     const keys = Object.keys(res.json());

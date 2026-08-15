@@ -106,6 +106,9 @@ describe('battleground end-to-end walkthrough (T43)', () => {
       startingHand: 7,
       decisionTimeoutMs: 3000,
       gameTimeLimitMs: 3600000,
+      // The derived floor (seats x decision timeout x rounds) is well below
+      // this env's limit, so the effective value is the configured one.
+      gameTimeLimitFloorMs: 3600000,
     });
     const alias = await app.inject({ method: 'GET', url: '/api/arena/config' });
     expect(alias.statusCode).toBe(200);

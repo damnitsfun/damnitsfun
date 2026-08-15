@@ -1623,6 +1623,32 @@ export class Orchestrator {
     return take();
   }
 
+  /**
+   * The game clock this table actually plays under.
+   *
+   * `GAME_TIME_LIMIT_MS` is a flat budget, but the time a table can legitimately
+   * consume scales with BOTH the seat count and the decision timeout — so the two
+   * settings can be individually reasonable and jointly broken. Staging shipped
+   * 4 seats / 30s decisions / 120s game: exactly four missed decisions, i.e. ONE
+   * round, so one slow agent ended the game for the whole table. A real table did
+   * exactly that, burning its full 120s on 8 moves.
+   *
+   * The configured value is therefore treated as a floor, not the answer: a table
+   * always gets at least `gameLimitMinRounds` complete rounds of silence before
+   * the clock can take it. Raising the decision timeout for slow agents now widens
+   * the game clock with it instead of starving it.
+   */
+  effectiveGameTimeLimitMs(seatCount: number): number {
+    const rounds = Math.max(0, this.config.gameLimitMinRounds);
+    // 0 is a deliberate escape hatch: "trust GAME_TIME_LIMIT_MS exactly". Needed
+    // by harnesses that pair an enormous decision timeout (to suppress auto-play)
+    // with a tiny game limit — a combination the floor would otherwise inflate
+    // into hours. Operators who genuinely want a hard flat cap can use it too.
+    if (rounds === 0) return this.config.gameTimeLimitMs;
+    const derived = seatCount * this.config.decisionTimeoutMs * rounds;
+    return Math.max(this.config.gameTimeLimitMs, derived);
+  }
+
   /** Rebuys spent by an agent in a season (sub-spec 18). 0 when it has none. */
   rebuysUsed(agentId: string, competitionId: string): number {
     const row = this.db
@@ -1745,7 +1771,7 @@ export class Orchestrator {
     const game = new GameSession(seats, {
       sessionId,
       seedReveal: seed,
-      timeLimitMs: this.config.gameTimeLimitMs,
+      timeLimitMs: this.effectiveGameTimeLimitMs(seats.length),
       rainbowStormChance: this.config.rainbowStormChance,
       store: new SqliteSessionEventStore(this.db),
       clock: this.clock,

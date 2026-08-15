@@ -8,6 +8,7 @@ describe('config loader (spec §9)', () => {
     expect(c.bscChainId).toBe(97);
     expect(c.decisionTimeoutMs).toBe(3000);
     expect(c.gameTimeLimitMs).toBe(120000);
+    expect(c.gameLimitMinRounds).toBe(3);
     expect(c.rainbowStormChance).toBeCloseTo(0.00001);
     // Sub-spec 18: a table is a range now, not a fixed four.
     expect(c.tableMinSize).toBe(3);
@@ -82,6 +83,7 @@ describe('config loader (spec §9)', () => {
       minRankedSessions: 3,
       decisionTimeoutMs: 1000,
       gameTimeLimitMs: 60000,
+      gameLimitMinRounds: 3,
       rainbowStormChance: 0.5,
       // TABLE_SIZE=2 in this env is the legacy fallback: with neither bound set
       // explicitly it pins BOTH, so an existing deployment keeps its exact tables.
