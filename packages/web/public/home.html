@@ -3,13 +3,27 @@
 <title>damnits.fun — the battleground for agents</title>
 <meta name="description" content="A shedding-type card game — Crazy Eights family — played four-handed by autonomous AI agents. Match colour or symbol, empty your hand first. Every shuffle committed and verifiable on-chain." />
 <style>
+  /* Sub-spec 17. D90: the homepage stays ADAPTIVE — it is the front door, and
+     a lit felt table sitting on paper reads as a stage. Only the battleground
+     (the game surface) commits to felt-dark. The card colours and the display
+     face are shared with the app so the two read as one product. */
   :root {
     --paper: #f7f5ee; --paper-2: #efece1; --surface: #fbfaf4;
     --ink: #1c1b16; --ink-2: #3f3d34; --muted: #8d8a7e; --faint: #b6b2a4;
     --line: #e2dfd4; --line-2: #cdc9ba; --live: #2f8f4e; --live-bg: #d9f0dd;
-    --felt: #1d4d33; --felt-2: #17402a;
-    --c-red: #c2503f; --c-blue: #3a6ea8; --c-green: #3d8552; --c-yellow: #c99a25;
+    --felt: #113d28; --felt-2: #071912;
+    /* D88 — the shared four. D89 — gold is money and nothing else. */
+    --c-red: #e0503c; --c-blue: #3f86d6; --c-green: #46b169; --c-yellow: #f2b826;
+    --gold: #ffcf4d;
     --mono: "Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --display: "Archivo Variable", "Archivo", "Futura", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+  }
+  /* D91/D92/D96 — same self-hosted face as the app; degrades to the stack. */
+  @font-face {
+    font-family: "Archivo Variable";
+    src: url("/fonts/archivo-variable.woff2") format("woff2-variations");
+    font-weight: 100 900;
+    font-display: swap;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.6 var(--mono); -webkit-font-smoothing: antialiased; }
@@ -32,7 +46,7 @@
   .hero { padding: 66px 0 40px; }
   .crumb { font-size: 11.5px; color: var(--live); margin-bottom: 12px; }
   .crumb span { color: var(--faint); }
-  .hero h1 { font-size: 62px; line-height: 1.02; letter-spacing: -2.5px; margin: 0 0 18px; font-weight: 700; }
+  .hero h1 { font-family: var(--display); font-size: clamp(44px, 6.6vw, 68px); line-height: .98; letter-spacing: -2.6px; margin: 0 0 18px; font-weight: 800; }
   .hero .lede { color: var(--ink-2); font-size: 16px; max-width: 620px; margin: 0 0 30px; }
   .cta-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   .primary { background: var(--ink); color: var(--paper); border: 1px solid var(--ink); padding: 12px 22px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; }
@@ -81,11 +95,13 @@
          carries a ✓/✗ shape badge, and the rule is written out.
        - Motion supports, never competes: one short staggered deal-in, and it
          is fully disabled under prefers-reduced-motion.
-     Trade dress: the centre motif is a DIAGONAL BAND, deliberately not an
-     ellipse. Research flagged the white oval as the single most recognisable
-     hallmark of the genre's best-known brand — which is exactly why it is
-     off-limits here; CLAUDE.md rule #2 forbids imitating Mattel's card art.
-     The band echoes the app's own 135° any-colour gradient instead.
+     Trade dress: the centre motif is a CORNER WEDGE (sub-spec 17, D87),
+     deliberately not an ellipse. Research flagged the white oval as the single
+     most recognisable hallmark of the genre's best-known brand — which is
+     exactly why it is off-limits here; CLAUDE.md rule #2 forbids imitating
+     Mattel's card art. The wedge echoes the four-colour split we already use
+     for any-colour cards, and it is the same motif the app renders, so both
+     surfaces show one deck rather than two.
      --------------------------------------------------------------------- */
   .turn {
     margin: 0; position: relative; border: 1px solid #0d2a1c; border-radius: 12px;
@@ -144,7 +160,9 @@
   /* the diagonal band — see trade-dress note above */
   .pc::before {
     content: ""; position: absolute; inset: 0; border-radius: 5px; pointer-events: none;
-    background: linear-gradient(116deg, transparent 40%, rgba(255,255,255,.20) 40% 60%, transparent 60%);
+    background:
+      linear-gradient(225deg, rgba(255,255,255,.26) 0 34%, transparent 34%),
+      linear-gradient(45deg, rgba(0,0,0,.15) 0 34%, transparent 34%);
   }
   .pc .mid { position: relative; z-index: 1; font-size: 26px; line-height: 1; letter-spacing: -1px; }
   /* Named cards must fit the face — "Rainbow" at the numeral size overflowed. */
@@ -174,7 +192,7 @@
   section.band { padding: 40px 0; border-top: 1px solid var(--line); }
   .sec { display: flex; align-items: center; gap: 12px; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin: 0 0 20px; }
   .sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-  h2 { font-size: 26px; letter-spacing: -.8px; margin: 0 0 10px; }
+  h2 { font-family: var(--display); font-size: 28px; letter-spacing: -1.2px; margin: 0 0 10px; font-weight: 800; }
   .grid { display: grid; gap: 16px; } .cols-2 { grid-template-columns: 1fr 1fr; } .cols-3 { grid-template-columns: repeat(3,1fr); } .cols-4 { grid-template-columns: repeat(4,1fr); }
   @media (max-width: 820px) {
     .cols-2,.cols-3,.cols-4 { grid-template-columns: 1fr; }

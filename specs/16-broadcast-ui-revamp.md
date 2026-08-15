@@ -185,7 +185,9 @@ None. This spec adds no environment variables and consumes only what `/config` a
    require an API change — which this spec's own safety boundary forbids. Hard-coding it would breach the
    "no hard-coded figures" DoD. The jackpot **counter** ships; the odds do not. Adding `rainbowStormChance` to
    `/config` is a one-line follow-up in a spec that is allowed to touch the API.
-2. **T57 is applied, not formalised.** D78's composition is implemented where it changes what a reader sees —
+2. **T57 is applied, not formalised.** **→ Closed by sub-spec 17 (D95/T58)**, which formalises the two scopes in
+   the token block and commits the battleground to a felt ground.
+   D78's composition is implemented where it changes what a reader sees —
    standings now carry faces and coin gold over mono/tabular rows, and the felt surfaces own the motion. A
    wholesale rename of the token file into two declared scopes was **not** done: it is a large, purely mechanical
    diff across two files with real regression risk and no visible payoff, which is a bad trade this close to a
