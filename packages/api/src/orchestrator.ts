@@ -117,6 +117,22 @@ export interface ClaimStatus {
   verifiedAt: string | null;
 }
 
+/**
+ * One rebuy, as reported back to the agent that spent it (sub-spec 18, D102).
+ * Rebuys must never be silent: an agent that does not know it was bailed out
+ * cannot tell a won season from a bought one, and neither can a spectator.
+ */
+export interface RebuyGrant {
+  /** Coins added to the balance. */
+  granted: number;
+  /** Rebuys spent this season, including this one. */
+  used: number;
+  /** Rebuys still available this season. */
+  remaining: number;
+  /** Balance after the grant, before the seat is charged. */
+  balance: number;
+}
+
 interface CompetitionRow {
   id: string;
   name: string;
@@ -1224,14 +1240,25 @@ export class Orchestrator {
    * exactly like arena's "claimed + X-verified" gate.
    */
   /**
-   * The payout-eligible field for a tournament, ranked by **coins** (the on-chain
+   * The payout-eligible field for a tournament, ranked by **net coins** (the on-chain
    * prize is split among the top coin-holders — openskill is gone). Eligibility is
    * unchanged: an X-verified owner (`owner_id`), a payout address to receive the
    * prize, and at least `minRankedSessions` settled games in this competition.
+   *
+   * Sub-spec 18 (D100): this is the order real money is paid in, so it nets rebuys
+   * out for the same reason the public boards do — and more urgently. Ranking the
+   * payout on a raw balance while the leaderboard shows net would not merely look
+   * inconsistent, it would let an agent turn granted coins into BNB.
    */
-  eligibleRanked(
-    competitionId: string,
-  ): Array<{ agentId: string; displayName: string; coins: number; payoutAddress: string; games: number }> {
+  eligibleRanked(competitionId: string): Array<{
+    agentId: string;
+    displayName: string;
+    coins: number;
+    rebuysUsed: number;
+    netCoins: number;
+    payoutAddress: string;
+    games: number;
+  }> {
     const rows = this.db
       .prepare(
         `SELECT a.*, COUNT(DISTINCT s.id) AS games
@@ -1245,16 +1272,22 @@ export class Orchestrator {
       )
       .all(competitionId) as Array<AgentRow & { games: number }>;
 
+    const rebuyCoins = this.config.rebuyCoins;
     return rows
       .filter((r) => r.owner_id && r.payout_address && r.games >= this.config.minRankedSessions)
-      .map((r) => ({
-        agentId: r.id,
-        displayName: r.display_name,
-        coins: r.coins,
-        payoutAddress: r.payout_address as string,
-        games: r.games,
-      }))
-      .sort((a, b) => b.coins - a.coins);
+      .map((r) => {
+        const rebuysUsed = this.rebuysUsed(r.id, competitionId);
+        return {
+          agentId: r.id,
+          displayName: r.display_name,
+          coins: r.coins,
+          rebuysUsed,
+          netCoins: r.coins - rebuysUsed * rebuyCoins,
+          payoutAddress: r.payout_address as string,
+          games: r.games,
+        };
+      })
+      .sort((a, b) => b.netCoins - a.netCoins);
   }
 
   private resolveJackpotWinner(
@@ -1400,7 +1433,13 @@ export class Orchestrator {
     agentId: string,
     competitionId: string,
     txHash?: string,
-  ): Promise<{ sessionId: string; status: 'lobby' | 'seated'; seatIndex: number | null }> {
+  ): Promise<{
+    sessionId: string;
+    status: 'lobby' | 'seated';
+    seatIndex: number | null;
+    /** Present ONLY on the join that spent a rebuy (sub-spec 18, D102). */
+    rebuy?: RebuyGrant;
+  }> {
     const competition = this.db
       .prepare(`SELECT * FROM competitions WHERE id = ? AND status = 'active'`)
       .get(competitionId) as CompetitionRow | undefined;
@@ -1454,14 +1493,27 @@ export class Orchestrator {
     // buy-in can't sit. (A tournament seat still ALSO requires its one-time on-chain
     // entry, handled by the `/competition/enter` gate above.)
     const entry = this.config.playgroundEntryCoins;
+    let rebuy: RebuyGrant | undefined;
     if (entry > 0) {
       const balance = this.getAgent(agentId).coins;
       if (balance < entry) {
-        throw new ApiError(
-          402,
-          'INSUFFICIENT_COINS',
-          `Need ${entry} coins to join; balance is ${balance}.`,
-        );
+        // Sub-spec 18 (D98/D102): being broke is no longer the end of the run.
+        // Take a fresh stack if the season's allowance has any left. Automatic,
+        // because there is nothing for an agent to decide — coins buy seats and
+        // nothing else — but never silent: the grant rides back on the response
+        // and is netted out of the standings (D100).
+        rebuy = this.grantRebuy(agentId, competitionId) ?? undefined;
+        if (!rebuy) {
+          const limit = this.config.rebuyLimit;
+          throw new ApiError(
+            402,
+            'INSUFFICIENT_COINS',
+            limit > 0
+              ? `Need ${entry} coins to join; balance is ${balance}. All ${limit} rebuys for this season are spent — you play again when the next season opens.`
+              : `Need ${entry} coins to join; balance is ${balance}.`,
+            { rebuysUsed: limit, rebuysRemaining: 0, seasonId: competitionId },
+          );
+        }
       }
       this.db.prepare(`UPDATE agents SET coins = coins - ? WHERE id = ?`).run(entry, agentId);
     }
@@ -1479,11 +1531,65 @@ export class Orchestrator {
     const seated = seatIndex.n + 1;
     if (seated >= session.table_size) {
       this.startSession(session.id);
-      return { sessionId: session.id, status: 'seated', seatIndex: seatIndex.n };
+      return { sessionId: session.id, status: 'seated', seatIndex: seatIndex.n, rebuy };
     }
 
     this.db.prepare(`UPDATE sessions SET status = 'lobby' WHERE id = ?`).run(session.id);
-    return { sessionId: session.id, status: 'lobby', seatIndex: seatIndex.n };
+    return { sessionId: session.id, status: 'lobby', seatIndex: seatIndex.n, rebuy };
+  }
+
+  /**
+   * Spend one of this season's rebuys, or return null if the allowance is gone
+   * (sub-spec 18, T64 / D98–D101).
+   *
+   * The counter is keyed by competition because a competition *is* a season, so
+   * the "resets when the season ends" behaviour falls out of the data model with
+   * no scheduled job to run or forget. An absent row means none used yet.
+   *
+   * Read-check-write runs inside one transaction: `joinSession` awaits the entry-fee
+   * gate before reaching here, and an await is a point where another request can
+   * interleave — without the transaction two concurrent joins could each read
+   * `used = 4` and both grant a fifth stack.
+   */
+  private grantRebuy(agentId: string, competitionId: string): RebuyGrant | null {
+    const limit = this.config.rebuyLimit;
+    if (limit <= 0) return null;              // rebuys disabled → pre-18 behaviour
+    const grant = this.config.rebuyCoins;
+
+    const take = this.db.transaction((): RebuyGrant | null => {
+      const row = this.db
+        .prepare(`SELECT used FROM agent_rebuys WHERE competition_id = ? AND agent_id = ?`)
+        .get(competitionId, agentId) as { used: number } | undefined;
+      const used = row?.used ?? 0;
+      if (used >= limit) return null;
+
+      this.db
+        .prepare(
+          `INSERT INTO agent_rebuys (competition_id, agent_id, used, updated_at)
+                VALUES (?, ?, 1, datetime('now'))
+           ON CONFLICT(competition_id, agent_id)
+             DO UPDATE SET used = used + 1, updated_at = datetime('now')`,
+        )
+        .run(competitionId, agentId);
+      this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(grant, agentId);
+
+      return {
+        granted: grant,
+        used: used + 1,
+        remaining: limit - (used + 1),
+        balance: this.getAgent(agentId).coins,
+      };
+    });
+
+    return take();
+  }
+
+  /** Rebuys spent by an agent in a season (sub-spec 18). 0 when it has none. */
+  rebuysUsed(agentId: string, competitionId: string): number {
+    const row = this.db
+      .prepare(`SELECT used FROM agent_rebuys WHERE competition_id = ? AND agent_id = ?`)
+      .get(competitionId, agentId) as { used: number } | undefined;
+    return row?.used ?? 0;
   }
 
   /**
@@ -1891,38 +1997,62 @@ export class Orchestrator {
   // ---- playground standings (coins, sub-spec 12) ----------------------------
 
   /**
-   * Public playground standings, ranked by coin balance (T41). Both boards rank by
-   * coins now (openskill removed); this is the PLAYGROUND "chips" board — every
-   * agent that has played a finished CLASSIC table, sorted by coins desc, with
-   * tables-won / played for context. No auth — coins are public score.
+   * Public playground standings (T41), ranked by **net** coins (sub-spec 18, D100).
+   *
+   * Coins ARE the ranking, so granting coins is granting rank. Once an agent can
+   * take a rebuy, sorting on the raw balance would let it buy its way up the board
+   * by busting — the ladder would measure who ran out most often. Netting the
+   * granted stacks back out (`coins − rebuysUsed × rebuyCoins`) keeps the number
+   * meaning "what you won", which is what a reader assumes it means. Net goes
+   * negative for an agent that has consumed more than it has produced; that is a
+   * true statement about it, not an error.
+   *
+   * `coins` and `rebuysUsed` are both returned so the UI can show the arithmetic
+   * rather than assert the result.
    */
   playgroundStandings(competitionId?: string): Array<{
     agentId: string;
     displayName: string;
     coins: number;
+    rebuysUsed: number;
+    netCoins: number;
     tablesWon: number;
     played: number;
   }> {
-    const clause = competitionId ? `AND s.competition_id = ?` : '';
-    const params = competitionId ? [competitionId] : [];
     // Playground standings count CLASSIC games only (sub-spec 13): coins are the
     // playground currency, so a tournament table never moves the coins board.
+    // Rebuys are summed over the same scope, so the netting matches the games.
     const rows = this.db
       .prepare(
         `SELECT a.id AS agentId, a.display_name AS displayName, a.coins AS coins,
+                COALESCE(rb.rebuys, 0) AS rebuysUsed,
+                a.coins - COALESCE(rb.rebuys, 0) * @rebuyCoins AS netCoins,
                 COUNT(DISTINCT p.session_id) AS played,
                 COUNT(DISTINCT CASE WHEN s.winner_agent_id = a.id THEN s.id END) AS tablesWon
            FROM agents a
            JOIN session_players p ON p.agent_id = a.id
-           JOIN sessions s ON s.id = p.session_id AND s.status IN ('settled','archived') ${clause}
+           JOIN sessions s ON s.id = p.session_id AND s.status IN ('settled','archived')
+                          AND (@competitionId IS NULL OR s.competition_id = @competitionId)
            JOIN competitions c ON c.id = s.competition_id AND c.kind = 'classic'
+           LEFT JOIN (
+             SELECT r.agent_id AS agent_id, SUM(r.used) AS rebuys
+               FROM agent_rebuys r
+               JOIN competitions rc ON rc.id = r.competition_id AND rc.kind = 'classic'
+              WHERE (@competitionId IS NULL OR r.competition_id = @competitionId)
+              GROUP BY r.agent_id
+           ) rb ON rb.agent_id = a.id
           GROUP BY a.id
-          ORDER BY a.coins DESC, tablesWon DESC, played ASC`,
+          ORDER BY netCoins DESC, tablesWon DESC, played ASC`,
       )
-      .all(...params) as Array<{
+      .all({
+        competitionId: competitionId ?? null,
+        rebuyCoins: this.config.rebuyCoins,
+      }) as Array<{
       agentId: string;
       displayName: string;
       coins: number;
+      rebuysUsed: number;
+      netCoins: number;
       tablesWon: number;
       played: number;
     }>;
@@ -1940,6 +2070,8 @@ export class Orchestrator {
     agentId: string;
     displayName: string;
     coins: number;
+    rebuysUsed: number;
+    netCoins: number;
   }> {
     const rows = this.db
       .prepare(
@@ -1950,9 +2082,22 @@ export class Orchestrator {
       )
       .all(competitionId) as AgentRow[];
 
+    // Netting matters more here than on the playground board, not less: this is
+    // the order the on-chain prize pool is split by (top 10, spec 15), so ranking
+    // on a raw balance would let an agent convert rebuys into real money.
+    const rebuyCoins = this.config.rebuyCoins;
     return rows
-      .map((r) => ({ agentId: r.id, displayName: r.display_name, coins: r.coins }))
-      .sort((a, b) => b.coins - a.coins);
+      .map((r) => {
+        const rebuysUsed = this.rebuysUsed(r.id, competitionId);
+        return {
+          agentId: r.id,
+          displayName: r.display_name,
+          coins: r.coins,
+          rebuysUsed,
+          netCoins: r.coins - rebuysUsed * rebuyCoins,
+        };
+      })
+      .sort((a, b) => b.netCoins - a.netCoins);
   }
 
   /** Test/diagnostic helper: is this session still being played in memory? */

@@ -82,6 +82,11 @@ describe('config loader (spec §9)', () => {
       tableSize: 2,
       startingCoins: 2500,
       playgroundEntryCoins: 25,
+      // Sub-spec 18: REBUY_LIMIT/REBUY_COINS are unset in this env, so these are
+      // the defaults — and rebuyCoins tracking STARTING_COINS is why it reads
+      // 2500 here rather than 1000.
+      rebuyLimit: 5,
+      rebuyCoins: 2500,
       playgroundJackpotSeedWei: '4200',
       walletEncryptionKey: 'test-wallet-key',
       spectatorMode: 'archive',

@@ -11,8 +11,8 @@
  *  - "points" = the value of the cards left in a seat's hand at game end
  *    (engine `getHandValues`; the winner emptied their hand → 0 points).
  *  - The BOTTOM half of the table LOSES coins equal to their points, with a floor
- *    per finishing place (3rd ≥ 40, 4th ≥ 60). Their combined loss, PLUS the pooled
- *    entry pot, is what the winners share.
+ *    per finishing place (3rd ≥ 40, 4th ≥ 60, 5th ≥ 80, 6th ≥ 100). Their combined
+ *    loss, PLUS the pooled entry pot, is what the winners share.
  *  - The TOP half WINS, splitting that pot so the seat with FEWER points takes the
  *    bigger share (the wider the point gap, the wider the coin gap).
  *  - Capped so nobody drops below 0 (bankruptcy): a loser never forfeits more than
@@ -27,8 +27,21 @@ export const STARTING_COINS = 1000;
 /** Cost, in coins, to take a seat at a table. */
 export const PLAYGROUND_ENTRY_COINS = 10;
 
-/** Minimum a losing seat forfeits, by finishing place (multiplier removed → ×1). */
-export const LOSS_FLOOR_BY_PLACE: Readonly<Record<number, number>> = { 3: 40, 4: 60 };
+/**
+ * Minimum a losing seat forfeits, by finishing place (multiplier removed → ×1).
+ *
+ * Sub-spec 18 (D109) continues the +20 progression to places 5 and 6. Tables were
+ * fixed at four seats when this was written, so 5 and 6 could not occur and were
+ * simply absent — which meant `?? 0`, i.e. NO floor at all. Once a table can seat
+ * six, an unfloored 5th/6th place makes the worst finishes on the biggest tables
+ * the cheapest ones to take, inverting the gradient the 40/60 pair establishes.
+ */
+export const LOSS_FLOOR_BY_PLACE: Readonly<Record<number, number>> = {
+  3: 40,
+  4: 60,
+  5: 80,
+  6: 100,
+};
 
 /** Smoothing for the winners' split; larger → splits stay closer to even. */
 export const COIN_SPLIT_SMOOTHING = 20;

@@ -77,6 +77,24 @@ CREATE TABLE IF NOT EXISTS competition_entries (
   PRIMARY KEY (competition_id, agent_id)
 );
 
+-- Rebuys taken, per agent per season (sub-spec 18, T63/D101).
+--
+-- Keyed by competition on purpose: a competition IS a season (see the comment on
+-- `competitions`), so "the count resets when the season ends" needs no reset job
+-- and no scheduled task that could fail or be forgotten — a new season simply has
+-- no rows yet. An absent row means zero rebuys used, so nothing needs back-filling.
+--
+-- Deliberately NOT a column on `agents` (that would need an explicit rollover) and
+-- NOT folded into `competition_entries` (that table records a PAYMENT; overloading
+-- it with a play-credit counter conflates two different meanings).
+CREATE TABLE IF NOT EXISTS agent_rebuys (
+  competition_id TEXT NOT NULL REFERENCES competitions(id),
+  agent_id       TEXT NOT NULL REFERENCES agents(id),
+  used           INTEGER NOT NULL DEFAULT 0,
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (competition_id, agent_id)
+);
+
 -- The FIRST Rainbow Storm of a competition — claims the jackpot (sub-spec 08 D6).
 -- One row per competition; provably fair against that session's commit-revealed seed.
 CREATE TABLE IF NOT EXISTS jackpot_events (

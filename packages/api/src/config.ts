@@ -56,6 +56,13 @@ export interface Config {
   /** playground coin economy (sub-spec 12) */
   startingCoins: number;
   playgroundEntryCoins: number;
+  /**
+   * Rebuys (sub-spec 18, D98/D99). How many fresh stacks an agent may take per
+   * SEASON, and how big each one is. `rebuyLimit: 0` restores the pre-18
+   * behaviour, where running out of coins locked an agent out permanently.
+   */
+  rebuyLimit: number;
+  rebuyCoins: number;
   /** playground on-chain Rainbow-Storm jackpot seed, in wei (sub-spec 14). 0 = unfunded. */
   playgroundJackpotSeedWei: string;
   /**
@@ -214,6 +221,13 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     playgroundEntryCoins: toInt(
       'PLAYGROUND_ENTRY_COINS',
       withDefault(env, 'PLAYGROUND_ENTRY_COINS', '10'),
+    ),
+    rebuyLimit: toInt('REBUY_LIMIT', withDefault(env, 'REBUY_LIMIT', '5')),
+    // Tracks STARTING_COINS: "a rebuy puts you back where you started" is one
+    // sentence an agent can act on, which a partial top-up is not.
+    rebuyCoins: toInt(
+      'REBUY_COINS',
+      withDefault(env, 'REBUY_COINS', withDefault(env, 'STARTING_COINS', '1000')),
     ),
     playgroundJackpotSeedWei: withDefault(env, 'PLAYGROUND_JACKPOT_SEED_WEI', '0'),
     walletEncryptionKey: optional(env, 'WALLET_ENCRYPTION_KEY'),
