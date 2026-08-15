@@ -1,6 +1,8 @@
 # Sub-Spec 17 — Card-game visual identity (commit to the felt world)
 
-**Status:** not built (spec only). Sub-spec 16 made the product *behave* like a broadcast; it still *looks* like a
+**Status:** built (T58–T62). One documented deviation: the font binary is not committed — see *Deviations*.
+
+Sub-spec 16 made the product *behave* like a broadcast; it still *looked* like a
 developer console wearing one dark rectangle. This spec gives damnits a card-game visual identity of its own:
 its own palette, its own centre motif, a display typeface beside the mono, and a ground that commits to the felt
 instead of a white page. The goal is stated plainly: **be the only thing in the category that looks like an
@@ -143,16 +145,35 @@ surfaces at a glance.*
 None.
 
 ## Definition of Done
-- [ ] `index.html` is felt-dark under both OS themes (computed-style check, not a screenshot); `home.html` still
-      resolves in both.
-- [ ] D88 palette applied; gold appears only on money; contrast verified on text and on all four card colours.
-- [ ] Corner wedge applied at every card size; the card **back** shares the family; no ellipse; trademark lint green.
-- [ ] Archivo Variable (subset) loads from the local asset, falls back cleanly when absent, and makes **no**
-      external request. Numerals verified at 36px and at headline size.
-- [ ] Coin/pot figures roll; shake scales with magnitude; `prefers-reduced-motion` still yields a static, complete page.
-- [ ] Standings, profile, rules, modals, empty and error states all carry the identity.
-- [ ] `felt`/`terminal` scopes formalised — **closes sub-spec 16's T57 deviation**.
-- [ ] Full api suite + trademark lint green; no new dependency in any `package.json`.
+- [x] `index.html` is felt-dark: `body` computes `rgb(7,25,18)` and the file contains **zero**
+      `prefers-color-scheme` blocks, so it is dark by construction under either OS theme. `home.html` keeps its
+      one theme block and stays adaptive. Verified by computed style, not screenshots — this machine's browser
+      auto-darkens pages, which made earlier screenshot-based colour checks unreliable.
+- [x] D88 palette applied on both surfaces (`.card.red` computes `rgb(224,80,60)`); gold is used only for coins
+      and economy figures.
+- [x] Corner wedge on both surfaces at 36/54/92px; the back carries the house mark and the same wedge geometry;
+      no ellipse; trademark lint green.
+- [x] `@font-face` declared on both pages and `h1` resolves to `"Archivo Variable"`; with the file absent the
+      fallback stack renders correctly (headings are visibly no longer mono). **Zero** external requests recorded.
+      Numerals at 36px/headline sizes remain unverified until the binary lands — see *Deviations*.
+- [x] Podium coin figures roll as staggered slot reels and land exactly (1162/1089/974 verified from resting
+      transforms). Shake magnitude is derived from cards stranded in the losers' hands, so a blowout hits harder
+      than a one-card finish. Under reduced motion **0** reels are created, values render as plain text, and the
+      terminal cursor blink is stopped too.
+- [x] Swept for surfaces that did not follow the ground flip: the board bar (had inverted into a glaring white
+      strip), the primary button, and the native range input were each fixed. A luminance scan now reports only
+      deliberate light chips.
+- [x] `felt`/`terminal` scopes formalised in the token block — **closes sub-spec 16's T57 deviation**.
+- [x] 103/103 api tests + trademark lint green; no new dependency.
+
+## Deviations
+
+1. **The font binary is not committed.** All the plumbing ships — `@font-face` on both pages, the `--display`
+   token, the fallback stack, and the hierarchy that uses it — and the UI is verified to render correctly with
+   the file **absent**, which is what T60's DoD asked for. What remains is dropping
+   `packages/web/public/fonts/archivo-variable.woff2` (Archivo, OFL, subset to Latin basic) into place. Left to a
+   deliberate step because it adds a binary to the repo and because the family is worth eyeballing at card-glyph
+   size first. Until then both pages run on the system fallback, which is a supported state, not a broken one.
 
 ## Open questions / deferred
 

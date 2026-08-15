@@ -11,26 +11,68 @@
          headers rather than from cards-with-shadows. One dark surface only
          (the felt), so the live table is the thing your eye lands on.
          ------------------------------------------------------------------ */
+      /* ===================================================================
+         Sub-spec 17 — the felt world.
+
+         D90: the battleground is the GAME surface, so it commits to a
+         felt-dark ground. Single-theme on purpose: this page had no
+         prefers-color-scheme block at all and rendered a hard #faf9f5, i.e.
+         a white page with one dark rectangle on it. A dark-mode block alone
+         would still leave anyone on a light OS looking at a white game.
+         (home.html stays adaptive — it is the front door, and a lit table on
+         paper reads as a stage.)
+
+         D95/D78: two scopes that COMPOSE, not compete.
+           felt     → ground, identity, colour, motion
+           terminal → type, density, alignment
+         The token names below are unchanged from the light era on purpose:
+         every rule in this file already speaks them, so re-pointing the
+         values flips the world without touching a thousand declarations.
+         =================================================================== */
       :root {
-        --paper: #faf9f5;
-        --paper-2: #f4f2ec;
-        --surface: #ffffff;
-        --ink: #16150f;
-        --ink-2: #3d3b33;
-        --muted: #8d8a7e;
-        --faint: #b6b2a4;
-        --line: #e2dfd4;
-        --line-2: #cdc9ba;
-        --live: #2f8f4e;
-        --live-bg: #d9f0dd;
-        --felt: #1d4d33;
-        --felt-2: #17402a;
+        /* felt scope — the ground */
+        --paper: #071912;          /* the room */
+        --paper-2: #0a2419;        /* recessed strips */
+        --surface: #0d2f20;        /* raised panels */
+        --ink: #f1f7f3;            /* chalk */
+        --ink-2: #c3dbcd;
+        --muted: #9cc4ad;
+        --faint: #6d9480;
+        --line: #17402a;
+        --line-2: #245b3d;
+        --live: #6fd68f;
+        --live-bg: #0f3a25;
+        --felt: #113d28;
+        --felt-2: #071912;
         --felt-line: #2f6b48;
-        --c-red: #c2503f;
-        --c-blue: #3a6ea8;
-        --c-green: #3d8552;
-        --c-yellow: #c99a25;
+
+        /* D88 — our four, shifted from both the famous set and the old muted
+           tokens: enough to be ours, saturated enough to read as a game on felt. */
+        --c-red: #e0503c;
+        --c-yellow: #f2b826;
+        --c-green: #46b169;
+        --c-blue: #3f86d6;
+
+        /* D89 — gold is money and nothing else. Never a playing colour, so
+           value never competes with the four card colours. */
+        --gold: #ffcf4d;
+
+        /* terminal scope — type, density, alignment. D96 puts a display face
+           beside the mono; see the @font-face block below. */
         --mono: "Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --display: "Archivo Variable", "Archivo", "Futura", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+      }
+
+      /* D91/D92/D96 — one self-hosted variable face. A static asset, not a
+         build step: no bundler, no install, no third-party request at runtime.
+         Deliberately NOT a font CDN — that is a live network dependency that
+         can fail in front of a judge. The whole UI is designed to hold on the
+         fallback stack, so a missing file degrades rather than breaks. */
+      @font-face {
+        font-family: "Archivo Variable";
+        src: url("/fonts/archivo-variable.woff2") format("woff2-variations");
+        font-weight: 100 900;
+        font-display: swap;
       }
       * { box-sizing: border-box; }
       /* A class with `display` outranks the UA's [hidden] rule, so hidden panels
@@ -144,8 +186,15 @@
       .sec > .status { order: 3; }
       .sec::after { order: 2; }
 
-      h1 { font-size: 40px; line-height: 1.1; letter-spacing: -1.5px; margin: 0 0 14px; font-weight: 700; }
-      h2 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.5px; font-weight: 700; }
+      /* T60 — exaggerated hierarchy. Mono stays the voice of the machine
+         (ids, logs, hashes, the join command); the display face carries
+         anything a human reads for meaning: titles, scores, stakes. One
+         uniform 13px for everything was the flattest thing about the old page. */
+      h1 {
+        font-family: var(--display); font-size: clamp(38px, 6vw, 62px); line-height: .98;
+        letter-spacing: -2.2px; margin: 0 0 14px; font-weight: 800;
+      }
+      h2 { font-family: var(--display); font-size: 26px; margin: 0 0 6px; letter-spacing: -1px; font-weight: 800; }
       .lede { color: var(--ink-2); margin: 0 0 26px; }
       .sub { color: var(--muted); margin: 0 0 18px; }
       .label { font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--muted); }
@@ -174,7 +223,12 @@
       @media (max-width: 860px) { .cols-3, .cols-2, .cols-4 { grid-template-columns: 1fr 1fr; } }
       /* tournament economics header (sub-spec 13) */
       #tourn-econ { margin-bottom: 24px; }
-      .econ-v { font-size: 25px; font-weight: 700; letter-spacing: -.6px; margin: 6px 0 3px; }
+      /* Economy figures are money — display face, gold, and big (D89). */
+      .econ-v {
+        font-family: var(--display); font-size: 30px; font-weight: 800;
+        letter-spacing: -1px; margin: 6px 0 3px; color: var(--gold);
+        font-variant-numeric: tabular-nums;
+      }
       .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
       .dotted { border-top: 1px dotted var(--line-2); }
 
@@ -190,10 +244,10 @@
 
       /* ---- buttons ---- */
       button.primary {
-        background: var(--ink); color: var(--paper); border: 1px solid var(--ink);
+        background: var(--live); color: #072314; border: 1px solid var(--live);
         padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer;
       }
-      button.primary:hover { background: #000; }
+      button.primary:hover { background: #86e5a3; border-color: #86e5a3; }
       button.ghost, select.ghost {
         background: transparent; color: var(--ink); border: 1px solid var(--line-2);
         padding: 7px 13px; font: inherit; cursor: pointer;
@@ -221,8 +275,13 @@
 
       /* ---- the felt: the one dark surface ---- */
       .board { border: 1px solid var(--ink); background: var(--surface); }
+      /* Was ink-on-paper, i.e. a dark bar on a light page. Re-pointing the
+         tokens inverted it into a glaring white strip above the felt, so it
+         gets explicit felt values: the table should read continuously from
+         bar to baize, like a broadcast lower-third rather than a title bar. */
       .board-bar {
-        background: var(--ink); color: var(--paper); padding: 6px 12px;
+        background: var(--paper-2); color: var(--ink-2); padding: 7px 12px;
+        border-bottom: 1px solid var(--line);
         font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
         display: flex; align-items: center; gap: 10px;
       }
@@ -279,6 +338,17 @@
          terminal-scope TYPOGRAPHY (mono, tabular-nums, dense rows). The two
          scopes compose — they are not alternatives. */
       .agent-cell { display: inline-flex; align-items: center; gap: 8px; }
+
+      /* T61 / layer 3 — slot-reel digits. One column per digit; the strip
+         holds 0-9 and slides to the right one. Height is locked to 1em so the
+         reel occupies exactly the space the plain number would. */
+      .reel { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; }
+      .reel-col { display: inline-block; height: 1em; overflow: hidden; line-height: 1; }
+      /* The resting position is an inline transform; the entrance is a WAAPI
+         animation through the motion helper, so it inherits the budget, the
+         cancellation and the reduced-motion kill switch. */
+      .reel-strip { display: flex; flex-direction: column; line-height: 1; }
+      .reel-sep { display: inline-block; }
       /* the seat whose turn it is gets a live ring, not just a border colour */
       .seat.active .av { box-shadow: 0 0 0 2px rgba(111,214,143,.85); }
       .seat.winner .av { box-shadow: 0 0 0 2px rgba(226,192,90,.9); }
@@ -415,7 +485,13 @@
         transition: transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .18s;
       }
       .hand .card:hover { transform: translateY(-9px); z-index: 4; box-shadow: 0 10px 20px rgba(0,0,0,.46); }
-      @media (prefers-reduced-motion: reduce) { .hand .card { transition: none; } }
+      /* The JS motion layer honours this via motion.reduced(); these are the
+         purely-CSS movers that would otherwise keep running regardless —
+         including the terminal cursor, which blinks on a keyframe loop. */
+      @media (prefers-reduced-motion: reduce) {
+        .hand .card { transition: none; }
+        .cursor { animation: none; }
+      }
 
       /* ---- cards: rounded, white-edged, paper-faced (matches the homepage) ---- */
       .card {
@@ -426,12 +502,16 @@
         border: 2px solid #fff; border-radius: 5px;
         box-shadow: 0 4px 10px rgba(0,0,0,.32);
       }
-      /* Centre motif: a diagonal band, deliberately NOT an ellipse — the oval is
-         the genre's best-known brand's trade dress, and rule #2 forbids
-         imitating it. The band echoes the any-colour gradient below. */
+      /* D87 — the corner wedge. Two opposed corner triangles behind the glyph.
+         Deliberately NOT an ellipse: the oval is the genre's best-known brand's
+         trade dress and rule #2 forbids imitating it, while the wedge echoes
+         the four-colour split we already use for any-colour cards. Chosen over
+         a band and an arc because it survives the 36px replay face. */
       .card::before {
         content: ""; position: absolute; inset: 0; border-radius: 3px; pointer-events: none;
-        background: linear-gradient(116deg, transparent 40%, rgba(255,255,255,.20) 40% 60%, transparent 60%);
+        background:
+          linear-gradient(225deg, rgba(255,255,255,.26) 0 34%, transparent 34%),
+          linear-gradient(45deg, rgba(0,0,0,.15) 0 34%, transparent 34%);
       }
       /* Corner index + large centre glyph: the convention that keeps a value
          readable while cards overlap in a hand. */
@@ -453,12 +533,26 @@
           var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
         color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55);
       }
-      /* face-down: a woven back, so a hidden hand still reads as cards */
+      /* D97 — the back is a designed surface, not filler. It is the most
+         REPEATED graphic on screen (opponents' hands are face-down, ~5-7 backs
+         x 3 opponents) and the only surface with no functional constraint and
+         no trade dress exposure — the cheapest identity in the product. It
+         echoes the face's wedge so both read as one deck. */
       .card.back {
-        background: repeating-linear-gradient(116deg, #17402a 0 5px, #1f5637 5px 10px);
-        color: #8fc0a4;
+        background:
+          linear-gradient(225deg, rgba(111,214,143,.30) 0 34%, transparent 34%),
+          linear-gradient(45deg, rgba(111,214,143,.30) 0 34%, transparent 34%),
+          radial-gradient(circle at 50% 50%, #24704a 0%, #123a26 78%);
+        color: rgba(226,244,233,.62);
+        border-color: rgba(255,255,255,.85);
       }
-      .card.back::before { background: none; }
+      .card.back::before {
+        /* the house mark, centred — the brand glyph from the site header */
+        content: "▚"; display: flex; align-items: center; justify-content: center;
+        background: none; font-size: 13px; color: rgba(226,244,233,.5);
+      }
+      .card.back.lg::before { font-size: 19px; }
+      .card.back .mid { display: none; }
       .card.lg { width: 54px; height: 76px; font-size: 10.5px; border-radius: 7px; }
       .card.lg .mid.n { font-size: 26px; letter-spacing: -1px; }
       .card.lg .mid.g { font-size: 23px; }
@@ -485,7 +579,9 @@
       .ev.big { background: #fbf7e8; margin: 0 -12px; padding: 5px 12px; }
 
       .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border-top: 1px solid var(--line); }
-      input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--ink); }
+      /* The native control paints its own white track on dark — colour-scheme
+         tells the UA to render its built-in widgets for a dark ground. */
+      input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--live); color-scheme: dark; }
       .empty { color: var(--muted); padding: 34px; text-align: center; font-size: 12.5px; }
 
       /* ---- copy block ---- */
@@ -936,6 +1032,7 @@
           if (!el || !el.animate || reduced()) return null;
           const anim = el.animate(frames, {
             duration: Math.min(o.duration || 240, MAX),
+            delay: o.delay || 0,          // stagger, e.g. per-digit reel columns
             easing: o.easing || EASE,
             fill: 'none',
           });
@@ -958,7 +1055,76 @@
             { transform: 'translate(0,0) rotate(0) scale(1)', opacity: 1 },
           ], { duration: (opts && opts.duration) || 300 });
         }
-        return { run, flyFrom, cancelAll, reduced, MAX, EASE };
+        /**
+         * T61 / layer 4 — proportional shake. Magnitude is a DATA channel:
+         * the reader feels how big the moment was before parsing a number.
+         * `mag` is 0..1; anything below the floor doesn't shake at all, so
+         * ordinary events stay calm and big ones land.
+         */
+        function shake(el, mag) {
+          if (!el || reduced() || mag <= 0.15) return null;
+          const px = 2 + Math.round(Math.min(1, mag) * 7);
+          const deg = 0.2 + Math.min(1, mag) * 0.7;
+          return run(el, [
+            { transform: 'translate(0,0) rotate(0)' },
+            { transform: 'translate(' + -px + 'px,' + Math.round(px / 2) + 'px) rotate(' + -deg + 'deg)', offset: 0.2 },
+            { transform: 'translate(' + px + 'px,' + -Math.round(px / 2) + 'px) rotate(' + deg + 'deg)', offset: 0.5 },
+            { transform: 'translate(' + -Math.round(px / 2) + 'px,1px) rotate(' + (-deg / 2) + 'deg)', offset: 0.78 },
+            { transform: 'translate(0,0) rotate(0)' },
+          ], { duration: 300, easing: 'cubic-bezier(.36,.07,.19,.97)' });
+        }
+
+        /**
+         * T61 / layer 3 — slot-reel digits. Each column carries 0-9 and is
+         * translated to its digit on a staggered delay, so the figure lands
+         * left-to-right instead of swapping atomically.
+         *
+         * Reserved for PROMINENT figures (podium coins, the jackpot). Dense
+         * table rows keep a plain write: N rows x 4 reels is noise, not juice,
+         * and it costs layout on every poll.
+         */
+        function rollTo(el, value, suffix) {
+          if (!el) return;
+          const text = String(value);
+          if (reduced() || !el.animate) { el.textContent = text + (suffix || ''); return; }
+          if (el.dataset.rolled === text) return;      // idempotent across polls
+          el.dataset.rolled = text;
+          el.innerHTML = '';
+          el.classList.add('reel');
+          text.split('').forEach((ch, i) => {
+            const col = document.createElement('span');
+            if (!/[0-9]/.test(ch)) { col.className = 'reel-sep'; col.textContent = ch; el.appendChild(col); return; }
+            col.className = 'reel-col';
+            const strip = document.createElement('span');
+            strip.className = 'reel-strip';
+            for (let d = 0; d <= 9; d++) {
+              const s = document.createElement('span');
+              s.textContent = String(d);
+              strip.appendChild(s);
+            }
+            // The resting state is written inline, then we animate INTO it —
+            // same pattern as the card flight. A CSS transition here proved
+            // fragile (it depends on the browser seeing a start style before
+            // the end style, which a re-render can defeat), and it would also
+            // bypass the motion budget and kill switch that D94 requires.
+            const rest = 'translateY(' + (-10 * Number(ch)) + '%)';
+            strip.style.transform = rest;
+            col.appendChild(strip);
+            el.appendChild(col);
+            run(strip, [
+              { transform: 'translateY(0)' },
+              { transform: rest },
+            ], { duration: 300, delay: i * 55, easing: 'cubic-bezier(.28,1.28,.5,1)' });
+          });
+          if (suffix) {
+            const s = document.createElement('span');
+            s.className = 'reel-sep';
+            s.textContent = suffix;
+            el.appendChild(s);
+          }
+        }
+
+        return { run, flyFrom, cancelAll, reduced, shake, rollTo, MAX, EASE };
       })();
 
       // ---- T54: derived agent identity (sub-spec 16, D77) ------------------
@@ -1322,11 +1488,21 @@
           ], { duration: 200 });
         } else if (ev.type === 'RAINBOW_STORM') {
           stormFlash();
+          motion.shake(document.querySelector('.felt'), 1);   // the rarest event: full weight
         } else if (ev.type === 'GAME_ENDED') {
           const win = s.winner ? $('seats').querySelector('[data-agent="' + s.winner + '"]') : null;
           if (win) motion.run(win, [
             { transform: 'scale(1)' }, { transform: 'scale(1.05)', offset: 0.45 }, { transform: 'scale(1)' },
           ], { duration: 320 });
+          // T61 / layer 4: how decisive was it? Cards still stranded in the
+          // losers' hands is the magnitude the game itself provides — a blowout
+          // hits harder than a one-card finish. Real data, not a fixed effect.
+          let stranded = 0;
+          const hands = p.finalHands || {};
+          for (const a of Object.keys(hands)) {
+            if (a !== s.winner) stranded += (hands[a] || []).length;
+          }
+          motion.shake(document.querySelector('.felt'), Math.min(1, stranded / 18));
         }
       }
 
@@ -1654,6 +1830,12 @@
         renderPgJackpot();
         let rows = [];
         try { rows = (await get('/playground/standings')).standings || []; } catch (_) { rows = []; }
+        // Only rebuild when the standings actually moved. Without this the poll
+        // re-renders identical rows and the coin reels re-roll every few
+        // seconds, which reads as a glitch rather than as a result.
+        const sig = rows.map((r) => r.agentId + ':' + r.coins).join('|');
+        if (sig === state.coinsSignature && $('coins-rows').children.length) return;
+        state.coinsSignature = sig;
         $('coins-empty').hidden = rows.length > 0;
         $('coins-count').textContent = rows.length ? rows.length + ' ranked' : '';
 
@@ -1671,9 +1853,15 @@
             '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
             '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
               '<span class="label">coins</span>' +
-              '<div style="font-size:18px; font-weight:700">' + num(r.coins) + '</div>' +
+              '<div class="podium-coins" data-coins="' + r.coins + '"' +
+                ' style="font-size:26px; font-weight:800; color:var(--gold); letter-spacing:-.5px"></div>' +
             '</div>' +
           '</div>').join('');
+        // T61 / layer 3 — the three figures prominent enough to be worth a reel.
+        // D89: coins are money, so they are gold.
+        $('coins-podium').querySelectorAll('.podium-coins').forEach((el) => {
+          motion.rollTo(el, num(Number(el.dataset.coins)));
+        });
 
         $('coins-rows').innerHTML = rows.map((r, i) =>
           '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
