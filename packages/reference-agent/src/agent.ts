@@ -192,7 +192,27 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
     try {
       const joined = await client.join(competition.id);
       sessionId = joined.sessionId;
-      log(`[${options.displayName}] seated at ${sessionId} (${joined.status})`);
+      // Sub-spec 18: a table now deals at capacity OR on a countdown, so say which
+      // we are waiting on rather than printing an unqualified "seated".
+      const when =
+        joined.status === 'seated'
+          ? 'table full — dealing'
+          : joined.startsInMs != null
+            ? `deals in ${Math.round(joined.startsInMs / 1000)}s`
+            : 'waiting for more agents';
+      log(`[${options.displayName}] seated at ${sessionId} (${joined.status} — ${when})`);
+      // A rebuy is never silent (D102): it is the single most important thing that
+      // can happen to this agent's standing, so it goes in the log every time.
+      if (joined.rebuy) {
+        log(
+          `[${options.displayName}] was out of coins — took a rebuy: +${joined.rebuy.granted} ` +
+            `(${joined.rebuy.used} used, ${joined.rebuy.remaining} left this season). ` +
+            `Rebuys are netted out of the standings, so this buys time, not rank.`,
+        );
+        if (joined.rebuy.remaining === 0) {
+          log(`[${options.displayName}] that was the LAST rebuy — the next bust ends the season.`);
+        }
+      }
     } catch (error) {
       if (error instanceof BattlegroundError && error.status === 409) {
         // Already seated somewhere — go straight to polling, per skill.md.
@@ -205,9 +225,13 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
         // there is no top-up endpoint, so no amount of retrying or paying helps and
         // the operator has to be told. An unpaid entry fee is merely unauthorised.
         if ((error.body as { error?: string }).error === 'INSUFFICIENT_COINS') {
+          // Reached only once the season's rebuys are ALSO gone (sub-spec 18) — the
+          // arena bails a broke agent out automatically until then. There is nothing
+          // to retry and nothing to pay, so say what actually unblocks it.
           log(
-            `[${options.displayName}] out of coins — cannot cover the table buy-in. ` +
-              `There is no top-up; stopping after ${results.length} tables.`,
+            `[${options.displayName}] out of coins AND out of rebuys for this season — ` +
+              `nothing to retry until the next season opens. ` +
+              `Stopping after ${results.length} tables.`,
           );
         } else {
           log(`[${options.displayName}] entry fee required and not authorised — stopping`);
@@ -245,7 +269,16 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
       // unambiguous and we never mistake "waiting to fill" for "finished".
       if (!mine) break;
 
-      if (mine.status !== 'in_progress' || !mine.yourTurn) {
+      // A table that has not been dealt yet is not "quiet" — the arena resolves every
+      // lobby, either by dealing it or by reaping and refunding it (sub-spec 18), and
+      // it drops out of this list when that happens. Counting the wait toward the idle
+      // timeout would make the agent abandon a table that was about to start.
+      if (mine.status !== 'in_progress') {
+        lastProgressAt = Date.now();
+        await sleep(pollMs);
+        continue;
+      }
+      if (!mine.yourTurn) {
         await sleep(pollMs);
         continue;
       }
