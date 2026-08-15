@@ -1032,7 +1032,16 @@
       //        renders, so an interrupted replay can never strand a card
       //        mid-flight. This is what makes fast scrubbing safe.
       const motion = (function () {
-        const MAX = 320;
+        // D110 — every duration in this system is scaled by SLOWDOWN. At the
+        // original tuning a card crossed from a hand to the pile in 300ms, which
+        // reads as teleporting rather than as a move.
+        //
+        // Note this is NOT the replay speed control: that sets the gap BETWEEN
+        // events, while this is the movement WITHIN one. That is why slowing the
+        // replay to 0.5x never made the card itself any easier to follow — the
+        // card still crossed the felt in 300ms, it just waited longer to do it.
+        const SLOWDOWN = 1.25;
+        const MAX = Math.round(320 * SLOWDOWN);
         const EASE = 'cubic-bezier(.2,.75,.3,1)';
         const running = new Set();
         const reduced = () =>
@@ -1046,8 +1055,12 @@
           const o = opts || {};
           if (!el || !el.animate || reduced()) return null;
           const anim = el.animate(frames, {
-            duration: Math.min(o.duration || 240, MAX),
-            delay: o.delay || 0,          // stagger, e.g. per-digit reel columns
+            // Scaled here, once, so call sites keep their original tuning and
+            // stay in proportion to one another (D110).
+            duration: Math.min(Math.round((o.duration || 240) * SLOWDOWN), MAX),
+            // Staggers scale too, or a reel's columns bunch up against the
+            // slower movement they are meant to be offset from.
+            delay: Math.round((o.delay || 0) * SLOWDOWN),
             easing: o.easing || EASE,
             fill: 'none',
           });
