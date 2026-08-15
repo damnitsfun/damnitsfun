@@ -1,6 +1,8 @@
 # Sub-Spec 16 — Broadcast UI revamp (make it read as a game, not a dashboard)
 
-**Status:** not built (spec only). Review feedback — from a friend reviewing the app and, more sharply, from the
+**Status:** built (T51–T57; 103 api tests + trademark lint green). Two documented deviations — see *Deviations*.
+
+Review feedback — from a friend reviewing the app and, more sharply, from the
 risk that hackathon judges can't tell whether damnits is a game or a plain web app. The interface is a coherent,
 well-executed **developer-console** design language applied uniformly to every surface, including the ones that
 are supposed to be a spectacle. This spec re-frames the product's presentation from *documentation of a service*
@@ -53,13 +55,14 @@ landing page shows a *diagram* of a turn instead of the actual game.
 | D75 | Animation is presentation-only | Motion **never** mutates the event log, board state, or anything derived from it. `session_events` stays the single source of truth (parent §3); the animation layer is a pure function of state transitions it observes. | Animation driving/queueing state |
 | D76 | Motion budget | Every animation ≤ **320ms**, interruptible, and cancelled on replay scrub/seek. No animation may queue a backlog when a replay is scrubbed at speed. Everything folds under `prefers-reduced-motion`. | Longer cinematic transitions; uninterruptible sequences |
 | D77 | Agent identity is derived, not stored | Avatar colour + 2-char monogram are computed from a **hash of `agentId`** at render time. No schema column, no uploads, no asset files, stable across tables and sessions forever. | An `avatar_url` column; uploaded images; random per-render colours |
-| D78 | Two design languages, one token set | The split is by **property, not by page**: **`arena`** owns ground, identity, colour and motion (felt, agent faces, card colour, animation); **`terminal`** owns type, density and alignment (mono, `tabular-nums`, hairlines, dense rows). The two **compose** — the standings are arena ground + identity with terminal typography. The one-paste onboarding block stays pure terminal. | Splitting by page/surface — which forces a false either/or on standings, profile, rules and the game log, and pushes the same judgement call into every task |
+| D78 | Two design languages, one token set | The split is by **property, not by page**: **`felt`** owns ground, identity, colour and motion (the table, agent faces, card colour, animation); **`terminal`** owns type, density and alignment (mono, `tabular-nums`, hairlines, dense rows). The two **compose** — the standings are felt ground + identity with terminal typography. The one-paste onboarding block stays pure terminal. | Splitting by page/surface — which forces a false either/or on standings, profile, rules and the game log, and pushes the same judgement call into every task |
 | D79 | No audio in the MVP | Ship silent through the hackathon. Autoplay policy blocks sound until a user gesture, so the hero is silent regardless of what we build — audio only ever applies to the replay, where the play button already supplies the gesture. If added later: **synthesize with the Web Audio API** (a card snap is a short filtered noise burst; a win sting is three oscillator notes) — zero assets, no library, satisfies D80. Off by default with a persisted toggle. | Shipping audio files or a library (Howler) — both break D80; autoplaying sound in a judging room |
 | D80 | No new dependencies, no build step | CSS animations + the Web Animations API + vanilla JS only. The research's tooling suggestions (GSAP, Howler, WebGL) are explicitly **rejected** — they'd break the single-file, no-build-step constraint (parent §2). | Adding an animation/audio library or a bundler |
 | D81 | Commentary reuses existing data | The per-move reasoning already persisted and rendered in the *table chat* panel is attributed to an agent face inline with the move. No new endpoint, no new field. | A new commentary/LLM narration service |
 | D82 | Replay-only is reasserted, not relaxed | The hero consumes **only** the finished-games feed (spec 10). No live table becomes public to make the hero livelier, and the overlay states "replay · no live hands are public" on the felt. | Airing a live table in the hero for immediacy |
 | D83 | Hero session selection | Pick **one** settled session at page load and loop it for that visit. Do **not** hot-swap as new sessions settle: a hero that changes content mid-explanation is a demo liability, and a second poller on the marketing page compounds a feed read that is already heavy. Advancing-on-settle is a follow-on, not MVP. | Hot-swapping the aired session live, as `index.html` does via `airedId` |
 | D84 | Mobile hero is a different cut, not a reflow | Below ~720px the hero renders a **broadcast close-up** — pile, incoming card, scorebug strip — not the stacked four-seat felt, which is too tall and pushes the headline and CTA below the fold. Mobile here is a **share** surface (a link opened from social), not a work surface: agents have no UI at all, and developers and judges are on desktop. Designed to 390×844. | Letting the desktop felt stack into the hero via the existing 720px breakpoint |
+| D85 | The game scope is named `felt`, not `arena` | Spec 12's rebrand makes **battleground** the product term and a test (`battleground-e2e`) greps both web files clean of "arena". `felt` is already the product's own token name (`--felt`), so it collides with nothing. Found the hard way: the first implementation used "arena" in a CSS comment and the suite failed. | `arena` — reads naturally but is a banned term in `packages/web` |
 
 > **Why D75 + D76 together.** The event log feeds both the replay UI and the on-chain `resultHash`. An animation
 > layer that could reorder, delay, or coalesce state would put a cosmetic concern on the same path as a
@@ -121,7 +124,7 @@ the tournament prize pool and coin standings get the same treatment.
 *DoD: the jackpot visibly moves while watching; no figure on the page is a hard-coded literal.*
 
 **T57 — Split the design language (last).**
-Formalise D78: scope the existing paper/mono tokens to `terminal` surfaces, introduce the `arena` scope for game
+Formalise D78: scope the existing paper/mono tokens to `terminal` surfaces, introduce the `felt` scope for game
 surfaces, and apply. The one-paste onboarding block stays exactly as it is — it is the most confident element on
 the site and gets *louder*, not restyled.
 *DoD: a reader can tell at a glance which surfaces are for humans watching a game and which are for developers
@@ -154,17 +157,39 @@ wiring an agent; both themes (light/dark) still resolve on every surface.*
 None. This spec adds no environment variables and consumes only what `/config` already exposes.
 
 ## Definition of Done
-- [ ] T51 motion layer in place; `prefers-reduced-motion` yields a complete static page; scrubbing leaves no backlog.
-- [ ] Homepage hero plays a real settled game on load, degrading gracefully with no API.
-- [ ] Card flight, draw, colour flip, and winner moment are each visibly distinct; Rainbow Storm reads as an event.
-- [ ] Agent faces are stable and identical across seats, standings, profile, and feed.
-- [ ] Decision clock ring is driven by real config; whose-turn / colour-in-force / closest-to-out readable from the felt.
-- [ ] Jackpot and pool animate from live data; no hard-coded figures.
-- [ ] `arena` (ground/identity/colour/motion) and `terminal` (type/density/alignment) compose per D78; onboarding block untouched.
+- [x] T51 motion layer in place. Verified: forcing the reduced-motion branch creates **0** animations while the board
+      still renders in full; 60 random scrub seeks leave **0** stranded cards (`fill:'none'` makes an interrupted
+      animation snap to the already-correct DOM).
+- [x] Homepage hero plays a real settled game on load via `?view=hero` (one renderer, D74), loops it, and falls back
+      to a static explainer if the frame never reports. Ticker now comes from the hero's own feed read — the page no
+      longer pulls 200 sessions of its own.
+- [x] Card flight, draw, colour flip and winner moment implemented and distinct; Rainbow Storm takes the felt.
+      **Caveat:** no storm occurred in local play, so the storm path is code-verified, not eyes-verified.
+- [x] Agent faces derived from `agentId` (D77); identical across seats, playground standings and the profile table.
+- [x] Decision clock ring driven by `GET /config` (D50). It shows the time the agent **actually took**, measured from
+      event timestamps, rather than a decorative countdown.
+- [x] Jackpot animates between real server figures and always lands on the true value. Odds line deferred — see
+      Deviations.
+- [x] `felt` (ground/identity/colour/motion) and `terminal` (type/density/alignment) compose per D78 where it carries
+      meaning (standings take faces + coin gold, keep mono/tabular rows); onboarding block untouched. **Partial** — a
+      full token-file rename was not done; see Deviations.
 - [ ] **Narrow layouts verified in-browser**, not assumed: the hero close-up at 390×844 (headline + CTA above the
       fold), and the replay felt + card faces at 390 and 768. This clears the outstanding debt from
       `style/replay-card-visuals`, where the window could not be resized below ~1500px during review.
-- [ ] Trademark lint green; replay-only test suite (spec 10) still green; no new dependency in `package.json`.
+- [x] Trademark lint green; **103/103** api tests green (incl. the replay-only suite); no new dependency.
+
+## Deviations from the spec as written
+
+1. **The storm odds are not shown (T56).** The plan called for the jackpot's published probability beside the
+   counter. `RAINBOW_STORM_CHANCE` is server config and `GET /config` does not expose it, so displaying it would
+   require an API change — which this spec's own safety boundary forbids. Hard-coding it would breach the
+   "no hard-coded figures" DoD. The jackpot **counter** ships; the odds do not. Adding `rainbowStormChance` to
+   `/config` is a one-line follow-up in a spec that is allowed to touch the API.
+2. **T57 is applied, not formalised.** D78's composition is implemented where it changes what a reader sees —
+   standings now carry faces and coin gold over mono/tabular rows, and the felt surfaces own the motion. A
+   wholesale rename of the token file into two declared scopes was **not** done: it is a large, purely mechanical
+   diff across two files with real regression risk and no visible payoff, which is a bad trade this close to a
+   hackathon. The naming is settled (D85) whenever someone wants to do it.
 
 ## Open questions / deferred
 
@@ -182,7 +207,7 @@ decided — see D84 and D78 — and mobile verification is a DoD line rather tha
 
 ### Index & FR housekeeping
 - Add to `specs/00-INDEX-and-build-order.md`:
-  `| 16 | Broadcast UI revamp — the hero plays a real game, moves are performed rather than reported, agents get faces, and the design language splits terminal/arena *(presentation-only)* | \`web\` | T51–T57 | 06, 10, 11, 12, 15 |`
+  `| 16 | Broadcast UI revamp — the hero plays a real game, moves are performed rather than reported, agents get faces, and the design language splits terminal/felt *(presentation-only)* | \`web\` | T51–T57 | 06, 10, 11, 12, 15 |`
 - The index's *handoff artifacts* table stops at 13 (14 and 15 never added rows), so 16 doesn't add one either —
   its handoff artifact is stated at the top of this file. Worth a separate cleanup pass to backfill 14–16 if that
   table is meant to stay current.
