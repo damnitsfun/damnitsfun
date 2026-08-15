@@ -179,6 +179,16 @@ export interface PendingSession {
   legalMoves: Move[];
   deadlineMs: number | null;
   /**
+   * Milliseconds until a `lobby` deals, or null when it has no clock yet (still
+   * below the minimum) or has already dealt. Sub-spec 18 (D107): a polling agent
+   * has to be able to tell a table that is about to start from one that is stuck,
+   * or "wait" and "give up" look identical from the outside.
+   */
+  startsInMs: number | null;
+  /** Seats taken, and the minimum this table needs before its clock starts. */
+  seatsFilled: number;
+  seatsNeeded: number;
+  /**
    * The partial-information board this agent may observe (sub-spec 10 T32):
    * discard top, colour in force, direction, whose turn, every seat's hand
    * *count*, and the agent's own hand. `null` until the table has been dealt
@@ -1437,6 +1447,13 @@ export class Orchestrator {
     sessionId: string;
     status: 'lobby' | 'seated';
     seatIndex: number | null;
+    /**
+     * Milliseconds until this lobby deals, or null while it is still below the
+     * minimum and has no clock yet (sub-spec 18, D107). Agents previously could
+     * not tell "starting in 12s" from "stalled forever", which is what made them
+     * give up on a half-filled table.
+     */
+    startsInMs?: number | null;
     /** Present ONLY on the join that spent a rebuy (sub-spec 18, D102). */
     rebuy?: RebuyGrant;
   }> {
@@ -1528,14 +1545,36 @@ export class Orchestrator {
 
     // §5 reports the agent's seating, not the session row's lifecycle status:
     // 'seated' once the table is full and the match is under way, else 'lobby'.
+    // Fill-or-countdown (sub-spec 18, D104). A full table has nothing to gain by
+    // waiting, so it deals at once; otherwise the clock started by the Nth seat
+    // decides, and `tick` deals whoever is sitting when it expires.
     const seated = seatIndex.n + 1;
     if (seated >= session.table_size) {
       this.startSession(session.id);
       return { sessionId: session.id, status: 'seated', seatIndex: seatIndex.n, rebuy };
     }
 
+    // The countdown starts at the MINIMUM, not the first seat: the deadline then
+    // always finds a legal table, so there is no "expired but too few players"
+    // branch to get wrong. It is set once and never extended (D105) — a resetting
+    // timer would let a trickle of joiners hold a table open indefinitely.
+    let startsInMs: number | null = null;
+    if (seated >= this.config.tableMinSize) {
+      const existing = this.db
+        .prepare(`SELECT lobby_deadline_at FROM sessions WHERE id = ?`)
+        .get(session.id) as { lobby_deadline_at: number | null } | undefined;
+      let deadline = existing?.lobby_deadline_at ?? null;
+      if (deadline === null) {
+        deadline = this.clock() + this.config.lobbyCountdownMs;
+        this.db
+          .prepare(`UPDATE sessions SET lobby_deadline_at = ? WHERE id = ?`)
+          .run(deadline, session.id);
+      }
+      startsInMs = Math.max(0, deadline - this.clock());
+    }
+
     this.db.prepare(`UPDATE sessions SET status = 'lobby' WHERE id = ?`).run(session.id);
-    return { sessionId: session.id, status: 'lobby', seatIndex: seatIndex.n, rebuy };
+    return { sessionId: session.id, status: 'lobby', seatIndex: seatIndex.n, startsInMs, rebuy };
   }
 
   /**
@@ -1675,17 +1714,27 @@ export class Orchestrator {
     if (open) return open;
 
     const id = newSessionId();
+    // A new lobby is created at CAPACITY (sub-spec 18): `table_size` is the fill
+    // limit while the row is a lobby, and is rewritten at deal time to the seats
+    // actually filled. The query above therefore keeps meaning "a lobby with room".
     this.db
       .prepare(
-        `INSERT INTO sessions (id, competition_id, status, table_size) VALUES (?, ?, 'lobby', ?)`,
+        `INSERT INTO sessions (id, competition_id, status, table_size, lobby_opened_at)
+         VALUES (?, ?, 'lobby', ?, ?)`,
       )
-      .run(id, competition.id, this.config.tableSize);
+      .run(id, competition.id, this.config.tableMaxSize, this.clock());
     return this.db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(id) as SessionRow;
   }
 
   /** Deal the table: commit a seed, construct the GameSession, start the clock. */
   private startSession(sessionId: string): void {
     const seats = this.seatsOf(sessionId);
+    // Freeze the size this table actually dealt at (sub-spec 18). Until now the
+    // row carried the lobby's CAPACITY; a countdown deal fills fewer seats than
+    // that, and the spectator feed and replay both read this to lay out the felt.
+    this.db
+      .prepare(`UPDATE sessions SET table_size = ?, lobby_deadline_at = NULL WHERE id = ?`)
+      .run(seats.length, sessionId);
     // Commit-reveal (spec 05): the commitment is published before play; the seed
     // itself is only exposed once the session is settled. The commitment uses the
     // SAME scheme the escrow verifies (keccak256), so the recorded value and the
@@ -1736,23 +1785,37 @@ export class Orchestrator {
     // A settled table drops out of this list — that is the "it is over" signal.
     const rows = this.db
       .prepare(
-        `SELECT s.id, s.status FROM sessions s
+        `SELECT s.id, s.status, s.lobby_deadline_at AS lobbyDeadline,
+                (SELECT COUNT(*) FROM session_players q WHERE q.session_id = s.id) AS seated
+           FROM sessions s
            JOIN session_players p ON p.session_id = s.id
           WHERE p.agent_id = ? AND s.status IN ('lobby','seated','in_progress')`,
       )
-      .all(agentId) as Array<{ id: string; status: 'lobby' | 'seated' | 'in_progress' }>;
+      .all(agentId) as Array<{
+      id: string;
+      status: 'lobby' | 'seated' | 'in_progress';
+      lobbyDeadline: number | null;
+      seated: number;
+    }>;
 
     const out: PendingSession[] = [];
     for (const row of rows) {
       const entry = this.live.get(row.id);
       if (!entry) {
-        // Seated but not yet dealt: nothing to decide yet, no board to observe.
+        // Seated but not yet dealt: nothing to decide yet, no board to observe —
+        // but DO say when the table will deal (sub-spec 18, D107). Without this an
+        // agent watching a lobby cannot tell a countdown from a dead table, and
+        // the only safe reading of an indefinite wait is to give up.
         out.push({
           sessionId: row.id,
           status: row.status,
           yourTurn: false,
           legalMoves: [],
           deadlineMs: null,
+          startsInMs:
+            row.lobbyDeadline === null ? null : Math.max(0, row.lobbyDeadline - this.clock()),
+          seatsFilled: row.seated,
+          seatsNeeded: this.config.tableMinSize,
           view: null,
         });
         continue;
@@ -1764,6 +1827,9 @@ export class Orchestrator {
         yourTurn,
         legalMoves: entry.game.getLegalMoves(agentId),
         deadlineMs: yourTurn ? Math.max(0, entry.deadlineAt - this.clock()) : null,
+        startsInMs: null,           // already dealt
+        seatsFilled: row.seated,
+        seatsNeeded: this.config.tableMinSize,
         view: entry.game.getPublicView(agentId),
       });
     }
@@ -1836,6 +1902,7 @@ export class Orchestrator {
    */
   tick(): void {
     const now = this.clock();
+    this.tickLobbies(now);
     for (const [sessionId, entry] of [...this.live]) {
       if (entry.game.isEnded) {
         this.settle(sessionId, entry);
@@ -1859,6 +1926,87 @@ export class Orchestrator {
       }
       this.afterMove(sessionId, entry);
     }
+  }
+
+  /**
+   * Lobby sweep (sub-spec 18, T66): deal expired countdowns, reap dead lobbies.
+   *
+   * `tick` only ever walked `this.live`, which holds *dealt* tables — so nothing
+   * in the system had ever looked at a lobby again after the join that created it.
+   * That is why a half-filled table waited forever and its buy-ins vanished with
+   * it; both are this method's job.
+   */
+  private tickLobbies(now: number): void {
+    const lobbies = this.db
+      .prepare(
+        `SELECT s.id,
+                s.lobby_deadline_at AS deadline,
+                s.lobby_opened_at AS openedAt,
+                (SELECT COUNT(*) FROM session_players p WHERE p.session_id = s.id) AS seated
+           FROM sessions s
+          WHERE s.status = 'lobby'`,
+      )
+      .all() as Array<{
+      id: string;
+      deadline: number | null;
+      openedAt: number | null;
+      seated: number;
+    }>;
+
+    for (const lobby of lobbies) {
+      // Deal: the clock has run out and the table is legal. `seated` is re-checked
+      // rather than trusted from the deadline being set, because the reaper below
+      // (or a future leave path) can take seats back out from under it.
+      if (
+        lobby.deadline !== null &&
+        now >= lobby.deadline &&
+        lobby.seated >= this.config.tableMinSize
+      ) {
+        this.startSession(lobby.id);
+        continue;
+      }
+
+      // Reap: still short of a legal table long after it opened. Refunding is the
+      // point — buy-ins are charged at join and only returned at settlement, so a
+      // lobby that never deals would otherwise destroy them outright.
+      if (
+        lobby.seated < this.config.tableMinSize &&
+        lobby.openedAt !== null &&
+        now - lobby.openedAt >= this.config.lobbyAbandonMs
+      ) {
+        this.abandonLobby(lobby.id);
+      }
+    }
+  }
+
+  /**
+   * Close a lobby that will never fill, returning every seat's buy-in.
+   *
+   * Archived rather than deleted: the id may already have been handed to an agent,
+   * and a row that vanishes is harder to explain than one that ended.
+   */
+  private abandonLobby(sessionId: string): void {
+    const close = this.db.transaction(() => {
+      const seats = this.db
+        .prepare(`SELECT agent_id FROM session_players WHERE session_id = ?`)
+        .all(sessionId) as Array<{ agent_id: string }>;
+      const refund = this.config.playgroundEntryCoins;
+      if (refund > 0) {
+        for (const seat of seats) {
+          this.db
+            .prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`)
+            .run(refund, seat.agent_id);
+        }
+      }
+      this.db.prepare(`DELETE FROM session_players WHERE session_id = ?`).run(sessionId);
+      this.db
+        .prepare(
+          `UPDATE sessions SET status = 'archived', lobby_deadline_at = NULL,
+                  ended_at = datetime('now') WHERE id = ?`,
+        )
+        .run(sessionId);
+    });
+    close();
   }
 
   private autoAction(game: GameSession, agentId: string): Move | null {

@@ -39,7 +39,12 @@ describe('battleground rename (T42)', () => {
     const res = await app.inject({ method: 'GET', url: '/api/battleground/config' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
+      // Sub-spec 18: TABLE_SIZE=4 in this env is the legacy fallback, so it
+      // pins both bounds and the table stays exactly four-handed.
+      tableMinSize: 4,
+      tableMaxSize: 4,
       tableSize: 4,
+      lobbyCountdownMs: 15000,
       startingHand: 7,
       decisionTimeoutMs: 3000,
       gameTimeLimitMs: 120000,

@@ -97,7 +97,12 @@ describe('battleground end-to-end walkthrough (T43)', () => {
 
     const cfg = await app.inject({ method: 'GET', url: '/api/battleground/config' });
     expect(cfg.json()).toEqual({
+      // Sub-spec 18: TABLE_SIZE=4 in this env is the legacy fallback, so it
+      // pins both bounds and the table stays exactly four-handed.
+      tableMinSize: 4,
+      tableMaxSize: 4,
       tableSize: 4,
+      lobbyCountdownMs: 15000,
       startingHand: 7,
       decisionTimeoutMs: 3000,
       gameTimeLimitMs: 3600000,

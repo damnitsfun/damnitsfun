@@ -113,7 +113,18 @@ CREATE TABLE IF NOT EXISTS sessions (
   id               TEXT PRIMARY KEY,
   competition_id   TEXT NOT NULL REFERENCES competitions(id),
   status           TEXT NOT NULL CHECK (status IN ('lobby','seated','in_progress','settled','archived')),
-  table_size       INTEGER NOT NULL DEFAULT 4,  -- fixed at 4 per Requirements §9.3
+  -- While the row is a lobby this holds the table's CAPACITY (TABLE_MAX_SIZE);
+  -- at deal time it is rewritten to the number of seats actually filled, so a
+  -- settled row always reports the size the game was really played at (18/D103).
+  table_size       INTEGER NOT NULL DEFAULT 4,
+  -- Epoch ms after which a lobby deals with whoever is seated. Set when the
+  -- TABLE_MIN_SIZE-th agent sits, and never reset by later joins (18/D104-D105).
+  lobby_deadline_at INTEGER,
+  -- Epoch ms the lobby opened, used by the reaper (18/D108). Deliberately stored
+  -- in the SAME clock domain as lobby_deadline_at — the orchestrator's injectable
+  -- clock — rather than derived from created_at's SQL `now`, so lobby ageing is
+  -- deterministic and testable instead of depending on the database's wall clock.
+  lobby_opened_at   INTEGER,
   seed_commit_hash TEXT,                        -- published before the match (commit-reveal)
   seed_reveal      TEXT,                        -- published after the match
   winner_agent_id  TEXT REFERENCES agents(id),

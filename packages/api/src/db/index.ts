@@ -32,6 +32,22 @@ function backfillAddedColumns(db: Db): void {
   addColumnIfMissing(db, 'sessions', 'commit_tx_hash', 'TEXT');
   addColumnIfMissing(db, 'sessions', 'settle_tx_hash', 'TEXT');
 
+  // Sub-spec 18: the lobby countdown. Null on every existing row, which is
+  // correct — a lobby that predates this column has no deadline until its next
+  // join sets one, and settled rows never read it.
+  addColumnIfMissing(db, 'sessions', 'lobby_deadline_at', 'INTEGER');
+  addColumnIfMissing(db, 'sessions', 'lobby_opened_at', 'INTEGER');
+
+  // Give any lobby that predates the column a fresh opening stamp. Without this
+  // the reaper skips them forever (it will not age a row it cannot date), and the
+  // half-filled lobbies this feature exists to clean up would be exactly the ones
+  // it never touched. They get a full abandon window from first boot, not less.
+  if (hasTable(db, 'sessions')) {
+    db.prepare(
+      `UPDATE sessions SET lobby_opened_at = ? WHERE status = 'lobby' AND lobby_opened_at IS NULL`,
+    ).run(Date.now());
+  }
+
   // Sub-spec 08 additions (pooled tournament + agent wallets).
   addColumnIfMissing(db, 'agents', 'wallet_address', 'TEXT');
 
@@ -59,6 +75,10 @@ function backfillAddedColumns(db: Db): void {
   // so CREATE TABLE IF NOT EXISTS in schema.sql handles it on any database.
   addColumnIfMissing(db, 'jackpot_events', 'tx_hash', 'TEXT');
   addColumnIfMissing(db, 'jackpot_events', 'amount_wei', 'TEXT');
+}
+
+function hasTable(db: Db, table: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as unknown[]).length > 0;
 }
 
 function addColumnIfMissing(db: Db, table: string, column: string, type: string): void {

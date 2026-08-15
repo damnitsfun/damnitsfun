@@ -52,7 +52,16 @@ export interface Config {
   decisionTimeoutMs: number;
   gameTimeLimitMs: number;
   rainbowStormChance: number;
-  tableSize: number;
+  /**
+   * Seating (sub-spec 18, D103–D106). Replaces the single `TABLE_SIZE`: a lobby
+   * fills to `tableMaxSize`, but deals as soon as `lobbyCountdownMs` expires with
+   * at least `tableMinSize` seated. A lobby still below the minimum after
+   * `lobbyAbandonMs` is reaped and its buy-ins refunded.
+   */
+  tableMinSize: number;
+  tableMaxSize: number;
+  lobbyCountdownMs: number;
+  lobbyAbandonMs: number;
   /** playground coin economy (sub-spec 12) */
   startingCoins: number;
   playgroundEntryCoins: number;
@@ -216,7 +225,19 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       'RAINBOW_STORM_CHANCE',
       withDefault(env, 'RAINBOW_STORM_CHANCE', '0.00001'),
     ),
-    tableSize: toInt('TABLE_SIZE', withDefault(env, 'TABLE_SIZE', '4')),
+    // TABLE_SIZE is honoured as the legacy fallback for BOTH bounds, so an
+    // existing deployment's .env keeps producing exactly the tables it did
+    // before until it opts into a range.
+    tableMinSize: toInt(
+      'TABLE_MIN_SIZE',
+      withDefault(env, 'TABLE_MIN_SIZE', withDefault(env, 'TABLE_SIZE', '3')),
+    ),
+    tableMaxSize: toInt(
+      'TABLE_MAX_SIZE',
+      withDefault(env, 'TABLE_MAX_SIZE', withDefault(env, 'TABLE_SIZE', '6')),
+    ),
+    lobbyCountdownMs: toInt('LOBBY_COUNTDOWN_MS', withDefault(env, 'LOBBY_COUNTDOWN_MS', '15000')),
+    lobbyAbandonMs: toInt('LOBBY_ABANDON_MS', withDefault(env, 'LOBBY_ABANDON_MS', '60000')),
     startingCoins: toInt('STARTING_COINS', withDefault(env, 'STARTING_COINS', '1000')),
     playgroundEntryCoins: toInt(
       'PLAYGROUND_ENTRY_COINS',
@@ -234,6 +255,24 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     spectatorMode: parseSpectatorMode(withDefault(env, 'SPECTATOR_MODE', 'delayed')),
     spectatorDelayMs: toInt('SPECTATOR_DELAY_MS', withDefault(env, 'SPECTATOR_DELAY_MS', '0')),
   };
+
+  // Seat bounds are checked at boot, not at deal time (sub-spec 18). The vendored
+  // engine throws "There must be 2 to 10 players" when a game is constructed, and
+  // a table that only fails once four agents have paid to sit is the worst place
+  // to discover a typo in an env file.
+  if (config.tableMinSize < 2) {
+    throw new ConfigError(`TABLE_MIN_SIZE must be at least 2, got ${config.tableMinSize}.`);
+  }
+  if (config.tableMaxSize > 10) {
+    throw new ConfigError(
+      `TABLE_MAX_SIZE must be at most 10 (the engine's limit), got ${config.tableMaxSize}.`,
+    );
+  }
+  if (config.tableMinSize > config.tableMaxSize) {
+    throw new ConfigError(
+      `TABLE_MIN_SIZE (${config.tableMinSize}) must not exceed TABLE_MAX_SIZE (${config.tableMaxSize}).`,
+    );
+  }
 
   return Object.freeze(config);
 }

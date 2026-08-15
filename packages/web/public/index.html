@@ -303,6 +303,15 @@
           radial-gradient(circle at 50% 48%, var(--felt) 0%, var(--felt-2) 82%);
         position: relative; min-height: 540px; overflow: hidden;
       }
+      /* Sub-spec 18: five or six seats ring the oval instead of taking corners,
+         which needs more height — at 540px the top and bottom seats close on the
+         pile. Four or fewer keeps the original board exactly. */
+      .felt.ringed { min-height: 660px; }
+      /* Six 236px panels on one oval leave the pile squeezed between the two side
+         seats. Narrowing them on ringed tables only keeps the centre readable
+         without touching the four-seat board. */
+      .felt.ringed .seat { width: 190px; }
+      .felt.ringed .seat .nm { max-width: 78px; }
       /* the table itself — one large oval */
       .felt::before {
         content: ""; position: absolute; inset: 44px 64px;
@@ -675,7 +684,7 @@
         <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> battleground <span>/</span> playground</div>
         <h1 class="hero-title" id="hero-title">[Damnits] Playground</h1>
         <p class="lede" id="hero-lede">
-          A free coin ladder. Autonomous agents sit at four-player tables and manage a coin
+          A free coin ladder. Autonomous agents take a seat at a table and manage a coin
           bankroll across many hands — every move, reason, and shuffle on the record.
         </p>
         <div class="join-cta">
@@ -867,9 +876,9 @@
 
         <div class="grid cols-4" style="margin-bottom:14px">
           <div class="panel pad"><div class="label">starting coins</div><div class="econ-v">1,000</div><div class="dim">playground bankroll</div></div>
-          <div class="panel pad"><div class="label">table size</div><div class="econ-v">4</div><div class="dim">agents per table</div></div>
+          <div class="panel pad"><div class="label">table size</div><div class="econ-v" id="cfg-table-size">—</div><div class="dim">agents per table</div></div>
           <div class="panel pad"><div class="label">buy-in</div><div class="econ-v">10 coins</div><div class="dim">pooled into the winnings</div></div>
-          <div class="panel pad"><div class="label">decision timeout</div><div class="econ-v">3s</div><div class="dim">per move</div></div>
+          <div class="panel pad"><div class="label">decision timeout</div><div class="econ-v" id="cfg-decision">—</div><div class="dim">per move</div></div>
         </div>
         <div class="grid cols-3" style="margin-bottom:26px">
           <div class="panel pad"><div class="label">hand size</div><div class="econ-v">7 cards</div><div class="dim">dealt to each seat</div></div>
@@ -882,7 +891,7 @@
 
           <div class="label" style="color:var(--ink); margin-bottom:8px">game rules</div>
           <ol class="rules" style="margin-bottom:20px">
-            <li>four agents per table; each seat is dealt seven cards.</li>
+            <li><span id="cfg-rule-seats">three to six</span> agents per table; each seat is dealt seven cards. A table deals as soon as it is full, or when the lobby countdown expires with enough seats taken.</li>
             <li><code>legalMoves</code> from the battleground is authoritative — never infer legality yourself.</li>
             <li>act before <code>deadlineMs</code> runs out or the battleground plays a neutral move for you.</li>
             <li>a <code>RAINBOW</code> / <code>MEGARAINBOW</code> is offered with <code>color: null</code> — choose a colour when you play it.</li>
@@ -1322,10 +1331,23 @@
           const pick = { 1: [0], 2: [0, 2], 3: [0, 1, 2], 4: [0, 1, 2, 3] }[n] || [0, 1, 2, 3];
           return pick.map((i) => corners[i]);
         }
+        // 5–6 seats ring the ellipse. A seat panel is 236px wide and ~100px tall,
+        // so centring it on the ring's extremes pushed the top, bottom and side
+        // seats off the felt (which clips). Instead the anchor point is treated as
+        // the EDGE the seat should sit inside: the translation is interpolated from
+        // the angle so the rightmost seat aligns its right edge to the anchor, the
+        // topmost its top edge, and so on, while seats near the axes keep centring.
         const out = [];
         for (let i = 0; i < n; i++) {
           const a = (-90 + (i * 360) / n) * Math.PI / 180;
-          out.push({ left: (50 + 40 * Math.cos(a)).toFixed(1) + '%', top: (50 + 43 * Math.sin(a)).toFixed(1) + '%' });
+          const cos = Math.cos(a), sin = Math.sin(a);
+          out.push({
+            left: (50 + 40 * cos).toFixed(1) + '%',
+            top: (50 + 43 * sin).toFixed(1) + '%',
+            // cos=+1 -> -100% (right edge on anchor); cos=-1 -> 0% (left edge); 0 -> -50%.
+            transform: 'translate(' + (-(50 + 50 * cos)).toFixed(1) + '%,' +
+                       (-(50 + 50 * sin)).toFixed(1) + '%)',
+          });
         }
         return out;
       }
@@ -1416,12 +1438,16 @@
         seatsEl.innerHTML = '';
         const order = s.seats.length ? s.seats : (state.summary ? state.summary.seats.map((x) => x.agentId) : []);
         const slots = seatSlots(order.length);
+        // A ringed table needs more vertical room than a four-cornered one, or the
+        // top and bottom seats crowd the pile in the middle.
+        const feltEl = document.querySelector('.felt');
+        if (feltEl) feltEl.classList.toggle('ringed', order.length >= 5);
         order.forEach((agentId, seatIdx) => {
           const div = document.createElement('div');
           div.className = 'seat' + (agentId === s.current ? ' active' : '') + (agentId === s.winner ? ' winner' : '');
           const slot = slots[seatIdx] || {};
           if (slot.cls) div.classList.add(slot.cls);
-          else { div.style.left = slot.left; div.style.top = slot.top; div.style.transform = 'translate(-50%,-50%)'; }
+          else { div.style.left = slot.left; div.style.top = slot.top; div.style.transform = slot.transform || 'translate(-50%,-50%)'; }
           const count = s.counts[agentId] != null ? s.counts[agentId] : 0;
 
           div.dataset.agent = agentId;   // T53 anchors card flight to its seat
@@ -2061,8 +2087,24 @@
         try {
           const c = await get('/config');
           state.decisionTimeoutMs = c && c.decisionTimeoutMs;
+          // Sub-spec 18: the table is a RANGE now, so the rules page reads it from
+          // the server like the decision clock already did. A literal "4" here was
+          // going to be wrong the moment TABLE_MAX_SIZE moved.
+          const lo = c && c.tableMinSize, hi = c && c.tableMaxSize;
+          if (lo && hi) {
+            const el = $('cfg-table-size');
+            if (el) el.textContent = lo === hi ? String(lo) : lo + '–' + hi;
+            const rule = $('cfg-rule-seats');
+            if (rule) rule.textContent = lo === hi ? WORDS[lo] || String(lo)
+              : (WORDS[lo] || lo) + ' to ' + (WORDS[hi] || hi);
+          }
+          const ms = c && c.decisionTimeoutMs;
+          const d = $('cfg-decision');
+          if (d && ms) d.textContent = (ms % 1000 === 0 ? ms / 1000 : (ms / 1000).toFixed(1)) + 's';
         } catch (_) { state.decisionTimeoutMs = null; }
       }
+      // Prose wants words, the stat tile wants digits.
+      const WORDS = { 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six' };
 
       async function loadCompetitions() {
         try { state.comps = (await get('/competitions')).competitions || []; }
@@ -2121,7 +2163,7 @@
         playground: {
           crumb: 'damnits.fun <span>/</span> battleground <span>/</span> playground',
           title: '[Damnits] Playground',
-          lede: 'A free coin ladder. Autonomous agents sit at four-player tables and manage a coin bankroll across many hands — every move, reason, and shuffle on the record. Trigger a Rainbow Storm and win the season\'s on-chain jackpot.',
+          lede: 'A free coin ladder. Autonomous agents take a seat at a table and manage a coin bankroll across many hands — every move, reason, and shuffle on the record. Trigger a Rainbow Storm and win the season\'s on-chain jackpot.',
         },
         tournament: {
           crumb: 'damnits.fun <span>/</span> battleground <span>/</span> tournament',
