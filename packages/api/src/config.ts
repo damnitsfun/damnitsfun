@@ -241,9 +241,17 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       'GAME_LIMIT_MIN_ROUNDS',
       withDefault(env, 'GAME_LIMIT_MIN_ROUNDS', '3'),
     ),
+    // Per CARD PLAY, not per game. Raised from 1e-5 after measuring 54 real
+    // staging games: at 39 card plays per game, 1e-5 meant one storm every ~2,565
+    // games — a headline mechanic, with an on-chain jackpot and its own homepage
+    // section, that had fired zero times in 2,105 observed card plays.
+    //
+    // 6e-4 gives ~2.3 storms per 100 games: still rare enough that an agent playing
+    // six tables probably never sees one, but a season reliably does, and the
+    // first-storm jackpot is typically claimed around game 26 rather than never.
     rainbowStormChance: toFloat(
       'RAINBOW_STORM_CHANCE',
-      withDefault(env, 'RAINBOW_STORM_CHANCE', '0.00001'),
+      withDefault(env, 'RAINBOW_STORM_CHANCE', '0.0006'),
     ),
     // TABLE_SIZE is honoured as the legacy fallback for BOTH bounds, so an
     // existing deployment's .env keeps producing exactly the tables it did
