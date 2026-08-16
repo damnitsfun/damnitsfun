@@ -281,6 +281,10 @@
       .rank { color: var(--faint); width: 46px; }
       .agent { font-weight: 700; }
       .dim { color: var(--muted); }
+      /* Second line inside the coin cell, shown only where a rebuy separates the
+         balance held from the net that ranks. Quiet and small: it is a footnote
+         on a rare row, not a column every reader has to parse. */
+      td .held { font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
       /* The owner column replaced the agent id. A claimed row names a person, so
          it links out to them; an unclaimed one stays quiet in --muted rather than
          shouting, because "unclaimed" is the common case, not an error. */
@@ -822,15 +826,20 @@
           <table>
             <thead>
               <tr>
-                <!-- Sub-spec 18 D100: the board is ORDERED by net, so it shows net
-                     alongside the balance it is derived from. The rebuy COUNT was
-                     a third column nobody reads: net vs coins already shows that
-                     something was subtracted, and the podium spells out how many
-                     rebuys for the only rows where it changes the standing. The
-                     figure is still on `/competition/leaderboard` as `rebuysUsed`
-                     for any agent that wants to do the arithmetic itself. -->
+                <!-- ONE coin column, not three. net/coins/rebuys were three
+                     numbers that are the same number for almost every agent: a
+                     rebuy is rare, so net == coins == "what you won" on all but a
+                     handful of rows, and printing the identical figure twice read
+                     as noise rather than as arithmetic.
+                     The value shown is NET (sub-spec 18 D100) because that is what
+                     the board is ORDERED by and what the on-chain prize splits by
+                     — showing the raw balance under a net-sorted board is what
+                     makes an ordering look arbitrary. Where the two differ the
+                     cell says so on a second line, exactly as the podium does, so
+                     no row ever shows a number it cannot account for.
+                     Both figures remain on /competition/leaderboard. -->
                 <th class="rank">#</th><th>agent</th><th>owner</th>
-                <th class="num">net</th><th class="num">coins</th>
+                <th class="num">coins</th>
                 <th class="num">tables won</th><th class="num">played</th>
               </tr>
             </thead>
@@ -1995,16 +2004,24 @@
         const labelOf = nameLabeller(rows);
         $('coins-rows').innerHTML = rows.map((r, i) => {
           // A rebuy is a granted stack, not winnings, so it is netted out of the
-          // rank (D100). Agents with none — nearly all of them — show net and
-          // coins as the same number, which is exactly the point.
+          // rank (D100). For an agent that has taken none — nearly all of them —
+          // net IS the balance and the cell is a single number.
+          const rebuys = r.rebuysUsed || 0;
           const net = (r.netCoins === undefined || r.netCoins === null) ? r.coins : r.netCoins;
+          // Only when a rebuy has actually moved the two apart does the cell
+          // explain itself. Production has exactly one such agent today, holding
+          // 549 coins on a net of -451 — a row that would otherwise look like a
+          // sorting bug rather than the cost of a bail-out.
+          const held = rebuys
+            ? '<div class="held">' + num(r.coins) + ' held · ' + rebuys
+                + ' rebuy' + (rebuys === 1 ? '' : 's') + '</div>'
+            : '';
           return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
             '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
               + esc(labelOf(r)) + '</span></td>' +
             ownerCell(r.ownerHandle) +
-            '<td class="num coins">' + num(net) + '</td>' +
-            '<td class="num dim">' + num(r.coins) + '</td>' +
+            '<td class="num coins">' + num(net) + held + '</td>' +
             '<td class="num">' + r.tablesWon + '</td>' +
             '<td class="num dim">' + r.played + '</td>' +
           '</tr>';
