@@ -62,6 +62,26 @@ export function newApiKey(): string {
   return `damnits_sk_${randomUUID().replace(/-/g, '')}${nanoid(8)}`;
 }
 
+/**
+ * A shuffle seed for one table's commit-reveal.
+ *
+ * Deliberately NOT `newApiKey()`, which is what produced it before. A seed is
+ * **published** — it is revealed on the public spectator feed at settlement so
+ * anyone can re-derive the deal — while an API key is the one string that must
+ * never be. Minting both from one function meant every settled game emitted a
+ * public value shaped exactly like a live credential, so a leaked key could not
+ * be told from a published seed by inspection, and secret scanners had no way to
+ * distinguish them either.
+ *
+ * The two also have no reason to move together: a future change to key format
+ * (rotation, length, a derivable scheme) would silently change how decks are
+ * seeded, and vice versa. Same entropy as before — a UUID plus 8 id chars — just
+ * its own prefix and its own function.
+ */
+export function newSeed(): string {
+  return `damnits_seed_${randomUUID().replace(/-/g, '')}${nanoid(8)}`;
+}
+
 export function hashApiKey(apiKey: string): string {
   return createHash('sha256').update(apiKey, 'utf8').digest('hex');
 }

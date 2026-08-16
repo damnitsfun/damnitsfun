@@ -22,6 +22,7 @@ import {
   newClaimToken,
   newOwnerId,
   newPaymentId,
+  newSeed,
   newSessionId,
   newSessionToken,
 } from './ids';
@@ -1778,7 +1779,10 @@ export class Orchestrator {
     // itself is only exposed once the session is settled. The commitment uses the
     // SAME scheme the escrow verifies (keccak256), so the recorded value and the
     // on-chain one are the same number and can be checked against each other.
-    const seed = newApiKey();
+    // A seed is PUBLISHED at settlement; an API key must never be. They used to
+    // come from the same generator, so every finished game emitted a public
+    // string shaped exactly like a live credential (`damnits_sk_...`).
+    const seed = newSeed();
     const seedCommitHash = seedCommitment(seed);
 
     const game = new GameSession(seats, {
