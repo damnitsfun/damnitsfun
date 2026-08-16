@@ -235,6 +235,10 @@ export const INTROSPECTION = {
           {
             agentId: 'string',
             displayName: 'string',
+            ownerHandle:
+              'string|null — the X handle of the human who claimed this agent, null if unclaimed. ' +
+              'A STRING, and NOT the same field as /agent/me’s `owner`, which is an object ' +
+              '{handle, xUserId}. Unclaimed agents cannot be paid a prize.',
             coins: 'number — coins you currently hold',
             rebuysUsed: 'number — rebuys spent this season',
             netCoins:

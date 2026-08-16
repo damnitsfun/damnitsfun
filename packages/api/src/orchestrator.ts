@@ -2297,10 +2297,21 @@ export class Orchestrator {
    *
    * `coins` and `rebuysUsed` are both returned so the UI can show the arithmetic
    * rather than assert the result.
+   *
+   * `ownerHandle` is the claiming X handle (bare, no `@`) or null when the agent
+   * is unclaimed. It is deliberately NOT called `owner`: `/agent/me` already
+   * returns an `owner` OBJECT, and two fields sharing a name but not a shape is
+   * the trap agents already reported over `"seated"`. The board previously printed the raw `agent_...` id beside every
+   * name, which identifies nobody: the only thing a reader wants from that column
+   * is WHOSE agent this is, and an agent is bound to a human only by an X-verified
+   * claim (sub-spec 09). Null is the honest answer for an unclaimed agent, and it
+   * is also the state that bars a payout — so the column doubles as a standing
+   * reminder of who could actually be paid.
    */
   playgroundStandings(competitionId?: string): Array<{
     agentId: string;
     displayName: string;
+    ownerHandle: string | null;
     coins: number;
     rebuysUsed: number;
     netCoins: number;
@@ -2313,11 +2324,13 @@ export class Orchestrator {
     const rows = this.db
       .prepare(
         `SELECT a.id AS agentId, a.display_name AS displayName, a.coins AS coins,
+                o.x_handle AS ownerHandle,
                 COALESCE(rb.rebuys, 0) AS rebuysUsed,
                 a.coins - COALESCE(rb.rebuys, 0) * @rebuyCoins AS netCoins,
                 COUNT(DISTINCT p.session_id) AS played,
                 COUNT(DISTINCT CASE WHEN s.winner_agent_id = a.id THEN s.id END) AS tablesWon
            FROM agents a
+           LEFT JOIN owners o ON o.id = a.owner_id
            JOIN session_players p ON p.agent_id = a.id
            JOIN sessions s ON s.id = p.session_id AND s.status IN ('settled','archived')
                           AND (@competitionId IS NULL OR s.competition_id = @competitionId)
@@ -2338,6 +2351,7 @@ export class Orchestrator {
       }) as Array<{
       agentId: string;
       displayName: string;
+      ownerHandle: string | null;
       coins: number;
       rebuysUsed: number;
       netCoins: number;
@@ -2357,18 +2371,20 @@ export class Orchestrator {
   leaderboard(competitionId: string): Array<{
     agentId: string;
     displayName: string;
+    ownerHandle: string | null;
     coins: number;
     rebuysUsed: number;
     netCoins: number;
   }> {
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT a.* FROM agents a
+        `SELECT DISTINCT a.*, o.x_handle AS ownerHandle FROM agents a
+           LEFT JOIN owners o ON o.id = a.owner_id
            JOIN session_players p ON p.agent_id = a.id
            JOIN sessions s ON s.id = p.session_id
           WHERE s.competition_id = ?`,
       )
-      .all(competitionId) as AgentRow[];
+      .all(competitionId) as Array<AgentRow & { ownerHandle: string | null }>;
 
     // Netting matters more here than on the playground board, not less: this is
     // the order the on-chain prize pool is split by (top 10, spec 15), so ranking
@@ -2380,6 +2396,7 @@ export class Orchestrator {
         return {
           agentId: r.id,
           displayName: r.display_name,
+          ownerHandle: r.ownerHandle,
           coins: r.coins,
           rebuysUsed,
           netCoins: r.coins - rebuysUsed * rebuyCoins,
