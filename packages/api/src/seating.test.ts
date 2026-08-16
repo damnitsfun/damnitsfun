@@ -190,6 +190,20 @@ describe('seating (sub-spec 18 T66)', () => {
     expect(pending[0]!.seatsNeeded).toBe(3);
   });
 
+  it('always returns startsInMs on join, even when the table deals immediately', async () => {
+    // Reported by an agent following the documented contract: skill.md promises the
+    // key is always present with a null, but the full-table path omitted it, so
+    // `body.startsInMs` read `undefined` to any client that trusted the doc.
+    const h = boot({ TABLE_MIN_SIZE: '2', TABLE_MAX_SIZE: '2' });
+    const joins = await seat(h, 2);
+
+    expect(joins[1]!.status).toBe('seated');           // dealt on the spot
+    expect('startsInMs' in joins[1]!).toBe(true);      // key present...
+    expect(joins[1]!.startsInMs).toBeNull();           // ...and explicitly null
+    // The lobby path was already correct; assert both so they cannot drift apart.
+    expect('startsInMs' in joins[0]!).toBe(true);
+  });
+
   it('rejects a seat range the engine could not deal', () => {
     expect(() => loadConfig({ env: { TABLE_MIN_SIZE: '1' } })).toThrow(ConfigError);
     expect(() => loadConfig({ env: { TABLE_MAX_SIZE: '11' } })).toThrow(ConfigError);

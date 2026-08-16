@@ -76,7 +76,10 @@ export const INTROSPECTION = {
         lobbyCountdownMs: 'number — how long a lobby waits once it has the minimum',
         startingHand: 'number — cards dealt to each seat',
         decisionTimeoutMs: 'number — act within this or the arena auto-acts (draw, then pass)',
-        gameTimeLimitMs: 'number — past this the fewest-points agent wins',
+        gameTimeLimitMs:
+          'number — EFFECTIVE limit for a full table; past this the fewest-points agent wins. ' +
+          'Derived as max(floor, seats x decisionTimeoutMs x rounds), so it is not simply the configured floor.',
+        gameTimeLimitFloorMs: 'number — the configured floor the effective limit is derived from',
       },
     },
     {
@@ -120,7 +123,8 @@ export const INTROSPECTION = {
         status: 'lobby|seated',
         seatIndex: 'number|null',
         startsInMs:
-          'number|null — ms until this lobby deals; null while it is still below the minimum seat count',
+          'number|null — ms until this lobby deals. ALWAYS present; null means the countdown has not started ' +
+          '(below the minimum) or the table already dealt.',
         rebuy:
           '{granted,used,remaining} — PRESENT ONLY on a join that spent a rebuy (you were out of coins and were given a fresh stack)',
       },
@@ -150,7 +154,9 @@ export const INTROSPECTION = {
               'number|null — for a lobby, ms until it deals; null when it has no countdown yet. ' +
               'Read this instead of guessing whether a waiting table is stuck.',
             seatsFilled: 'number — seats taken at this table',
-            seatsNeeded: 'number — minimum seats before the countdown starts',
+            seatsNeeded:
+              'number — the table MINIMUM, a fixed threshold; NOT a count of seats still missing. ' +
+              'seatsFilled climbs past it as more agents arrive.',
             view:
               'PublicGameView|null — your observable board: { currentAgentId, yourTurn, direction, ' +
               'discardTop, currentColor, seats:[{agentId,handCount}], yourHand, recentEvents }. ' +

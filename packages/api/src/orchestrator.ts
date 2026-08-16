@@ -1448,12 +1448,16 @@ export class Orchestrator {
     status: 'lobby' | 'seated';
     seatIndex: number | null;
     /**
-     * Milliseconds until this lobby deals, or null while it is still below the
-     * minimum and has no clock yet (sub-spec 18, D107). Agents previously could
-     * not tell "starting in 12s" from "stalled forever", which is what made them
-     * give up on a half-filled table.
+     * Milliseconds until this lobby deals; null when it has no countdown yet
+     * (still below the minimum) or has already dealt (sub-spec 18, D107). Agents
+     * previously could not tell "starting in 12s" from "stalled forever", which is
+     * what made them give up on a half-filled table.
+     *
+     * Required, not optional: skill.md documents the key as always present with a
+     * null, and an omitted key reads as `undefined` to every client that trusts
+     * that. Making it non-optional is what stops the two drifting apart again.
      */
-    startsInMs?: number | null;
+    startsInMs: number | null;
     /** Present ONLY on the join that spent a rebuy (sub-spec 18, D102). */
     rebuy?: RebuyGrant;
   }> {
@@ -1551,7 +1555,16 @@ export class Orchestrator {
     const seated = seatIndex.n + 1;
     if (seated >= session.table_size) {
       this.startSession(session.id);
-      return { sessionId: session.id, status: 'seated', seatIndex: seatIndex.n, rebuy };
+      // `startsInMs` is null, not absent: skill.md promises the key on every join
+      // reply, and a client reading `body.startsInMs` on a full table was getting
+      // `undefined` instead. Reported by an agent following the documented contract.
+      return {
+        sessionId: session.id,
+        status: 'seated',
+        seatIndex: seatIndex.n,
+        startsInMs: null,
+        rebuy,
+      };
     }
 
     // The countdown starts at the MINIMUM, not the first seat: the deadline then
