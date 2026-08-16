@@ -6,8 +6,38 @@
  * deliberately overrode one. The point is that the override becomes VISIBLE at
  * the moment it would otherwise silently swallow a change.
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { loadConfig } from './config';
 import { findEnvDrift, formatDrift } from './env-drift';
+
+/**
+ * Read the .env FILE rather than trusting process.env.
+ *
+ * The deploy runs this as an ad-hoc command, and only the systemd unit loads the
+ * EnvironmentFile — so process.env is nearly empty here and the check found
+ * "no drift" on an environment that had some. A guard against silently-inert
+ * changes that was itself silently inert.
+ */
+function readEnvFile(path: string): Record<string, string> {
+  if (!existsSync(path)) return {};
+  const out: Record<string, string> = {};
+  for (const raw of readFileSync(path, 'utf8').split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    // Strip one layer of matching quotes, as dotenv does.
+    if (value.length > 1 && ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))) {
+      value = value.slice(1, -1);
+    }
+    out[key] = value;
+  }
+  return out;
+}
 
 /**
  * The code defaults, expressed as env-var strings. Derived from a config loaded
@@ -39,7 +69,15 @@ function codeDefaults(): Record<string, string> {
 
 function main(): void {
   const environment = process.env.ENV_NAME ?? 'this environment';
-  const findings = findEnvDrift(process.env, codeDefaults());
+  // The file is the source of truth for what this deployment pins; process.env
+  // only fills in when the check is run somewhere that already has it loaded.
+  const envPath = process.env.ENV_FILE ?? join(process.cwd(), '.env');
+  const fromFile = readEnvFile(envPath);
+  const source = { ...process.env, ...fromFile };
+  if (Object.keys(fromFile).length === 0) {
+    process.stdout.write(`  (no .env read at ${envPath}; checking process env only)\n`);
+  }
+  const findings = findEnvDrift(source, codeDefaults());
   const report = formatDrift(findings, environment);
   if (report) {
     process.stdout.write(`\n${report}\n\n`);

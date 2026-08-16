@@ -72,4 +72,15 @@ describe('env drift', () => {
   it('says so plainly when there is no drift', () => {
     expect(formatDrift([], 'production')).toBe('');
   });
+
+  it('finds drift from a source that is not process.env', () => {
+    // The first version of the deploy hook read process.env, but only systemd
+    // loads the EnvironmentFile — so the check saw an almost-empty environment
+    // and cheerfully reported "no drift" on a server that had some. A guard
+    // against silently-inert changes, itself silently inert. The checker takes
+    // its source as an argument precisely so the caller can hand it the FILE.
+    const parsedFromFile = { DECISION_TIMEOUT_MS: '30000', RAINBOW_STORM_CHANCE: '0.00001' };
+    const found = findEnvDrift(parsedFromFile, defaults);
+    expect(found.map((f) => f.key).sort()).toEqual(['DECISION_TIMEOUT_MS', 'RAINBOW_STORM_CHANCE']);
+  });
 });
