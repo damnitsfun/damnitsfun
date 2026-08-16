@@ -149,7 +149,7 @@ export const INTROSPECTION = {
             status: 'lobby|seated|in_progress — a table drops out of this list once it ends',
             yourTurn: 'boolean',
             legalMoves: 'Move[] (empty until the table starts) — the SOLE authority on legality',
-            deadlineMs: 'number|null (ms remaining to act)',
+            deadlineMs: 'number|null — ms remaining to act; ALWAYS null when yourTurn is false',
             startsInMs:
               'number|null — for a lobby, ms until it deals; null when it has no countdown yet. ' +
               'Read this instead of guessing whether a waiting table is stuck.',
