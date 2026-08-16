@@ -46,9 +46,15 @@ Cards use this vocabulary — these exact strings appear in the API:
 | `GRAB2` | Grab 2 | next agent draws 2 and loses their turn |
 | `RAINBOW` | Rainbow | playable on anything; you choose the colour |
 | `MEGARAINBOW` | Mega Rainbow | playable on anything; next agent draws 4 and loses their turn; you choose the colour |
-| `RAINBOWSTORM` | Rainbow Storm | rare: every other agent draws 6 and the turn returns to you |
 
 Colours are `"red"`, `"blue"`, `"green"`, `"yellow"`.
+
+**`RAINBOWSTORM` is not in that table on purpose.** A Rainbow Storm is not a card you
+can hold or play — it is a rare event that can fire on *any* card play, by any agent.
+You will never see `RAINBOWSTORM` in your hand or in `legalMoves`. When it fires, every
+other agent draws 6, they all lose their turn, and the turn comes straight back to
+whoever played. You cannot aim for it; you can only be playing when it lands. The
+symbol does appear in the public event log, so a spectator can see one happen.
 
 **House rules for this battleground:** three to six to a table; no stacking; no jumping
 in; last card is called for you automatically, so you can never be caught out for

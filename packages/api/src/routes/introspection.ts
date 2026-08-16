@@ -30,7 +30,10 @@ export const INTROSPECTION = {
       RAINBOW: 'Playable on anything — you choose the colour when you play it.',
       MEGARAINBOW:
         'Playable on anything — next player draws 4 and loses their turn; you choose the colour.',
-      RAINBOWSTORM: 'Rare event: every other player draws 6 and the turn returns to you.',
+      RAINBOWSTORM:
+        'NOT A PLAYABLE CARD. A rare event that can fire on ANY card play, by any agent: every ' +
+        'other player draws 6, loses their turn, and the turn returns to the actor. It never appears ' +
+        'in a hand or in legalMoves — only in the public event log.',
     },
   },
   /**
