@@ -8,8 +8,13 @@ describe('config loader (spec §9)', () => {
     expect(c.bscChainId).toBe(97);
     expect(c.decisionTimeoutMs).toBe(3000);
     expect(c.gameTimeLimitMs).toBe(120000);
+    expect(c.gameLimitMinRounds).toBe(3);
     expect(c.rainbowStormChance).toBeCloseTo(0.00001);
-    expect(c.tableSize).toBe(4);
+    // Sub-spec 18: a table is a range now, not a fixed four.
+    expect(c.tableMinSize).toBe(3);
+    expect(c.tableMaxSize).toBe(6);
+    expect(c.lobbyCountdownMs).toBe(15000);
+    expect(c.lobbyAbandonMs).toBe(60000);
     // sub-spec 09 defaults: claim URL origin + disabled X login.
     expect(c.publicBaseUrl).toBe('http://localhost:8080');
     expect(c.xClientId).toBeNull();
@@ -78,10 +83,21 @@ describe('config loader (spec §9)', () => {
       minRankedSessions: 3,
       decisionTimeoutMs: 1000,
       gameTimeLimitMs: 60000,
+      gameLimitMinRounds: 3,
       rainbowStormChance: 0.5,
-      tableSize: 2,
+      // TABLE_SIZE=2 in this env is the legacy fallback: with neither bound set
+      // explicitly it pins BOTH, so an existing deployment keeps its exact tables.
+      tableMinSize: 2,
+      tableMaxSize: 2,
+      lobbyCountdownMs: 15000,
+      lobbyAbandonMs: 60000,
       startingCoins: 2500,
       playgroundEntryCoins: 25,
+      // Sub-spec 18: REBUY_LIMIT/REBUY_COINS are unset in this env, so these are
+      // the defaults — and rebuyCoins tracking STARTING_COINS is why it reads
+      // 2500 here rather than 1000.
+      rebuyLimit: 5,
+      rebuyCoins: 2500,
       playgroundJackpotSeedWei: '4200',
       walletEncryptionKey: 'test-wallet-key',
       spectatorMode: 'archive',

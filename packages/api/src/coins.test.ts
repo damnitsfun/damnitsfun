@@ -104,4 +104,71 @@ describe('computeCoinSettlement', () => {
     expect(PLAYGROUND_ENTRY_COINS).toBe(10);
     expect(COIN_SPLIT_SMOOTHING).toBeGreaterThan(0);
   });
+
+  /**
+   * Sub-spec 18 (D103/D109) — tables become 3–6 seats. Everything above exercises
+   * exactly four, which is how places 5 and 6 came to have no floor at all: they
+   * could not occur, so nobody noticed `?? 0` standing in for one.
+   */
+  describe('variable table sizes (3–6 seats)', () => {
+    const balances = (ids: string[]): Record<string, number> =>
+      Object.fromEntries(ids.map((id) => [id, 1000]));
+
+    it('splits a 3-seat table two winners to one loser', () => {
+      const deltas = computeCoinSettlement({
+        places: { a: 1, b: 2, c: 3 },
+        handValues: { a: 0, b: 12, c: 44 },
+        balances: balances(['a', 'b', 'c']),
+        entryPot: 30,
+      });
+      // half = ceil(3/2) = 2 → places 1-2 win, place 3 loses.
+      expect(deltas.a!).toBeGreaterThan(0);
+      expect(deltas.b!).toBeGreaterThan(0);
+      expect(deltas.c!).toBeLessThan(0);
+      expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(30);
+    });
+
+    it('applies the new floors to 5th and 6th place', () => {
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+      const deltas = computeCoinSettlement({
+        places: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 },
+        // Every loser holds a trivial hand, so the FLOOR is what must bite.
+        handValues: { a: 0, b: 2, c: 3, d: 1, e: 1, f: 1 },
+        balances: balances(ids),
+        entryPot: 60,
+      });
+      expect(-deltas.d!).toBe(LOSS_FLOOR_BY_PLACE[4]);
+      expect(-deltas.e!).toBe(LOSS_FLOOR_BY_PLACE[5]);
+      expect(-deltas.f!).toBe(LOSS_FLOOR_BY_PLACE[6]);
+      // The gradient must keep pointing the same way: further down costs more.
+      expect(-deltas.f!).toBeGreaterThan(-deltas.e!);
+      expect(-deltas.e!).toBeGreaterThan(-deltas.d!);
+    });
+
+    it('stays zero-sum against the entry pot at every seat count', () => {
+      for (const n of [3, 4, 5, 6]) {
+        const ids = ['a', 'b', 'c', 'd', 'e', 'f'].slice(0, n);
+        const entryPot = n * PLAYGROUND_ENTRY_COINS;
+        const deltas = computeCoinSettlement({
+          places: Object.fromEntries(ids.map((id, i) => [id, i + 1])),
+          handValues: Object.fromEntries(ids.map((id, i) => [id, i * 17])),
+          balances: balances(ids),
+          entryPot,
+        });
+        expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(entryPot);
+      }
+    });
+
+    it('still caps a loser at what they hold on a six-seat table', () => {
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+      const deltas = computeCoinSettlement({
+        places: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 },
+        handValues: { a: 0, b: 5, c: 9, d: 70, e: 90, f: 120 },
+        balances: { ...balances(ids), f: 12 },   // nearly broke in last place
+        entryPot: 60,
+      });
+      expect(-deltas.f!).toBe(12);               // never more than the balance
+      expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(60);
+    });
+  });
 });

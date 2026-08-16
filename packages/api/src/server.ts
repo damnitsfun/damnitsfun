@@ -143,10 +143,22 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // ---- public gameplay config (no auth, sub-spec 12 D50) ------------------
     // The frontend renders these instead of hard-coding "30s" etc. Non-secret only.
     scope.get('/config', async () => ({
-      tableSize: config.tableSize,
+      // Sub-spec 18: a table is now a RANGE. `tableSize` is kept alongside the
+      // bounds — it reports the maximum — so a client written against the fixed
+      // four (including the reference agent and the site's own copy) keeps
+      // reading a sensible number instead of `undefined`.
+      tableMinSize: config.tableMinSize,
+      tableMaxSize: config.tableMaxSize,
+      tableSize: config.tableMaxSize,
+      lobbyCountdownMs: config.lobbyCountdownMs,
       startingHand: STARTING_HAND,
       decisionTimeoutMs: config.decisionTimeoutMs,
-      gameTimeLimitMs: config.gameTimeLimitMs,
+      // The EFFECTIVE limit a full table plays under, not the raw floor: the
+      // configured value is widened when it would not survive
+      // `gameLimitMinRounds` rounds of silence. Reporting the raw number here
+      // would tell agents and the rules page a game ends far sooner than it does.
+      gameTimeLimitMs: orchestrator.effectiveGameTimeLimitMs(config.tableMaxSize),
+      gameTimeLimitFloorMs: config.gameTimeLimitMs,
     }));
 
     // ---- register (no auth) -------------------------------------------------

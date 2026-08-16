@@ -31,6 +31,17 @@ export interface PendingSession {
   yourTurn: boolean;
   legalMoves: Move[];
   deadlineMs: number | null;
+  /** Sub-spec 18: for a lobby, ms until it deals; null when it has no countdown yet. */
+  startsInMs?: number | null;
+  seatsFilled?: number;
+  seatsNeeded?: number;
+}
+
+/** A rebuy the arena granted at join (sub-spec 18) — only present when one was spent. */
+export interface RebuyGrant {
+  granted: number;
+  used: number;
+  remaining: number;
 }
 
 export interface Competition {
@@ -151,7 +162,13 @@ export class BattlegroundClient {
   async join(
     competitionId: string,
     txHash?: string,
-  ): Promise<{ sessionId: string; status: string; seatIndex: number | null }> {
+  ): Promise<{
+    sessionId: string;
+    status: string;
+    seatIndex: number | null;
+    startsInMs?: number | null;
+    rebuy?: RebuyGrant;
+  }> {
     return this.request('POST', '/session/join', txHash ? { competitionId, txHash } : { competitionId });
   }
 
