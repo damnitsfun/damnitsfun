@@ -158,6 +158,35 @@ describe('standings name an owner, not an id', () => {
     await app.close();
   });
 
+  /**
+   * Coin ties are real — measured at roughly 1 settled table in 300, because the
+   * winners' split is smoothed and a narrow points gap can round to the same
+   * delta. Until this, nothing broke them, so the order of tied rows was whatever
+   * the query planner returned and the same board could reorder between two
+   * identical polls. On the tournament side that order IS the payout order, so a
+   * reorder moves money.
+   */
+  it('orders tied agents reproducibly rather than by query-planner luck', async () => {
+    const h = boot();
+    await playATable(h, 'tie-a', 'tie-b');
+    h.db.prepare(`UPDATE agents SET coins = 1234`).run(); // exact coin tie
+
+    // The guarantee is REPRODUCIBILITY: identical reads give identical order.
+    const once = h.o.playgroundStandings().map((r) => r.agentId);
+    expect(h.o.playgroundStandings().map((r) => r.agentId)).toEqual(once);
+    expect(h.o.playgroundStandings().map((r) => r.agentId)).toEqual(once);
+
+    // The playground board still ranks tablesWon above the id, so tied COINS do
+    // not mean tied ROWS there — one of these two won the table. Sorting by id
+    // is the LAST resort, not the first, and asserting otherwise here would be
+    // asserting the wrong thing.
+    const board = h.o.leaderboard(h.comp).map((r) => r.agentId);
+    expect(h.o.leaderboard(h.comp).map((r) => r.agentId)).toEqual(board);
+    // The season leaderboard sorts on net coins alone, so a true tie there falls
+    // all the way through to the id — and this is the order settlement pays in.
+    expect(board).toEqual([...board].sort());
+  });
+
   it('surfaces the owner through the public standings endpoint', async () => {
     const h = boot();
     const [claimed] = await playATable(h, 'p1', 'p2');

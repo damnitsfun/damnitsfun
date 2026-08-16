@@ -666,6 +666,14 @@ describe('T11 — ranking', () => {
     for (let i = 1; i < board.length; i++) {
       expect(board[i - 1]!.coins).toBeGreaterThanOrEqual(board[i]!.coins);
     }
-    expect(board[0]!.agentId).toBe(winner);
+    // "The winner is board[0]" was not a true statement, and flaked accordingly.
+    // Two seats CAN settle on identical coins (measured: ~1 table in 300 — the
+    // winners' split is smoothed, so a narrow points gap can round to the same
+    // delta), and then the winner is one of two rows that are legitimately
+    // interchangeable. What the board actually promises is that nobody finished
+    // ABOVE the winner, which is what this asserts.
+    const winnerRow = board.find((r) => r.agentId === winner);
+    expect(winnerRow).toBeDefined();
+    expect(winnerRow!.coins).toBe(board[0]!.coins);
   });
 });

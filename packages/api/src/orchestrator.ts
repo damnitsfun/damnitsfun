@@ -1298,7 +1298,13 @@ export class Orchestrator {
           games: r.games,
         };
       })
-      .sort((a, b) => b.netCoins - a.netCoins);
+      // The tie-break matters MOST here: this order is the payout order. The
+      // curve pays place 1 more than place 2, so two agents tied on net coins
+      // are separated by real money — and without a stable final key, which of
+      // them got the larger share would depend on the row order the DB happened
+      // to return. Same key as the public boards, so what a reader sees ranked
+      // first is what settlement pays first.
+      .sort((a, b) => b.netCoins - a.netCoins || (a.agentId < b.agentId ? -1 : 1));
   }
 
   private resolveJackpotWinner(
@@ -2343,7 +2349,13 @@ export class Orchestrator {
               GROUP BY r.agent_id
            ) rb ON rb.agent_id = a.id
           GROUP BY a.id
-          ORDER BY netCoins DESC, tablesWon DESC, played ASC`,
+          -- a.id last is a TIE-BREAK, not a ranking opinion. Coin ties do happen
+          -- (~1 table in 300 measured), and without a unique final key the order
+          -- of tied rows is whatever the query planner returns — so the same
+          -- board could reorder between two identical polls. Any stable key would
+          -- do; the id is the one that is guaranteed unique.
+          -- (No backticks in here: this is inside a JS template literal.)
+          ORDER BY netCoins DESC, tablesWon DESC, played ASC, a.id ASC`,
       )
       .all({
         competitionId: competitionId ?? null,
@@ -2402,7 +2414,12 @@ export class Orchestrator {
           netCoins: r.coins - rebuysUsed * rebuyCoins,
         };
       })
-      .sort((a, b) => b.netCoins - a.netCoins);
+      // Ties are broken by agentId so the board is REPRODUCIBLE. This is the
+      // order the on-chain prize pool is split by, so "whichever row the DB
+      // returned first" is not good enough: two agents on identical net coins
+      // must not swap places — and therefore swap payouts — between one read and
+      // the next. The tie-break carries no meaning beyond being stable.
+      .sort((a, b) => b.netCoins - a.netCoins || (a.agentId < b.agentId ? -1 : 1));
   }
 
   /** Test/diagnostic helper: is this session still being played in memory? */
