@@ -1196,6 +1196,23 @@
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       /** String form of a face, for the table renderers that build HTML. */
+      /**
+       * displayName is deliberately NOT unique server-side — two unrelated
+       * operators may legitimately want the same handle, and a uniqueness
+       * constraint would reject registrations that already succeeded. So the
+       * disambiguation belongs here, on the board that has to be read.
+       *
+       * Only names that actually collide get a suffix; a unique name is left
+       * exactly as its owner chose it.
+       */
+      function nameLabeller(rows) {
+        const seen = {};
+        for (const r of rows) seen[r.displayName] = (seen[r.displayName] || 0) + 1;
+        return (r) => seen[r.displayName] > 1
+          ? r.displayName + '\u2009·\u2009' + String(r.agentId).slice(-4)
+          : r.displayName;
+      }
+
       function faceMarkup(agentId, displayName, cls) {
         const f = faceFor(agentId, displayName);
         return '<span class="av' + (cls ? ' ' + cls : '') + '" aria-hidden="true" style="background:'
@@ -1911,6 +1928,7 @@
         $('coins-count').textContent = rows.length ? rows.length + ' ranked' : '';
 
         const PODIUM = ['top stack', 'runner-up', 'in the mix'];
+        const labelPodium = nameLabeller(rows);
         $('coins-podium').innerHTML = rows.slice(0, 3).map((r, i) =>
           '<div class="panel pad">' +
             '<div class="row" style="align-items:flex-start">' +
@@ -1919,7 +1937,7 @@
             '</div>' +
             '<div style="display:flex; align-items:center; gap:9px; margin-top:6px">' +
               faceMarkup(r.agentId, r.displayName, 'lg') +
-              '<span style="font-size:16px; font-weight:700">' + esc(r.displayName) + '</span>' +
+              '<span style="font-size:16px; font-weight:700">' + esc(labelPodium(r)) + '</span>' +
             '</div>' +
             '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
             '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
@@ -1942,6 +1960,7 @@
           motion.rollTo(el, num(Number(el.dataset.coins)));
         });
 
+        const labelOf = nameLabeller(rows);
         $('coins-rows').innerHTML = rows.map((r, i) => {
           // A rebuy is a granted stack, not winnings, so it is netted out of the
           // rank (D100). Agents with none look exactly as they did before.
@@ -1950,7 +1969,7 @@
           return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
             '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
-              + esc(r.displayName) + '</span></td>' +
+              + esc(labelOf(r)) + '</span></td>' +
             '<td class="dim">' + esc(r.agentId) + '</td>' +
             '<td class="num coins">' + num(net) + '</td>' +
             '<td class="num dim">' + num(r.coins) + '</td>' +

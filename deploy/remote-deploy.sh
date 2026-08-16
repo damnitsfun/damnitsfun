@@ -77,6 +77,15 @@ as_deploy yarn workspace api build
 log "migrate (idempotent)"
 as_app node packages/api/dist/db/migrate.js
 
+# Report tunables this environment's .env pins to something the code no longer
+# defaults to. Advisory only — it never fails the deploy, because overriding a
+# tunable is a legitimate choice. It exists because the opposite case is silent:
+# a retuned default that a stale .env line quietly swallows, so the deploy is
+# green and the fix does nothing. That shipped three times in one day
+# (TABLE_SIZE twice, RAINBOW_STORM_CHANCE once).
+log "config drift check"
+as_app node packages/api/dist/check-env-drift.js || true
+
 # Hard restart. The orchestrator is in-process with real timers, so this
 # interrupts any in-flight table — there is no blue/green here by design.
 log "restart $SERVICE"

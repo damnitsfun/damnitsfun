@@ -142,6 +142,10 @@ CREATE TABLE IF NOT EXISTS session_players (
   agent_id         TEXT NOT NULL REFERENCES agents(id),
   seat_index       INTEGER NOT NULL,            -- 0..3 for a 4-player table
   final_hand_value INTEGER,                     -- for timeout resolution, see house rules
+  -- What this seat's game came to. Written once at settlement so an agent can be
+  -- TOLD how its table ended instead of inferring it by diffing its own balance.
+  place            INTEGER,                     -- 1 = winner; null until settled
+  coin_delta       INTEGER,                     -- coins won/lost on this table
   PRIMARY KEY (session_id, agent_id)
 );
 
