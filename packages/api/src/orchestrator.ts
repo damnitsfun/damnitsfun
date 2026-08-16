@@ -1663,6 +1663,90 @@ export class Orchestrator {
     return Math.max(this.config.gameTimeLimitMs, derived);
   }
 
+  /**
+   * How this agent's recent tables ended.
+   *
+   * Until now the ONLY end-of-table signal was the session disappearing from
+   * `pending-actions`. An agent could not learn whether it won, where it placed,
+   * or what the table cost it — one resorted to diffing `GET /agent/me` before and
+   * after every game to work it out. For a product whose whole ladder is coins,
+   * never telling an agent the result of a hand is a hole in the contract.
+   *
+   * Deliberately a SEPARATE endpoint rather than a final `pending-actions` entry:
+   * that list means "tables needing your attention", and skill.md leans hard on
+   * "absence means ended". Keeping a finished table in it one last time would
+   * break the one unambiguous signal agents already rely on.
+   *
+   * `place`/`coinDelta` are null for tables settled before they were recorded —
+   * reported honestly as unknown rather than back-filled with a guess.
+   */
+  sessionResults(
+    agentId: string,
+    options: { sessionId?: string; limit?: number } = {},
+  ): Array<{
+    sessionId: string;
+    competitionId: string;
+    endedAt: string | null;
+    seats: number;
+    place: number | null;
+    placedOf: number;
+    won: boolean;
+    winnerAgentId: string | null;
+    coinDelta: number | null;
+    finalHandValue: number | null;
+    reason: 'empty_hand' | 'timeout' | null;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT s.id            AS sessionId,
+                s.competition_id AS competitionId,
+                s.ended_at       AS endedAt,
+                s.winner_agent_id AS winnerAgentId,
+                s.table_size     AS seats,
+                p.place          AS place,
+                p.coin_delta     AS coinDelta,
+                p.final_hand_value AS finalHandValue,
+                (SELECT COUNT(*) FROM session_players q WHERE q.session_id = s.id) AS placedOf,
+                -- Read the reason from the event log rather than inferring it. A
+                -- timeout still NAMES a winner (the fewest-points seat takes the
+                -- table), so a null winner does not mean "ran out of time" --
+                -- inferring it that way reported every timeout as a clean win.
+                (SELECT json_extract(e.payload_json, '$.reason')
+                   FROM session_events e
+                  WHERE e.session_id = s.id AND e.event_type = 'GAME_ENDED'
+                  LIMIT 1) AS reason
+           FROM session_players p
+           JOIN sessions s ON s.id = p.session_id
+          WHERE p.agent_id = @agentId
+            AND s.status = 'settled'
+            AND (@sessionId IS NULL OR s.id = @sessionId)
+          ORDER BY s.ended_at DESC
+          LIMIT @limit`,
+      )
+      .all({
+        agentId,
+        sessionId: options.sessionId ?? null,
+        limit: Math.min(50, Math.max(1, options.limit ?? 10)),
+      }) as Array<{
+      sessionId: string;
+      competitionId: string;
+      endedAt: string | null;
+      winnerAgentId: string | null;
+      seats: number;
+      place: number | null;
+      coinDelta: number | null;
+      finalHandValue: number | null;
+      placedOf: number;
+      reason: string | null;
+    }>;
+
+    return rows.map((r) => ({
+      ...r,
+      won: r.winnerAgentId === agentId,
+      reason: r.reason === 'empty_hand' || r.reason === 'timeout' ? r.reason : null,
+    }));
+  }
+
   /** Rebuys spent by an agent in a season (sub-spec 18). 0 when it has none. */
   rebuysUsed(agentId: string, competitionId: string): number {
     const row = this.db
@@ -2113,7 +2197,7 @@ export class Orchestrator {
           .run(value, sessionId, agentId);
       }
 
-      this.settleCoins(winner, handValues);
+      this.settleCoins(sessionId, winner, handValues);
     });
     finalize();
 
@@ -2166,7 +2250,11 @@ export class Orchestrator {
    * fewer-points-first. Zero-sum and never negative — see {@link computeCoinSettlement}.
    * Runs inside the settle() transaction, alongside rating updates.
    */
-  private settleCoins(winner: string | null, handValues: Record<string, number>): void {
+  private settleCoins(
+    sessionId: string,
+    winner: string | null,
+    handValues: Record<string, number>,
+  ): void {
     const places = placementsFrom(winner, handValues);
     const agentIds = Object.keys(places);
     if (agentIds.length === 0) return;
@@ -2182,6 +2270,15 @@ export class Orchestrator {
       if (delta !== 0) {
         this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(delta, agentId);
       }
+      // Record the outcome on the seat, not just the balance change. Without this
+      // an agent can only learn how its table went by diffing GET /agent/me before
+      // and after — which is what one actually resorted to.
+      this.db
+        .prepare(
+          `UPDATE session_players SET place = ?, coin_delta = ?
+            WHERE session_id = ? AND agent_id = ?`,
+        )
+        .run(places[agentId] ?? null, delta, sessionId, agentId);
     }
   }
 

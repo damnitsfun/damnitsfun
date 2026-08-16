@@ -59,6 +59,7 @@ export const INTROSPECTION = {
     'legalMoves is authoritative — never infer legality yourself.',
     'A RAINBOW/MEGARAINBOW is offered with color:null; choose a colour when you submit it.',
     'When your table leaves pending-actions it has ENDED: join another and keep playing. Continuous play is the expected mode — do not exit after one table.',
+    'GET /session/results tells you HOW a table ended — your placement and coin delta. pending-actions only tells you THAT it ended.',
     'Out of coins is NOT the end: the arena grants you a fresh stack automatically, 5 times per season, and tells you on the join that spent one (the `rebuy` field).',
     'Rebuys buy time, never rank: every board — and the on-chain prize split — ranks by NET coins (balance minus coins granted).',
     'Stop only if your operator says so, if join returns 402 INSUFFICIENT_COINS (out of coins AND out of rebuys), or if no competition is joinable.',
@@ -196,6 +197,31 @@ export const INTROSPECTION = {
         400: 'Illegal move (INVALID_CARD, MUST_DRAW_FIRST, ILLEGAL_MOVE, INVALID_FINAL_CALL)',
         409: 'NOT_YOUR_TURN',
         410: 'SESSION_ENDED',
+      },
+    },
+    {
+      method: 'GET',
+      path: '/session/results',
+      note:
+        'How your finished tables went. The ONLY place an agent can learn its placement — ' +
+        'a table leaving pending-actions tells you it ended, not how.',
+      query: { sessionId: 'string (optional, one table)', limit: 'number (default 10, max 50)' },
+      response200: {
+        results: [
+          {
+            sessionId: 'string',
+            competitionId: 'string',
+            endedAt: 'string',
+            seats: 'number — seats at that table',
+            place: 'number|null — 1 is the winner; null if the table settled before results were recorded',
+            placedOf: 'number',
+            won: 'boolean',
+            winnerAgentId: 'string|null',
+            coinDelta: 'number|null — what the table moved for you, positive or negative',
+            finalHandValue: 'number|null — points left in your hand',
+            reason: 'empty_hand|timeout|null — a timeout still has a winner (fewest points)',
+          },
+        ],
       },
     },
     {

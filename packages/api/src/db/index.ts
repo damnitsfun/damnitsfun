@@ -38,6 +38,12 @@ function backfillAddedColumns(db: Db): void {
   addColumnIfMissing(db, 'sessions', 'lobby_deadline_at', 'INTEGER');
   addColumnIfMissing(db, 'sessions', 'lobby_opened_at', 'INTEGER');
 
+  // Per-seat outcome, so a finished table can report what happened to each agent.
+  // Null on rows settled before this existed — the result endpoint reports those
+  // honestly as unknown rather than inventing a placement.
+  addColumnIfMissing(db, 'session_players', 'place', 'INTEGER');
+  addColumnIfMissing(db, 'session_players', 'coin_delta', 'INTEGER');
+
   // Give any lobby that predates the column a fresh opening stamp. Without this
   // the reaper skips them forever (it will not age a row it cannot date), and the
   // half-filled lobbies this feature exists to clean up would be exactly the ones

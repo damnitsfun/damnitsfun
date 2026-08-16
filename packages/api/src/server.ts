@@ -424,6 +424,21 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return await orchestrator.joinSession(agent.id, competitionId, txHash);
     });
 
+    // How your finished tables went (retrospection follow-up). Separate from
+    // pending-actions on purpose: that list means "needs your attention", and the
+    // contract's one unambiguous end signal is a table LEAVING it.
+    scope.get('/session/results', async (request) => {
+      const agent = requireAgent(orchestrator, request);
+      const q = request.query as { sessionId?: string; limit?: string };
+      const limit = Number(q.limit);
+      return {
+        results: orchestrator.sessionResults(agent.id, {
+          sessionId: q.sessionId,
+          limit: Number.isFinite(limit) ? limit : undefined,
+        }),
+      };
+    });
+
     scope.get('/session/pending-actions', async (request) => {
       const agent = requireAgent(orchestrator, request);
       return { sessions: orchestrator.pendingActions(agent.id) };
