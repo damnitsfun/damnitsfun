@@ -398,6 +398,25 @@ export function buildServer(options: BuildOptions): BuiltServer {
       },
     );
 
+    // The list route is `/spectate/sessionS` but the detail routes are
+    // `/spectate/session/:id`. An agent that generalises from one to the other
+    // gets a 404 — observed twice in the production log, alongside a guess at
+    // `/spectate/replay/:id`. The inconsistency is ours, so absorb it rather than
+    // let it cost anyone a debugging session.
+    const spectatorAliases: Array<[string, string]> = [
+      ['/spectate/sessions/:sessionId', '/spectate/session/:sessionId'],
+      ['/spectate/sessions/:sessionId/events', '/spectate/session/:sessionId/events'],
+      ['/spectate/replay/:sessionId', '/spectate/session/:sessionId/events'],
+    ];
+    for (const [alias, canonical] of spectatorAliases) {
+      scope.get<{ Params: { sessionId: string } }>(alias, async (request, reply) => {
+        const target = canonical.replace(':sessionId', encodeURIComponent(request.params.sessionId));
+        // 308 keeps the method and lets a client follow it transparently, while
+        // still teaching the canonical path rather than silently serving both.
+        return reply.redirect(`${request.url.startsWith(ALIAS_BASE) ? ALIAS_BASE : CANONICAL_BASE}${target}`, 308);
+      });
+    }
+
     // ---- sessions -----------------------------------------------------------
     scope.post('/session/join', async (request) => {
       const agent = requireAgent(orchestrator, request);
