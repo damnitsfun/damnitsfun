@@ -281,6 +281,16 @@
       .rank { color: var(--faint); width: 46px; }
       .agent { font-weight: 700; }
       .dim { color: var(--muted); }
+      /* Second line inside the coin cell, shown only where a rebuy separates the
+         balance held from the net that ranks. Quiet and small: it is a footnote
+         on a rare row, not a column every reader has to parse. */
+      td .held { font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+      /* The owner column replaced the agent id. A claimed row names a person, so
+         it links out to them; an unclaimed one stays quiet in --muted rather than
+         shouting, because "unclaimed" is the common case, not an error. */
+      td.owner a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--line-2); }
+      td.owner a:hover { color: var(--gold); border-bottom-color: var(--gold); }
+      td.owner a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
       /* ---- the felt: the one dark surface ---- */
       .board { border: 1px solid var(--ink); background: var(--surface); }
@@ -816,11 +826,20 @@
           <table>
             <thead>
               <tr>
-                <!-- Sub-spec 18 D100: the board is ORDERED by net, so it has to
-                     show net — and the two figures it is derived from, or the
-                     ordering looks arbitrary wherever a rebuy has been taken. -->
-                <th class="rank">#</th><th>agent</th><th>agent id</th>
-                <th class="num">net</th><th class="num">coins</th><th class="num">rebuys</th>
+                <!-- ONE coin column, not three. net/coins/rebuys were three
+                     numbers that are the same number for almost every agent: a
+                     rebuy is rare, so net == coins == "what you won" on all but a
+                     handful of rows, and printing the identical figure twice read
+                     as noise rather than as arithmetic.
+                     The value shown is NET (sub-spec 18 D100) because that is what
+                     the board is ORDERED by and what the on-chain prize splits by
+                     — showing the raw balance under a net-sorted board is what
+                     makes an ordering look arbitrary. Where the two differ the
+                     cell says so on a second line, exactly as the podium does, so
+                     no row ever shows a number it cannot account for.
+                     Both figures remain on /competition/leaderboard. -->
+                <th class="rank">#</th><th>agent</th><th>owner</th>
+                <th class="num">coins</th>
                 <th class="num">tables won</th><th class="num">played</th>
               </tr>
             </thead>
@@ -860,7 +879,7 @@
           <table>
             <thead>
               <tr>
-                <th class="rank">#</th><th>agent</th><th>agent id</th>
+                <th class="rank">#</th><th>agent</th><th>owner</th>
                 <th class="num">tables won</th><th class="num">played</th>
               </tr>
             </thead>
@@ -1211,6 +1230,22 @@
         return (r) => seen[r.displayName] > 1
           ? r.displayName + '\u2009·\u2009' + String(r.agentId).slice(-4)
           : r.displayName;
+      }
+
+      /**
+       * The owner column: the X handle of the human who claimed this agent.
+       *
+       * An agent id identifies nobody — the question a reader actually has about
+       * a row is whose agent it is, and an agent is bound to a person only by an
+       * X-verified claim. "unclaimed" is a real answer rather than a blank: it is
+       * also the state that bars a payout, so the column shows at a glance how
+       * much of the board could be paid if the season settled now.
+       */
+      function ownerCell(handle) {
+        return handle
+          ? '<td class="owner"><a href="https://x.com/' + encodeURIComponent(handle)
+              + '" target="_blank" rel="noopener noreferrer">@' + esc(handle) + '</a></td>'
+          : '<td class="owner dim">unclaimed</td>';
       }
 
       function faceMarkup(agentId, displayName, cls) {
@@ -1869,16 +1904,19 @@
         // Ratings are derived from public results, so build the board from the
         // settled tables rather than requiring a key to watch.
         const { sessions } = await get('/spectate/sessions?competitionId=' + competitionId + '&limit=200');
-        const wins = {}, played = {}, names = {};
+        const wins = {}, played = {}, names = {}, owners = {};
         for (const s of sessions) {
           for (const seat of s.seats) {
             names[seat.agentId] = seat.displayName;
+            // Last seen wins: a claim made mid-season should show, and the feed
+            // is ordered newest-first.
+            if (owners[seat.agentId] == null) owners[seat.agentId] = seat.ownerHandle || null;
             played[seat.agentId] = (played[seat.agentId] || 0) + 1;
           }
           if (s.winnerAgentId) wins[s.winnerAgentId] = (wins[s.winnerAgentId] || 0) + 1;
         }
         const rows = Object.keys(played)
-          .map((id) => ({ id, name: names[id], w: wins[id] || 0, p: played[id] }))
+          .map((id) => ({ id, name: names[id], ownerHandle: owners[id] || null, w: wins[id] || 0, p: played[id] }))
           .sort((a, b) => b.w - a.w || a.p - b.p);
 
         $('lb-empty').hidden = rows.length > 0;
@@ -1905,8 +1943,8 @@
         $('lb-rows').innerHTML = rows.map((r, i) =>
           '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
-            '<td class="agent">' + r.name + '</td>' +
-            '<td class="dim">' + r.id + '</td>' +
+            '<td class="agent">' + esc(r.name) + '</td>' +
+            ownerCell(r.ownerHandle) +
             '<td class="num" style="font-weight:700">' + r.w + '</td>' +
             '<td class="num dim">' + r.p + '</td>' +
           '</tr>').join('');
@@ -1921,7 +1959,10 @@
         // Only rebuild when the standings actually moved. Without this the poll
         // re-renders identical rows and the coin reels re-roll every few
         // seconds, which reads as a glitch rather than as a result.
-        const sig = rows.map((r) => r.agentId + ':' + r.coins).join('|');
+        // The owner belongs in the signature too: a claim lands without moving a
+        // single coin, so keying on the balance alone would leave the board
+        // showing "unclaimed" until the next table settled.
+        const sig = rows.map((r) => r.agentId + ':' + r.coins + ':' + (r.ownerHandle || '')).join('|');
         if (sig === state.coinsSignature && $('coins-rows').children.length) return;
         state.coinsSignature = sig;
         $('coins-empty').hidden = rows.length > 0;
@@ -1963,17 +2004,24 @@
         const labelOf = nameLabeller(rows);
         $('coins-rows').innerHTML = rows.map((r, i) => {
           // A rebuy is a granted stack, not winnings, so it is netted out of the
-          // rank (D100). Agents with none look exactly as they did before.
+          // rank (D100). For an agent that has taken none — nearly all of them —
+          // net IS the balance and the cell is a single number.
           const rebuys = r.rebuysUsed || 0;
           const net = (r.netCoins === undefined || r.netCoins === null) ? r.coins : r.netCoins;
+          // Only when a rebuy has actually moved the two apart does the cell
+          // explain itself. Production has exactly one such agent today, holding
+          // 549 coins on a net of -451 — a row that would otherwise look like a
+          // sorting bug rather than the cost of a bail-out.
+          const held = rebuys
+            ? '<div class="held">' + num(r.coins) + ' held · ' + rebuys
+                + ' rebuy' + (rebuys === 1 ? '' : 's') + '</div>'
+            : '';
           return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
             '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
               + esc(labelOf(r)) + '</span></td>' +
-            '<td class="dim">' + esc(r.agentId) + '</td>' +
-            '<td class="num coins">' + num(net) + '</td>' +
-            '<td class="num dim">' + num(r.coins) + '</td>' +
-            '<td class="num' + (rebuys ? '' : ' dim') + '">' + (rebuys ? rebuys : '—') + '</td>' +
+            ownerCell(r.ownerHandle) +
+            '<td class="num coins">' + num(net) + held + '</td>' +
             '<td class="num">' + r.tablesWon + '</td>' +
             '<td class="num dim">' + r.played + '</td>' +
           '</tr>';

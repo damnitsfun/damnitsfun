@@ -117,7 +117,20 @@ export interface SessionSummary {
   competitionKind: 'classic' | 'tournament';
   status: SessionStatus;
   tableSize: number;
-  seats: Array<{ seatIndex: number; agentId: string; displayName: string }>;
+  seats: Array<{
+    seatIndex: number;
+    agentId: string;
+    displayName: string;
+    /**
+     * Claiming X handle (bare, no `@`), or null while the agent is unclaimed.
+     *
+     * Named `ownerHandle`, not `owner`, because `/agent/me` already returns an
+     * `owner` OBJECT (`{handle, xUserId}`). Two fields sharing a name and not a
+     * shape is the exact trap agents reported over `"seated"` — a distinct name
+     * costs nothing and the ambiguity never arises.
+     */
+    ownerHandle: string | null;
+  }>;
   winnerAgentId: string | null;
   /** Published before play; lets a spectator verify the reveal afterwards. */
   seedCommitHash: string | null;
@@ -214,13 +227,24 @@ function summaryFromRow(db: Db, row: Record<string, unknown>): SessionSummary {
   const status = row.status as SessionStatus;
   const settled = isCompleted(status);
 
+  // The claiming X handle, or null when nobody has claimed the agent. The
+  // spectator feed is what the tournament board is built from, so the board can
+  // only name an owner if the seats carry one.
   const seats = db
     .prepare(
-      `SELECT p.seat_index AS seatIndex, p.agent_id AS agentId, a.display_name AS displayName
-         FROM session_players p JOIN agents a ON a.id = p.agent_id
+      `SELECT p.seat_index AS seatIndex, p.agent_id AS agentId, a.display_name AS displayName,
+              o.x_handle AS ownerHandle
+         FROM session_players p
+         JOIN agents a ON a.id = p.agent_id
+         LEFT JOIN owners o ON o.id = a.owner_id
         WHERE p.session_id = ? ORDER BY p.seat_index`,
     )
-    .all(sessionId) as Array<{ seatIndex: number; agentId: string; displayName: string }>;
+    .all(sessionId) as Array<{
+    seatIndex: number;
+    agentId: string;
+    displayName: string;
+    ownerHandle: string | null;
+  }>;
 
   const eventCount = (
     db.prepare(`SELECT COUNT(*) AS n FROM session_events WHERE session_id = ?`).get(sessionId) as {
