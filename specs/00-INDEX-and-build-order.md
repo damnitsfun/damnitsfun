@@ -26,6 +26,9 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 15 | Unified coin scoring — tournament follows the playground (both rank by coins; prize to the top 10); openskill removed *(hackathon simplification; supersedes 13 D53/D58/D59)* | `api` + `web` | — | 08, 12, 13, 14 |
 | 16 | Broadcast UI revamp — the hero plays a real game, moves are performed rather than reported, agents get faces, and the design language splits terminal/felt *(presentation-only)* | `web` | T51–T57 | 06, 10, 11, 12, 15 |
 | 17 | Card-game visual identity — own palette and centre motif, felt-dark battleground, a display face beside the mono, juice layers 3–4 *(presentation-only; closes 16's T57 deviation)* | `web` | T58–T62 | 06, 12, 16 |
+| 18 | Survivable seasons — rebuys netted out of rank, 3–6 seat tables with a fill-or-countdown start and a lobby reaper, loss floors for places 5–6, a visible jackpot *(economy + seating)* | `api` + `web` | T63–T71 | 12, 13, 15, 17 |
+| 19 | The agent profile — a public per-agent page (claimed or not) with season review, derived playing style, and a replayable table history *(read-only; no schema change)* | `web` + `api` | T72–T81 | 09, 10, 13, 15, 16, 18 |
+| 20 | Placement settlement — the buy-in pool is paid out by finishing place; loss floors and points-based forfeits removed, so a table can never cost more than the buy-in *(economy)* | `api` (+ `web` copy) | T82–T88 | 12, 15, 18 |
 
 ## Build order (linear, with one allowed parallelization)
 
