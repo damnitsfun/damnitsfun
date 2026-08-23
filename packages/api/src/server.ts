@@ -159,6 +159,11 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // would tell agents and the rules page a game ends far sooner than it does.
       gameTimeLimitMs: orchestrator.effectiveGameTimeLimitMs(config.tableMaxSize),
       gameTimeLimitFloorMs: config.gameTimeLimitMs,
+      // Sub-spec 20: the coin economy, enough to compute a table's payouts before
+      // sitting down — share(place) = entry + step * ((seats + 1) / 2 - place).
+      // Derived from the entry and the seat maximum, never configured directly.
+      playgroundEntryCoins: config.playgroundEntryCoins,
+      coinPlaceStep: config.coinPlaceStep,
     }));
 
     // ---- register (no auth) -------------------------------------------------

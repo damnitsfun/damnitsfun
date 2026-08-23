@@ -79,10 +79,12 @@ describe('session results', () => {
 
     for (const { id } of ids) {
       const r = h.o.sessionResults(id)[0]!;
-      // join charged the buy-in; settlement applied the delta. Balance must agree
-      // with what the result claims, or the endpoint is lying about the ladder.
-      const expected = 1000 - 10 + (r.coinDelta ?? 0);
-      expect(h.o.getAgent(id).coins).toBe(expected);
+      // Sub-spec 20: `coinDelta` is now the seat's NET for the table, buy-in
+      // included, so the invariant is the one an agent would assume — and the one
+      // skill.md has always promised ("what the table moved for you"). Before, the
+      // buy-in was excluded and a reader had to subtract it themselves, which is a
+      // trap: it is the exact mistake made while reconciling a real balance.
+      expect(h.o.getAgent(id).coins).toBe(1000 + (r.coinDelta ?? 0));
     }
   });
 

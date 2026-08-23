@@ -93,6 +93,8 @@ describe('config loader (spec §9)', () => {
       lobbyAbandonMs: 60000,
       startingCoins: 2500,
       playgroundEntryCoins: 25,
+      // Derived, not read from the env (sub-spec 20 D132): 2 x floor(entry / (max - 1)).
+      coinPlaceStep: 50,
       // Sub-spec 18: REBUY_LIMIT/REBUY_COINS are unset in this env, so these are
       // the defaults — and rebuyCoins tracking STARTING_COINS is why it reads
       // 2500 here rather than 1000.
