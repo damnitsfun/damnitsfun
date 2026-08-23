@@ -15,6 +15,8 @@ import { createXOAuth } from './xoauth';
 import { createGoogleOAuth } from './googleoauth';
 import { renderClaimError, renderClaimPage } from './routes/claim-page';
 import { SESSION_COOKIE, parseCookies, serializeCookie } from './cookies';
+import { agentProfile, agentTables } from './profile';
+import { agentStyle } from './style';
 import {
   actionSchema,
   enterSchema,
@@ -124,9 +126,24 @@ export function buildServer(options: BuildOptions): BuiltServer {
     return reply.type('text/html; charset=utf-8').send(renderClaimPage({ token, base: CANONICAL_BASE }));
   });
 
-  // The profile page is part of the app SPA; serve it for /profile and /profile/:id.
+  // The OWNER's account page (a signed-in human and their linked agents).
   app.get('/profile', async (_request, reply) => sendPage(reply, webIndex));
-  app.get<{ Params: { id: string } }>('/profile/:id', async (_request, reply) => sendPage(reply, webIndex));
+
+  /**
+   * `/profile/:id` was registered but its `:id` was never read — `renderProfile()`
+   * looks only at the signed-in session, so `/profile/agent_abc` silently rendered
+   * *the viewer's own* page, or bounced an anonymous visitor to Google. Anyone who
+   * guessed that URL got a confident wrong answer with no error (sub-spec 19 D113).
+   * It now points at the agent profile it was always mistaken for.
+   */
+  app.get<{ Params: { id: string } }>('/profile/:id', async (request, reply) =>
+    reply.redirect(`/agent/${encodeURIComponent(request.params.id)}`, 301),
+  );
+
+  // The public agent profile (sub-spec 19 D112). Part of the app SPA.
+  app.get<{ Params: { agentId: string } }>('/agent/:agentId', async (_request, reply) =>
+    sendPage(reply, webIndex),
+  );
 
   const cookieSecure = config.publicBaseUrl.startsWith('https://');
 
@@ -204,6 +221,34 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // Public metadata so the web can split playground (classic) vs tournament
     // (pooled) and show the tournament's prize pool / jackpot / buy-in / entries.
     scope.get('/competitions', async () => ({ competitions: orchestrator.publicCompetitions() }));
+
+    // ---- public agent profile (no auth, sub-spec 19 T73) --------------------
+    //
+    // Three path segments, so these cannot capture the two-segment `/agent/me`
+    // above. That is easy to break later — a future bare `GET /agent/:agentId`
+    // WOULD swallow `me` — so a test pins it rather than a comment.
+    //
+    // Public and readable for an UNCLAIMED agent, which is the normal case: every
+    // agent on production is unclaimed, so a design that gated this on ownership
+    // would ship a product where every profile is broken (D114).
+    scope.get<{ Params: { agentId: string } }>('/agent/:agentId/profile', async (request) => {
+      const { agentId } = request.params;
+      const competitionId = (request.query as { competitionId?: string }).competitionId;
+      return {
+        profile: agentProfile(db, agentId),
+        style: agentStyle(db, agentId, competitionId),
+      };
+    });
+
+    scope.get<{ Params: { agentId: string } }>('/agent/:agentId/tables', async (request) => {
+      const { agentId } = request.params;
+      const q = request.query as { competitionId?: string; limit?: string; before?: string };
+      return agentTables(db, agentId, {
+        competitionId: q.competitionId,
+        limit: q.limit ? Number(q.limit) : undefined,
+        before: q.before,
+      });
+    });
 
     // ---- playground standings (no auth; ranked by coins, sub-spec 12) -------
     scope.get('/playground/standings', async (request) => {
