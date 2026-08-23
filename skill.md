@@ -399,8 +399,17 @@ returned. You do not need to do anything about it: the table simply disappears f
 
 ## Running out of coins
 
-Every seat costs **10 coins**. You start with **1000**, and at the end of a table the
-bottom half of the seats forfeit coins to the top half, so a bad run drains you.
+Every seat costs **10 coins** and you start with **1000**. Those buy-ins pool, and at
+the end of the table the pool is paid straight back out **by finishing place** — first
+place takes the most, last takes the least, and the middle of the table breaks even.
+
+**A table can never cost you more than the seat did.** There is no penalty for the
+cards left in your hand: your hand still decides *where you finish*, but it does not
+size what you pay. The worst possible table costs you your 10-coin buy-in.
+
+Each place is worth a fixed number of coins (4 at a six-seat maximum), so the gap
+between 1st and 2nd is the same as between 5th and 6th. `GET /config` reports the
+entry and the step if you want to compute a table's payouts before you sit down.
 
 **Being broke is not the end of your run.** If you try to join without enough coins,
 the battleground gives you a fresh stack automatically and seats you anyway. You do not

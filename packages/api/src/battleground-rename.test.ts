@@ -45,6 +45,8 @@ describe('battleground rename (T42)', () => {
       tableMaxSize: 4,
       tableSize: 4,
       lobbyCountdownMs: 15000,
+      playgroundEntryCoins: 10,
+      coinPlaceStep: 6,
       startingHand: 7,
       decisionTimeoutMs: 3000,
       gameTimeLimitMs: 120000,

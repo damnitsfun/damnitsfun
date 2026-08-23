@@ -82,6 +82,15 @@ export interface Config {
   startingCoins: number;
   playgroundEntryCoins: number;
   /**
+   * Coins between adjacent finishing places (sub-spec 20 D131/D132).
+   *
+   * DERIVED, never configured: `2 x entry / (tableMaxSize - 1)` is the value at
+   * which last place at a full table loses its buy-in and no more. Exposing it as
+   * its own env var would let it contradict the two values it comes from — set it
+   * too high and last place would owe more than it paid to sit down.
+   */
+  coinPlaceStep: number;
+  /**
    * Rebuys (sub-spec 18, D98/D99). How many fresh stacks an agent may take per
    * SEASON, and how big each one is. `rebuyLimit: 0` restores the pre-18
    * behaviour, where running out of coins locked an agent out permanently.
@@ -271,6 +280,10 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       'PLAYGROUND_ENTRY_COINS',
       withDefault(env, 'PLAYGROUND_ENTRY_COINS', '10'),
     ),
+    coinPlaceStep: coinPlaceStepFor(
+      toInt('PLAYGROUND_ENTRY_COINS', withDefault(env, 'PLAYGROUND_ENTRY_COINS', '10')),
+      toInt('TABLE_MAX_SIZE', withDefault(env, 'TABLE_MAX_SIZE', withDefault(env, 'TABLE_SIZE', '6'))),
+    ),
     rebuyLimit: toInt('REBUY_LIMIT', withDefault(env, 'REBUY_LIMIT', '5')),
     // Tracks STARTING_COINS: "a rebuy puts you back where you started" is one
     // sentence an agent can act on, which a partial top-up is not.
@@ -291,6 +304,29 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
   if (config.tableMinSize < 2) {
     throw new ConfigError(`TABLE_MIN_SIZE must be at least 2, got ${config.tableMinSize}.`);
   }
+  // Sub-spec 20: coins are integers, so refuse to start on a curve that would
+  // need fractions. Failing at boot beats discovering it when a table settles.
+  const badSizes = fractionalShareSizes(
+    config.playgroundEntryCoins,
+    config.coinPlaceStep,
+    config.tableMinSize,
+    config.tableMaxSize,
+  );
+  if (config.coinPlaceStep === 0 && config.playgroundEntryCoins > 0 && config.tableMaxSize > 1) {
+    throw new ConfigError(
+      `PLAYGROUND_ENTRY_COINS=${config.playgroundEntryCoins} is too small to separate ` +
+        `${config.tableMaxSize} places: the place-step floors to 0, so every seat would be paid ` +
+        `the same and finishing order would not matter. Raise the entry or lower TABLE_MAX_SIZE.`,
+    );
+  }
+  if (badSizes.length > 0) {
+    throw new ConfigError(
+      `PLAYGROUND_ENTRY_COINS=${config.playgroundEntryCoins} with TABLE_MAX_SIZE=` +
+        `${config.tableMaxSize} gives a place-step of ${config.coinPlaceStep}, which pays ` +
+        `fractional coins at table size(s) ${badSizes.join(', ')}. Pick an entry that divides ` +
+        `evenly: the step is 2 x entry / (max - 1) and must be a whole, even number.`,
+    );
+  }
   if (config.tableMaxSize > 10) {
     throw new ConfigError(
       `TABLE_MAX_SIZE must be at most 10 (the engine's limit), got ${config.tableMaxSize}.`,
@@ -306,3 +342,52 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
 }
 
 export { ConfigError };
+
+/**
+ * The coin gap between adjacent finishing places (sub-spec 20 D132).
+ *
+ * Pinned by the LARGEST table rather than chosen, so it cannot drift out of step
+ * with the seat bounds: at `2 x entry / (max - 1)` the last seat at a full table
+ * receives nothing and therefore loses exactly its buy-in — the spec's guarantee
+ * that a table can never cost more than you sat down with.
+ */
+export function coinPlaceStepFor(entryCoins: number, tableMaxSize: number): number {
+  if (tableMaxSize <= 1) return 0; // a one-seat table has no places to separate
+  // FLOORED, and doubled, so the step is always an EVEN WHOLE number. Both matter:
+  // whole because coins are integers, and even because an even-sized table puts
+  // seats a half-step from the middle, so an odd step would pay half-coins there.
+  //
+  // The undivided form `2 * entry / (max - 1)` is exact only for some pairings —
+  // entry 10 with a 6-seat maximum gives 4, but with a 4-seat maximum it gives
+  // 6.67. Flooring keeps every configuration legal rather than only the ones we
+  // happen to run. The cost is that when the division is inexact, last place at a
+  // full table loses slightly LESS than the whole buy-in (at entry 10 / max 4 it
+  // forfeits 9 of 10) — which never violates the guarantee, it only softens it.
+  return 2 * Math.floor(entryCoins / (tableMaxSize - 1));
+}
+
+/**
+ * Shares must be whole coins: `agents.coins` is an INTEGER column, and a curve
+ * that produced 13.8 would need a dust rule the derived form is meant to avoid.
+ * Not every (entry, maxSize) pair is integral — entry 10 with a 5-seat maximum
+ * gives a step of 5, and a 4-seat table then wants half-coins — so this is
+ * checked at boot rather than discovered at settlement.
+ */
+export function fractionalShareSizes(
+  entryCoins: number,
+  step: number,
+  minSize: number,
+  maxSize: number,
+): number[] {
+  const bad: number[] = [];
+  for (let n = minSize; n <= maxSize; n++) {
+    for (let place = 1; place <= n; place++) {
+      const share = entryCoins + step * ((n + 1) / 2 - place);
+      if (!Number.isInteger(share)) {
+        bad.push(n);
+        break;
+      }
+    }
+  }
+  return bad;
+}

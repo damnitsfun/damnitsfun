@@ -1,174 +1,176 @@
+import { coinPlaceStepFor, fractionalShareSizes, loadConfig } from './config';
 import {
-  COIN_SPLIT_SMOOTHING,
-  LOSS_FLOOR_BY_PLACE,
+  computeCoinSettlement,
   PLAYGROUND_ENTRY_COINS,
   STARTING_COINS,
-  computeCoinSettlement,
+  type SeatSettlement,
 } from './coins';
 
 /**
- * Playground coin settlement (sub-spec 12, T41). The mechanism, with the source
- * game's ×multiplier removed: the bottom half of a 4-seat table forfeits coins
- * by placement (3rd ≥ 40, 4th ≥ 60), the top half splits that pot fewer-points-
- * first, it is zero-sum, and it never drives a balance below 0.
+ * Sub-spec 20 (T84) — placement settlement.
+ *
+ * The rule these replace took `max(points, floor)` from the bottom half of the
+ * table. Measured over 4,318 real losing seats, 47.8% forfeited MORE than the
+ * points they held, and the worst single-table loss was -319 coins on a 10-coin
+ * seat. Everything below exists to pin the two properties that fix that: the
+ * table is zero-sum, and no seat can lose more than its buy-in.
  */
-describe('computeCoinSettlement', () => {
-  const rich = { a: 1000, b: 1000, c: 1000, d: 1000 };
+const ENTRY = 10;
+const STEP = coinPlaceStepFor(ENTRY, 6); // 4
 
-  it('redistributes only the forfeits when no buy-in pot is passed (sums to 0)', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 10, c: 30, d: 55 },
-      balances: rich,
-    });
-    const sum = Object.values(deltas).reduce((s, x) => s + x, 0);
-    expect(sum).toBe(0);
+/** Seat n agents 1st..nth. */
+const table = (n: number): Record<string, number> =>
+  Object.fromEntries(Array.from({ length: n }, (_, i) => [`a${i + 1}`, i + 1]));
+
+const settle = (n: number, entry = ENTRY, step = STEP): Record<string, SeatSettlement> =>
+  computeCoinSettlement({ places: table(n), entryCoins: entry, placeStep: step });
+
+const nets = (s: Record<string, SeatSettlement>): number[] =>
+  Object.keys(s)
+    .sort()
+    .map((k) => s[k]!.net);
+
+describe('computeCoinSettlement — the shape of the curve', () => {
+  it('pays the table the spec advertises, seat for seat', () => {
+    expect(nets(settle(3))).toEqual([4, 0, -4]);
+    expect(nets(settle(4))).toEqual([6, 2, -2, -6]);
+    expect(nets(settle(5))).toEqual([8, 4, 0, -4, -8]);
+    expect(nets(settle(6))).toEqual([10, 6, 2, -2, -6, -10]);
   });
 
-  it('pools the entry buy-ins into the winnings (deltas sum to entryPot)', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 10, c: 30, d: 55 },
-      balances: rich,
-      entryPot: 40,
-    });
-    // Losers still only forfeit their (floored) points…
-    expect(deltas.c).toBeLessThan(0);
-    expect(deltas.d).toBeLessThan(0);
-    const lost = -(deltas.c! + deltas.d!);
-    // …and the winners take those forfeits PLUS the 40-coin pool.
-    expect(deltas.a! + deltas.b!).toBe(lost + 40);
-    // The whole settlement returns exactly the pooled buy-ins to circulation.
-    expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(40);
+  it('breaks even in the middle — the property the whole curve is built on', () => {
+    // Odd fields have a true centre seat; it is its own mirror, so it nets zero.
+    expect(nets(settle(3))[1]).toBe(0);
+    expect(nets(settle(5))[2]).toBe(0);
+    // Even fields straddle the centre symmetrically instead.
+    const four = nets(settle(4));
+    expect(four[1]).toBe(-four[2]!);
+    const six = nets(settle(6));
+    expect(six[2]).toBe(-six[3]!);
   });
 
-  it('makes the top half win and the bottom half lose', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 10, c: 30, d: 55 },
-      balances: rich,
-    });
-    expect(deltas.a).toBeGreaterThan(0);
-    expect(deltas.b).toBeGreaterThan(0);
-    expect(deltas.c).toBeLessThan(0);
-    expect(deltas.d).toBeLessThan(0);
+  it('is antisymmetric about the middle at every table size', () => {
+    for (const n of [3, 4, 5, 6]) {
+      const v = nets(settle(n));
+      // Stated as "each mirrored pair sums to zero" rather than `a === -b`, which
+      // trips on JS signed zero at the centre seat (-0 is not Object.is 0).
+      for (let i = 0; i < n; i++) expect(v[i]! + v[n - 1 - i]!).toBe(0);
+    }
   });
 
-  it('applies the placement floors (3rd ≥ 40, 4th ≥ 60) when hand points are low', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 5, c: 2, d: 1 }, // losers hold almost nothing
-      balances: rich,
-    });
-    expect(-deltas.c!).toBe(LOSS_FLOOR_BY_PLACE[3]); // 40
-    expect(-deltas.d!).toBe(LOSS_FLOOR_BY_PLACE[4]); // 60
-    // Pot = 100; winners split it.
-    expect(deltas.a! + deltas.b!).toBe(100);
+  it('separates every adjacent pair by exactly one step', () => {
+    for (const n of [3, 4, 5, 6]) {
+      const v = nets(settle(n));
+      for (let i = 1; i < n; i++) expect(v[i - 1]! - v[i]!).toBe(STEP);
+    }
+  });
+});
+
+describe('the two guarantees', () => {
+  it('is zero-sum: nets cancel and credits pay out the pool exactly', () => {
+    for (const n of [2, 3, 4, 5, 6]) {
+      const s = settle(n);
+      const totalNet = Object.values(s).reduce((t, x) => t + x.net, 0);
+      const totalCredit = Object.values(s).reduce((t, x) => t + x.credit, 0);
+      expect(totalNet).toBe(0);
+      expect(totalCredit).toBe(ENTRY * n); // the pooled buy-ins, returned whole
+    }
   });
 
-  it('uses points above the floor when the hand is heavy', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 10, c: 90, d: 120 },
-      balances: rich,
-    });
-    expect(-deltas.c!).toBe(90);
-    expect(-deltas.d!).toBe(120);
-    expect(deltas.a! + deltas.b!).toBe(210);
+  it('never lets a seat lose more than its buy-in — the headline promise', () => {
+    for (const n of [2, 3, 4, 5, 6]) {
+      for (const seat of Object.values(settle(n))) {
+        expect(seat.credit).toBeGreaterThanOrEqual(0); // never claws back
+        expect(seat.net).toBeGreaterThanOrEqual(-ENTRY);
+      }
+    }
   });
 
-  it('gives the winner with fewer points the bigger share', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 40, c: 50, d: 70 }, // 2nd holds a lot → 1st wins bigger
-      balances: rich,
-    });
-    expect(deltas.a!).toBeGreaterThan(deltas.b!);
+  it('takes exactly the buy-in from last place at a FULL table, and no more', () => {
+    const last = nets(settle(6))[5];
+    expect(last).toBe(-ENTRY);
+  });
+});
+
+describe('integer coins', () => {
+  it('pays whole coins at every table size and every sane entry', () => {
+    for (const entry of [10, 25, 50, 100]) {
+      const step = coinPlaceStepFor(entry, 6);
+      for (const n of [3, 4, 5, 6]) {
+        for (const seat of Object.values(settle(n, entry, step))) {
+          expect(Number.isInteger(seat.credit)).toBe(true);
+          expect(Number.isInteger(seat.net)).toBe(true);
+        }
+      }
+    }
   });
 
-  it('never drives a balance below zero (bankruptcy cap)', () => {
-    const deltas = computeCoinSettlement({
-      places: { a: 1, b: 2, c: 3, d: 4 },
-      handValues: { a: 0, b: 10, c: 90, d: 120 },
-      balances: { a: 1000, b: 1000, c: 25, d: 5 }, // near-broke losers
+  it('scales linearly with the entry — structure and stakes are separate knobs', () => {
+    expect(nets(settle(6, 50, coinPlaceStepFor(50, 6)))).toEqual([50, 30, 10, -10, -30, -50]);
+  });
+
+  /**
+   * The step is floored to an even whole number precisely so that EVERY legal
+   * seat-bound pairing is integral — the undivided form was exact only at a
+   * 6-seat maximum, which would have made a 4-seat deployment unbootable.
+   */
+  it('is integral for every legal table maximum, not just the one we run', () => {
+    for (const max of [2, 3, 4, 5, 6, 10]) {
+      expect(fractionalShareSizes(10, coinPlaceStepFor(10, max), 2, max)).toEqual([]);
+    }
+  });
+
+  it('keeps the step even, so half-step seats on even tables stay whole', () => {
+    for (const max of [2, 3, 4, 5, 6, 10]) {
+      expect(coinPlaceStepFor(10, max) % 2).toBe(0);
+    }
+  });
+
+  it('refuses to boot when the entry is too small to separate the places', () => {
+    // entry 1 across a 6-seat table floors to a step of 0: every seat paid the
+    // same, finishing order meaningless. Better to fail loudly than rank nothing.
+    expect(() =>
+      loadConfig({ env: { PLAYGROUND_ENTRY_COINS: '1', TABLE_MIN_SIZE: '3', TABLE_MAX_SIZE: '6' } }),
+    ).toThrow(/too small to separate/i);
+  });
+});
+
+describe('edge cases', () => {
+  it('returns nothing for an empty table rather than throwing', () => {
+    expect(computeCoinSettlement({ places: {}, entryCoins: ENTRY, placeStep: STEP })).toEqual({});
+  });
+
+  /**
+   * `placementsFrom` lets equal hand values SHARE a place, so two seats can both
+   * be 2nd. Paying by the raw place value would hand out the same share twice and
+   * break the pool; seats are paid by rank instead.
+   */
+  it('stays exact when two seats share a place', () => {
+    const s = computeCoinSettlement({
+      places: { w: 1, x: 2, y: 2, z: 4 },
+      entryCoins: ENTRY,
+      placeStep: STEP,
     });
-    expect(-deltas.c!).toBeLessThanOrEqual(25);
-    expect(-deltas.d!).toBeLessThanOrEqual(5);
-    // Still zero-sum: winners only split what was actually collected.
-    expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(0);
-    expect(deltas.a! + deltas.b!).toBe(30);
+    expect(Object.values(s).reduce((t, v) => t + v.credit, 0)).toBe(ENTRY * 4);
+    expect(Object.values(s).reduce((t, v) => t + v.net, 0)).toBe(0);
+  });
+
+  it('is deterministic regardless of key order', () => {
+    const a = computeCoinSettlement({
+      places: { z: 3, a: 1, m: 2 },
+      entryCoins: ENTRY,
+      placeStep: STEP,
+    });
+    const b = computeCoinSettlement({
+      places: { a: 1, m: 2, z: 3 },
+      entryCoins: ENTRY,
+      placeStep: STEP,
+    });
+    expect(a).toEqual(b);
   });
 
   it('exposes the configured economy constants', () => {
     expect(STARTING_COINS).toBe(1000);
     expect(PLAYGROUND_ENTRY_COINS).toBe(10);
-    expect(COIN_SPLIT_SMOOTHING).toBeGreaterThan(0);
-  });
-
-  /**
-   * Sub-spec 18 (D103/D109) — tables become 3–6 seats. Everything above exercises
-   * exactly four, which is how places 5 and 6 came to have no floor at all: they
-   * could not occur, so nobody noticed `?? 0` standing in for one.
-   */
-  describe('variable table sizes (3–6 seats)', () => {
-    const balances = (ids: string[]): Record<string, number> =>
-      Object.fromEntries(ids.map((id) => [id, 1000]));
-
-    it('splits a 3-seat table two winners to one loser', () => {
-      const deltas = computeCoinSettlement({
-        places: { a: 1, b: 2, c: 3 },
-        handValues: { a: 0, b: 12, c: 44 },
-        balances: balances(['a', 'b', 'c']),
-        entryPot: 30,
-      });
-      // half = ceil(3/2) = 2 → places 1-2 win, place 3 loses.
-      expect(deltas.a!).toBeGreaterThan(0);
-      expect(deltas.b!).toBeGreaterThan(0);
-      expect(deltas.c!).toBeLessThan(0);
-      expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(30);
-    });
-
-    it('applies the new floors to 5th and 6th place', () => {
-      const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
-      const deltas = computeCoinSettlement({
-        places: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 },
-        // Every loser holds a trivial hand, so the FLOOR is what must bite.
-        handValues: { a: 0, b: 2, c: 3, d: 1, e: 1, f: 1 },
-        balances: balances(ids),
-        entryPot: 60,
-      });
-      expect(-deltas.d!).toBe(LOSS_FLOOR_BY_PLACE[4]);
-      expect(-deltas.e!).toBe(LOSS_FLOOR_BY_PLACE[5]);
-      expect(-deltas.f!).toBe(LOSS_FLOOR_BY_PLACE[6]);
-      // The gradient must keep pointing the same way: further down costs more.
-      expect(-deltas.f!).toBeGreaterThan(-deltas.e!);
-      expect(-deltas.e!).toBeGreaterThan(-deltas.d!);
-    });
-
-    it('stays zero-sum against the entry pot at every seat count', () => {
-      for (const n of [3, 4, 5, 6]) {
-        const ids = ['a', 'b', 'c', 'd', 'e', 'f'].slice(0, n);
-        const entryPot = n * PLAYGROUND_ENTRY_COINS;
-        const deltas = computeCoinSettlement({
-          places: Object.fromEntries(ids.map((id, i) => [id, i + 1])),
-          handValues: Object.fromEntries(ids.map((id, i) => [id, i * 17])),
-          balances: balances(ids),
-          entryPot,
-        });
-        expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(entryPot);
-      }
-    });
-
-    it('still caps a loser at what they hold on a six-seat table', () => {
-      const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
-      const deltas = computeCoinSettlement({
-        places: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 },
-        handValues: { a: 0, b: 5, c: 9, d: 70, e: 90, f: 120 },
-        balances: { ...balances(ids), f: 12 },   // nearly broke in last place
-        entryPot: 60,
-      });
-      expect(-deltas.f!).toBe(12);               // never more than the balance
-      expect(Object.values(deltas).reduce((s, x) => s + x, 0)).toBe(60);
-    });
   });
 });
