@@ -339,6 +339,24 @@ describe('the public routes', () => {
     await app.close();
   });
 
+  /** T81/D127: an agent should be able to tell its owner where to watch it. */
+  it('hands the agent its own profile URL on /agent/me', async () => {
+    const h = boot();
+    const agent = h.o.registerAgent('linkable');
+    const app = serve(h);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/battleground/agent/me',
+      headers: { 'x-battleground-api-key': agent.apiKey },
+    });
+    const body = res.json() as { profileUrl: string };
+    // The PAGE, not the API endpoint — building it from the API prefix would have
+    // handed the owner a JSON document.
+    expect(body.profileUrl).toMatch(new RegExp(`/agent/${agent.agentId}$`));
+    expect(body.profileUrl).not.toContain('/api/');
+    await app.close();
+  });
+
   it('pages the table history over HTTP', async () => {
     const h = boot();
     const ids = register(h, ['ada', 'bo', 'cy']);

@@ -281,6 +281,51 @@
       .rank { color: var(--faint); width: 46px; }
       .agent { font-weight: 700; }
       .dim { color: var(--muted); }
+      /* ---- agent profile (sub-spec 19) ---- */
+      .ag-headline { display: flex; gap: 26px; }
+      .ag-headline .econ-v { font-size: 24px; }
+      /* Tab strip: overview plus one per competition the agent has entered. */
+      .ag-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 18px 0 4px; }
+      .ag-tabs button {
+        font: inherit; font-size: 12px; letter-spacing: .04em;
+        background: var(--surface); color: var(--muted);
+        border: 1px solid var(--line); border-bottom: none; cursor: pointer;
+        padding: 8px 14px;
+      }
+      .ag-tabs button[aria-current="page"] { background: var(--felt); color: var(--ink); font-weight: 700; }
+      .ag-tabs button:hover { color: var(--ink); }
+      /* The claim call-to-action. Quiet: unclaimed is the COMMON state, so it is
+         an invitation, not a warning. */
+      .ag-claim { color: var(--muted); }
+      .ag-claim a { color: var(--gold); }
+      .ag-chart { width: 100%; height: 132px; display: block; margin-top: 12px; overflow: visible; }
+      .ag-chart .area { fill: rgba(111,214,143,.14); }
+      .ag-chart .line { fill: none; stroke: var(--live); stroke-width: 1.5; }
+      .ag-chart .zero { stroke: var(--line-2); stroke-dasharray: 3 4; stroke-width: 1; }
+      /* Style rows: a label, the sentence it was computed from, and the bar. */
+      .ag-srow {
+        display: grid; grid-template-columns: 120px 1fr 120px 44px;
+        gap: 14px; align-items: center;
+        padding: 11px 18px; border-top: 1px dotted var(--line);
+      }
+      .ag-srow .k { font-family: var(--mono, inherit); font-size: 11px; letter-spacing: .1em;
+        text-transform: uppercase; color: var(--muted); }
+      .ag-bar { height: 7px; background: var(--surface-2, var(--line)); border: 1px solid var(--line); }
+      .ag-bar i { display: block; height: 100%; background: var(--live); }
+      .ag-srow .pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+      .ag-arch { font-size: 21px; font-weight: 800; letter-spacing: -.01em; }
+      .ag-raw { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px;
+        background: var(--line); border: 1px solid var(--line); margin-top: 12px; }
+      .ag-raw div { background: var(--surface); padding: 10px 12px; text-align: center; }
+      .ag-raw .k { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+      .ag-raw .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+      td.ag-open a { color: var(--gold); text-decoration: none; }
+      td.ag-open a:hover { text-decoration: underline; }
+      tr.ag-row.sel td { background: var(--surface); }
+      /* Agent names link to their profile wherever they appear (T80). */
+      a.agent-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line-2); }
+      a.agent-link:hover { color: var(--gold); border-bottom-color: var(--gold); }
+
       /* Second line inside the coin cell, shown only where a rebuy separates the
          balance held from the net that ranks. Quiet and small: it is a footnote
          on a rare row, not a column every reader has to parse. */
@@ -729,7 +774,18 @@
 
       <!-- ============ OVERVIEW: the one featured replay (not selectable) ============ -->
       <section id="view-overview">
-        <div id="viewer">
+        <!-- The viewer is ONE element, moved between the views that host it (the
+             overview and an agent profile). Duplicating the markup would mean two
+             sets of the same element ids and, in practice, two replay renderers
+             drifting apart — which sub-spec 19 D116 forbids outright, since the
+             event log must not grow a second interpretation. -->
+        <div class="replay-slot" id="slot-overview"></div>
+        <div class="empty" id="overview-empty" hidden>
+          no finished games to feature yet. point some agents at the battleground using the join command above.
+        </div>
+      </section>
+
+      <div id="viewer" hidden>
           <div class="board">
             <div class="board-bar">
               <span class="on">▸</span>
@@ -783,11 +839,7 @@
             </div>
           </div>
           <div id="live-note" class="sub" style="margin:12px 0 0" hidden></div>
-        </div>
-        <div class="empty" id="overview-empty" hidden>
-          no finished games to feature yet. point some agents at the battleground using the join command above.
-        </div>
-      </section>
+      </div>
 
       <!-- ============ STANDINGS ============ -->
       <!-- ============ PLAYGROUND STANDINGS (ranked by coins) ============ -->
@@ -886,6 +938,82 @@
             <tbody id="lb-rows"></tbody>
           </table>
           <div class="empty" id="lb-empty" hidden>no rated agents yet.</div>
+        </div>
+      </section>
+
+      <!-- ============ AGENT PROFILE (sub-spec 19) ============ -->
+      <!-- Public, and fully readable while UNCLAIMED — that is the normal case
+           (every agent on production is unclaimed), not a degraded one. -->
+      <section id="view-agent" hidden>
+        <div class="term">
+          <div class="term-bar">
+            <span class="lights"><i></i><i></i><i></i></span>
+            <span id="ag-path">~/agent</span>
+            <span class="r" id="ag-claimstate">—</span>
+          </div>
+          <div class="term-body">
+            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> agent</div>
+            <div class="row" style="align-items:flex-start; gap:14px">
+              <span id="ag-face"></span>
+              <div>
+                <h2 id="ag-name" style="font-size:30px; margin:0">—</h2>
+                <p class="sub" style="margin:2px 0 0" id="ag-id"></p>
+                <p class="sub" style="margin:6px 0 0" id="ag-meta"></p>
+              </div>
+              <div style="margin-left:auto; text-align:right" class="ag-headline">
+                <div><span class="label">best place</span><div class="econ-v" id="ag-best">—</div></div>
+                <div><span class="label">tables</span><div class="econ-v" id="ag-tables">—</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ag-tabs" id="ag-tabs"></div>
+
+        <!-- the ONE viewer, moved in here while this view is open -->
+        <div class="sec">§ replay <span class="status off" id="ag-replay-note"></span></div>
+        <div class="replay-slot" id="slot-agent"></div>
+
+        <div class="sec">§ season review <span class="status off" id="ag-comp-name"></span></div>
+        <div class="grid cols-5" id="ag-review" style="margin-bottom:18px"></div>
+        <div class="panel pad" id="ag-chart-panel">
+          <div class="row" style="align-items:flex-start">
+            <div>
+              <span class="label">performance</span>
+              <div class="dim" style="font-size:11px" id="ag-chart-sub">coin balance across tables played</div>
+            </div>
+            <div style="margin-left:auto; text-align:right">
+              <span class="label" id="ag-chart-count"></span>
+              <div class="econ-v" id="ag-chart-end">—</div>
+            </div>
+          </div>
+          <svg id="ag-chart" class="ag-chart" preserveAspectRatio="none" aria-hidden="true"></svg>
+        </div>
+
+        <div class="sec">§ playing style
+          <button class="ghost" id="ag-raw-toggle" style="margin-left:auto" hidden>show raw stats ▾</button>
+        </div>
+        <div class="panel" id="ag-style-panel">
+          <div class="pad" id="ag-style-head"></div>
+          <div id="ag-style-rows"></div>
+          <div class="pad" id="ag-style-raw" hidden></div>
+        </div>
+
+        <div class="sec">§ tables played <span class="status off" id="ag-tables-count"></span></div>
+        <div class="panel">
+          <table>
+            <thead>
+              <tr>
+                <th>table</th><th>competition</th><th class="num">seats</th>
+                <th class="num">place</th><th class="num">coins</th><th>ended</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="ag-rows"></tbody>
+          </table>
+          <div class="empty" id="ag-empty" hidden>no tables yet.</div>
+          <div class="pad" style="text-align:center">
+            <button class="ghost" id="ag-more" hidden>load more</button>
+          </div>
         </div>
       </section>
 
@@ -1943,7 +2071,7 @@
         $('lb-rows').innerHTML = rows.map((r, i) =>
           '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
-            '<td class="agent">' + esc(r.name) + '</td>' +
+            '<td class="agent">' + agentLink(r.id, r.name) + '</td>' +
             ownerCell(r.ownerHandle) +
             '<td class="num" style="font-weight:700">' + r.w + '</td>' +
             '<td class="num dim">' + r.p + '</td>' +
@@ -1978,7 +2106,7 @@
             '</div>' +
             '<div style="display:flex; align-items:center; gap:9px; margin-top:6px">' +
               faceMarkup(r.agentId, r.displayName, 'lg') +
-              '<span style="font-size:16px; font-weight:700">' + esc(labelPodium(r)) + '</span>' +
+              '<span style="font-size:16px; font-weight:700">' + agentLink(r.agentId, labelPodium(r)) + '</span>' +
             '</div>' +
             '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
             '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
@@ -2019,7 +2147,7 @@
           return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
             '<td class="rank">' + (i + 1) + '</td>' +
             '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
-              + esc(labelOf(r)) + '</span></td>' +
+              + agentLink(r.agentId, labelOf(r)) + '</span></td>' +
             ownerCell(r.ownerHandle) +
             '<td class="num coins">' + num(net) + held + '</td>' +
             '<td class="num">' + r.tablesWon + '</td>' +
@@ -2027,6 +2155,314 @@
           '</tr>';
         }).join('');
       }
+
+      // ---- agent profile (sub-spec 19) ------------------------------------
+      //
+      // Everything here reads the two public endpoints and the SAME replay the
+      // battleground uses. The viewer is moved into this page rather than rebuilt
+      // (D116): one renderer, one interpretation of the event log.
+
+      /** Move the single viewer element into whichever slot is on screen. */
+      function mountViewer(slotId) {
+        const viewer = $('viewer');
+        const slot = $(slotId);
+        if (!slot || !viewer) return;
+        if (viewer.parentElement !== slot) slot.appendChild(viewer);
+        viewer.hidden = false;
+      }
+
+      function agentUrl(agentId, table) {
+        return '/agent/' + encodeURIComponent(agentId) + (table ? '?table=' + encodeURIComponent(table) : '');
+      }
+
+      /** A link to an agent's profile, used everywhere a name is printed (T80). */
+      function agentLink(agentId, label) {
+        return '<a class="agent-link" href="' + agentUrl(agentId) + '" data-agent="' + esc(agentId) + '">'
+          + esc(label) + '</a>';
+      }
+
+      const agentState = { agentId: null, competitionId: null, tables: [], nextBefore: null, table: null };
+
+      async function loadAgent(agentId, opts) {
+        const o = opts || {};
+        agentState.agentId = agentId;
+        let data;
+        try {
+          data = await get('/agent/' + encodeURIComponent(agentId) + '/profile'
+            + (agentState.competitionId ? '?competitionId=' + encodeURIComponent(agentState.competitionId) : ''));
+        } catch (err) {
+          // An unknown id is a 404 from the API — say so plainly rather than
+          // rendering an empty profile, which would read as "played nothing".
+          $('ag-name').textContent = 'no such agent';
+          $('ag-id').textContent = agentId;
+          $('ag-meta').textContent = '';
+          $('ag-tabs').innerHTML = '';
+          $('ag-review').innerHTML = '';
+          $('ag-style-panel').hidden = true;
+          $('ag-rows').innerHTML = '';
+          $('ag-empty').hidden = false;
+          $('ag-empty').textContent = 'this agent id does not exist.';
+          $('viewer').hidden = true;
+          return;
+        }
+        renderAgentHeader(data.profile);
+        renderAgentTabs(data.profile);
+        renderAgentReview(data.profile);
+        renderAgentStyle(data.style, data.profile);
+        await loadAgentTables(true, o.table);
+      }
+
+      function renderAgentHeader(p) {
+        $('ag-path').textContent = '~/agent/' + p.displayName;
+        $('ag-claimstate').textContent = p.claimed ? 'claimed agent' : 'unclaimed agent';
+        $('ag-face').innerHTML = faceMarkup(p.agentId, p.displayName, 'lg');
+        $('ag-name').textContent = p.displayName;
+        $('ag-id').textContent = p.agentId;
+        const bits = [];
+        bits.push('first seen ' + String(p.registeredAt || '').slice(0, 10));
+        bits.push(p.lastPlayedAt ? 'last played ' + String(p.lastPlayedAt).slice(0, 16) : 'never played');
+        bits.push(num(p.coins) + ' coins');
+        const meta = $('ag-meta');
+        meta.textContent = bits.join('  ·  ') + '  ·  ';
+        // Unclaimed is an invitation, not an error: it is the state almost every
+        // agent is in, and it is also the one that bars a payout.
+        meta.insertAdjacentHTML('beforeend', p.ownerHandle
+          ? 'owner <a class="agent-link" href="https://x.com/' + encodeURIComponent(p.ownerHandle)
+              + '" target="_blank" rel="noopener noreferrer">@' + esc(p.ownerHandle) + '</a>'
+          : '<span class="ag-claim">unclaimed — its owner can claim it to become payout-eligible</span>');
+        const best = p.competitions.reduce((b, c) =>
+          c.bestPlace != null && (b == null || c.bestPlace < b) ? c.bestPlace : b, null);
+        $('ag-best').textContent = best == null ? '—' : '#' + best;
+        $('ag-tables').textContent = num(p.tables);
+      }
+
+      function renderAgentTabs(p) {
+        const tabs = [{ id: null, name: 'overview' }].concat(
+          p.competitions.map((c) => ({ id: c.competitionId, name: c.name })));
+        $('ag-tabs').innerHTML = tabs.map((t) =>
+          '<button data-comp="' + (t.id || '') + '"'
+          + ((t.id || null) === agentState.competitionId ? ' aria-current="page"' : '') + '>'
+          + esc(t.name) + '</button>').join('');
+        for (const btn of $('ag-tabs').querySelectorAll('button')) {
+          btn.onclick = () => {
+            agentState.competitionId = btn.dataset.comp || null;
+            loadAgent(agentState.agentId, {});
+          };
+        }
+      }
+
+      function renderAgentReview(p) {
+        const shown = agentState.competitionId
+          ? p.competitions.filter((c) => c.competitionId === agentState.competitionId)
+          : p.competitions;
+        $('ag-comp-name').textContent = agentState.competitionId
+          ? (shown[0] ? shown[0].name : '') : 'all competitions';
+        const tables = shown.reduce((t, c) => t + c.tables, 0);
+        const won = shown.reduce((t, c) => t + c.tablesWon, 0);
+        const coins = shown.reduce((t, c) => t + c.coinsWon, 0);
+        const storms = shown.reduce((t, c) => t + c.storms, 0);
+        // placeScore is 0 (always first) .. 1 (always last); shown as a percentile
+        // so a reader does not have to know the scale.
+        const withScore = shown.filter((c) => c.placeScore != null && c.tables > 0);
+        const score = withScore.length
+          ? withScore.reduce((t, c) => t + c.placeScore * c.tables, 0)
+            / withScore.reduce((t, c) => t + c.tables, 0)
+          : null;
+        const cell = (k, v, sub) =>
+          '<div class="panel pad"><div class="label">' + k + '</div><div class="econ-v">' + v
+          + '</div><div class="dim" style="font-size:11px">' + (sub || '') + '</div></div>';
+        $('ag-review').innerHTML =
+          cell('tables', num(tables), 'played to settlement')
+          + cell('won', num(won), tables ? Math.round((won / tables) * 100) + '% win rate' : '—')
+          + cell('coins', (coins >= 0 ? '+' : '') + num(coins), 'net across these tables')
+          + cell('finish', score == null ? '—' : Math.round((1 - score) * 100) + '%',
+                 'higher is better; 100% = always first')
+          + cell('storms', num(storms), 'Rainbow Storms triggered');
+      }
+
+      /**
+       * Coin balance across tables played, oldest to newest. Built from the same
+       * per-table coinDelta the history below shows, so the line and the rows can
+       * never disagree.
+       */
+      function renderAgentChart(tables) {
+        const svg = $('ag-chart');
+        // History arrives newest-first; the chart runs oldest-to-newest, so read it
+        // backwards. (Written as an index walk rather than the obvious array
+        // method, whose name collides with a vendored card term the CI lint
+        // guards — see the trademark rule.)
+        const series = [];
+        for (let i = tables.length - 1; i >= 0; i--) {
+          if (tables[i].coinDelta != null) series.push(tables[i]);
+        }
+        if (series.length < 2) {
+          svg.innerHTML = '';
+          $('ag-chart-panel').hidden = series.length === 0;
+          $('ag-chart-count').textContent = '';
+          $('ag-chart-end').textContent = series.length ? num(series[0].coinDelta) : '—';
+          return;
+        }
+        $('ag-chart-panel').hidden = false;
+        let running = 0;
+        const pts = series.map((t) => (running += t.coinDelta));
+        const W = 1000, H = 132;
+        const min = Math.min(0, ...pts), max = Math.max(0, ...pts);
+        const span = (max - min) || 1;
+        const x = (i) => (i / (pts.length - 1)) * W;
+        const y = (v) => H - ((v - min) / span) * (H - 8) - 4;
+        const line = pts.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+        const area = line + ' L' + W + ' ' + y(min).toFixed(1) + ' L0 ' + y(min).toFixed(1) + ' Z';
+        svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+        svg.innerHTML =
+          '<path class="area" d="' + area + '"/>'
+          + '<line class="zero" x1="0" x2="' + W + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '"/>'
+          + '<path class="line" d="' + line + '"/>';
+        $('ag-chart-count').textContent = series.length + ' tables';
+        const end = pts[pts.length - 1];
+        $('ag-chart-end').textContent = (end >= 0 ? '+' : '') + num(end);
+        $('ag-chart-sub').textContent = 'coin balance · table 1 → ' + series.length;
+      }
+
+      function renderAgentStyle(style, profile) {
+        const panel = $('ag-style-panel');
+        const toggle = $('ag-raw-toggle');
+        if (!style) {
+          panel.hidden = false;
+          toggle.hidden = true;
+          $('ag-style-rows').innerHTML = '';
+          $('ag-style-raw').hidden = true;
+          // Honest about WHY there is no archetype — a reader can tell "too new"
+          // from "something is broken".
+          $('ag-style-head').innerHTML =
+            '<div class="ag-arch">not enough play yet</div>'
+            + '<div class="dim">a style needs about 20 settled tables and 50 cards played. '
+            + 'this agent has ' + num(profile.tables) + '.</div>';
+          return;
+        }
+        panel.hidden = false;
+        toggle.hidden = false;
+        $('ag-style-head').innerHTML =
+          '<div class="ag-arch">' + esc(style.name) + '</div>'
+          + '<div class="dim">' + esc(style.blurb) + '</div>';
+        $('ag-style-rows').innerHTML = style.rows.map((r) =>
+          '<div class="ag-srow">'
+          + '<span class="k">' + esc(r.label) + '</span>'
+          + '<span class="dim">' + esc(r.detail) + '</span>'
+          + '<span class="ag-bar"><i style="width:' + Math.max(0, Math.min(100, r.percent)) + '%"></i></span>'
+          + '<span class="pct">' + r.percent + '%</span>'
+          + '</div>').join('');
+        const m = style.metrics;
+        const raw = (k, v) => '<div><div class="k">' + k + '</div><div class="v">' + v + '</div></div>';
+        $('ag-style-raw').innerHTML = '<div class="ag-raw">'
+          + raw('win rate', m.winRate + '%')
+          + raw('finish', Math.round((1 - m.placeScore) * 100) + '%')
+          + raw('aggression', m.aggression + '%')
+          + raw('colour', m.colourControl + '%')
+          + raw('patience', m.patience + '%')
+          + raw('storms', m.storms)
+          + raw('cards played', num(m.cardsPlayed))
+          + raw('tables', num(m.tables))
+          + '</div>';
+      }
+
+      async function loadAgentTables(reset, selectTable) {
+        if (reset) { agentState.tables = []; agentState.nextBefore = null; }
+        const q = ['limit=25'];
+        if (agentState.competitionId) q.push('competitionId=' + encodeURIComponent(agentState.competitionId));
+        if (!reset && agentState.nextBefore) q.push('before=' + encodeURIComponent(agentState.nextBefore));
+        let data;
+        try {
+          data = await get('/agent/' + encodeURIComponent(agentState.agentId) + '/tables?' + q.join('&'));
+        } catch (_) { return; }
+        agentState.tables = agentState.tables.concat(data.tables);
+        agentState.nextBefore = data.nextBefore;
+        renderAgentRows();
+        renderAgentChart(agentState.tables);
+        if (reset) {
+          const pick = selectTable
+            || (agentState.tables[0] ? agentState.tables[0].sessionId : null);
+          if (pick) selectAgentTable(pick);
+          else { $('viewer').hidden = true; $('ag-replay-note').textContent = 'no finished tables to replay'; }
+        }
+      }
+
+      function renderAgentRows() {
+        const rows = agentState.tables;
+        $('ag-tables-count').textContent = rows.length
+          ? rows.length + (agentState.nextBefore ? '+ tables' : ' tables') : '';
+        $('ag-empty').hidden = rows.length > 0;
+        $('ag-more').hidden = !agentState.nextBefore;
+        $('ag-rows').innerHTML = rows.map((t) => {
+          const d = t.coinDelta;
+          return '<tr class="ag-row' + (t.sessionId === agentState.table ? ' sel' : '')
+            + '" data-session="' + esc(t.sessionId) + '">'
+            + '<td class="agent">' + (t.gameNumber ? '#' + t.gameNumber : t.sessionId.slice(-6))
+              + (t.won ? ' <span class="chip">won</span>' : '') + '</td>'
+            + '<td class="dim">' + esc(t.competitionKind) + '</td>'
+            + '<td class="num dim">' + t.seats + '</td>'
+            + '<td class="num">' + (t.place == null ? '—' : t.place) + '</td>'
+            + '<td class="num coins">' + (d == null ? '—' : (d >= 0 ? '+' : '') + num(d)) + '</td>'
+            + '<td class="dim">' + esc(String(t.endedAt || '').slice(0, 16)) + '</td>'
+            + '<td class="ag-open"><a href="' + agentUrl(agentState.agentId, t.sessionId) + '">replay ↗</a></td>'
+            + '</tr>';
+        }).join('');
+        for (const tr of $('ag-rows').querySelectorAll('tr.ag-row')) {
+          tr.onclick = (ev) => {
+            if (ev.target.closest('a')) return; // let the deep link navigate
+            selectAgentTable(tr.dataset.session);
+          };
+        }
+      }
+
+      /**
+       * Load one of this agent's tables into the replay.
+       *
+       * `openSession` is the battleground's own function, unchanged. Sub-spec 10's
+       * boundary is untouched: the feed still serves finished sessions only, so a
+       * chosen table can never be a live one. Only the "no picker" POLICY is
+       * relaxed, and only on this page (D117).
+       */
+      function selectAgentTable(sessionId) {
+        agentState.table = sessionId;
+        const url = agentUrl(agentState.agentId, sessionId);
+        if (location.pathname + location.search !== url) history.replaceState(null, '', url);
+        mountViewer('slot-agent');
+        const row = agentState.tables.find((t) => t.sessionId === sessionId);
+        $('ag-replay-note').textContent = row && row.gameNumber ? 'game #' + row.gameNumber : '';
+        renderAgentRows();
+        openSession(sessionId);
+      }
+
+      /**
+       * Agent links are real hrefs — they must work in a new tab, be copyable, and
+       * survive JS being slow. Inside the app, though, a full reload would throw
+       * away the loaded feed for no reason, so plain left-clicks are handled here
+       * and everything else (new tab, middle-click, modifier) is left to the
+       * browser.
+       */
+      document.addEventListener('click', (ev) => {
+        const link = ev.target.closest('a.agent-link[data-agent], a[href^="/agent/"]');
+        if (!link || ev.defaultPrevented || ev.button !== 0) return;
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || link.target === '_blank') return;
+        const href = link.getAttribute('href') || '';
+        if (!href.startsWith('/agent/')) return;
+        ev.preventDefault();
+        history.pushState(null, '', href);
+        show('agent');
+      });
+
+      // Back/forward between profiles and the app must re-render, not do nothing.
+      window.addEventListener('popstate', () => {
+        show(location.pathname.startsWith('/agent/') ? 'agent'
+          : location.pathname.startsWith('/profile') ? 'profile' : 'overview');
+      });
+
+      $('ag-more').onclick = () => loadAgentTables(false);
+      $('ag-raw-toggle').onclick = () => {
+        const raw = $('ag-style-raw');
+        raw.hidden = !raw.hidden;
+        $('ag-raw-toggle').textContent = raw.hidden ? 'show raw stats ▾' : 'hide raw stats ▴';
+      };
 
       // ---- join CTA (hero, persistent) + rules ----------------------------
       function renderHero() {
@@ -2247,12 +2683,17 @@
         }
         const isT = state.gameType === 'tournament';
         const profile = view === 'profile';
-        // The profile is a standalone page (cf. arena.dev.fun/profile): hide the
-        // playground/tournament hero + tab bar so no game content bleeds into it.
-        $('hero').hidden = profile;
-        document.querySelector('nav.tabs').hidden = profile;
-        // Tournament economics header shows only in tournament mode (not on profile).
-        $('tourn-econ').hidden = !isT || profile;
+        const agent = view === 'agent';
+        // Both the owner profile and an agent profile are standalone pages: hide
+        // the playground/tournament hero + tab bar so no game content bleeds in.
+        const standalone = profile || agent;
+        $('hero').hidden = standalone;
+        document.querySelector('nav.tabs').hidden = standalone;
+        // Tournament economics header shows only in tournament mode.
+        $('tourn-econ').hidden = !isT || standalone;
+        $('view-agent').hidden = !agent;
+        // The viewer is one element; park it back on the overview when leaving.
+        if (!agent) mountViewer('slot-overview');
         $('view-overview').hidden = view !== 'overview';
         // The "standings" tab is coins for playground, the coins-ranked board for tournament.
         $('view-standings').hidden = !(view === 'standings' && !isT);
@@ -2262,6 +2703,12 @@
         if (view === 'overview') loadSessions();
         else if (view === 'standings') { if (isT) loadLeaderboard(); else loadCoins(); }
         else if (view === 'profile') renderProfile();
+        else if (view === 'agent') {
+          const id = decodeURIComponent(location.pathname.replace(/^\/agent\//, ''));
+          const table = new URLSearchParams(location.search).get('table');
+          agentState.competitionId = null;
+          loadAgent(id, { table: table || undefined });
+        }
         // 'rules' is fully static markup — nothing to render.
       }
       for (const btn of document.querySelectorAll('nav.tabs button')) {
@@ -2332,11 +2779,15 @@
         loadConfig();     // T55: real decision limit for the clock ring
         loadCompetitions().then(() => {
           setGameType(gameTypeFromHash());
-          loadAuth().then(() => { if (location.pathname.startsWith('/profile')) show('profile'); });
+          loadAuth().then(() => {
+            if (location.pathname.startsWith('/agent/')) show('agent');
+            else if (location.pathname.startsWith('/profile')) show('profile');
+          });
         });
       }
       window.addEventListener('popstate', () => {
-        show(location.pathname.startsWith('/profile') ? 'profile' : 'overview');
+        show(location.pathname.startsWith('/agent/') ? 'agent'
+          : location.pathname.startsWith('/profile') ? 'profile' : 'overview');
       });
     </script>
   </body>

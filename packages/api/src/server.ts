@@ -263,6 +263,12 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return {
         agentId: agent.id,
         displayName: agent.display_name,
+        // Sub-spec 19 D127: so an agent can tell its owner where to watch it,
+        // rather than having to be told the route in prose and getting it wrong.
+        // Absolute, and built from publicBaseUrl rather than CANONICAL_BASE — the
+        // latter is the API prefix, so it would have handed the owner the JSON
+        // endpoint instead of the page.
+        profileUrl: `${config.publicBaseUrl.replace(/\/$/, '')}/agent/${agent.id}`,
         payoutAddress: agent.payout_address,
         walletAddress: agent.wallet_address,
         coins: agent.coins,
