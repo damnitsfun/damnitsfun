@@ -43,6 +43,36 @@ async function playTables(h: H, ids: string[], count: number): Promise<void> {
 const register = (h: H, names: string[]): string[] =>
   names.map((n) => h.o.registerAgent(n).agentId);
 
+/**
+ * Write a FIXED event log for an agent: `cards` symbols played and `draws` taken,
+ * spread across its settled sessions. The orchestrator harness times its tables
+ * out (nobody moves), so a style test driven by it would read an empty log — and
+ * the spec asks for fixed fixtures here precisely so the same log always yields
+ * the same name.
+ */
+function seedPlay(h: H, agentId: string, cards: string[], draws: number): void {
+  const sessions = h.db
+    .prepare(`SELECT s.id FROM sessions s JOIN session_players p ON p.session_id = s.id
+               WHERE p.agent_id = ? AND s.status = 'settled' ORDER BY s.rowid`)
+    .all(agentId) as Array<{ id: string }>;
+  const ins = h.db.prepare(
+    `INSERT INTO session_events (session_id, seq, event_type, payload_json, reasoning)
+     VALUES (?, ?, ?, ?, NULL)`,
+  );
+  let seq = 5000;
+  cards.forEach((symbol, i) => {
+    const sid = sessions[i % sessions.length]!.id;
+    ins.run(sid, seq++, 'CARD_PLAYED', JSON.stringify({ agentId, card: { symbol, color: 'red' } }));
+  });
+  for (let i = 0; i < draws; i++) {
+    const sid = sessions[i % sessions.length]!.id;
+    ins.run(sid, seq++, 'CARD_DRAWN', JSON.stringify({ agentId, cause: 'draw', count: 1 }));
+  }
+}
+
+/** n copies of a symbol. */
+const times = (symbol: string, n: number): string[] => Array.from({ length: n }, () => symbol);
+
 describe('agentProfile', () => {
   it('reads fully for an UNCLAIMED agent — the normal case, not a degraded one', async () => {
     const h = boot();
@@ -167,21 +197,55 @@ describe('agentStyle', () => {
     expect(agentStyle(h.db, ids[0]!)).toBeNull();
   });
 
-  it('names a style once there is a sample, and shows the numbers behind it', async () => {
+  /**
+   * A rate needs a denominator. An agent that timed out of every table clears the
+   * TABLE minimum while having played no cards at all, and every metric is then 0
+   * — which the archetype would read, quite confidently, as "sheds quickly,
+   * spends few punishers". Found by running this against a real server.
+   */
+  it('says nothing when the tables happened but no cards were played', async () => {
+    const h = boot();
+    const ids = register(h, ['ada', 'bo', 'cy']);
+    await playTables(h, ids, MIN_TABLES_FOR_STYLE); // all time out, zero plays
+    expect(agentStyle(h.db, ids[0]!)).toBeNull();
+  });
+
+  it('reads the rates off the log exactly', async () => {
     const h = boot();
     const ids = register(h, ['ada', 'bo', 'cy']);
     await playTables(h, ids, MIN_TABLES_FOR_STYLE);
+    // 100 cards: 20 punishing, 10 colour-choosing (MEGARAINBOW counts as both).
+    seedPlay(h, ids[0]!, [...times('GRAB2', 15), ...times('MEGARAINBOW', 5),
+      ...times('RAINBOW', 5), ...times('7', 75)], 25);
 
-    const style = agentStyle(h.db, ids[0]!);
-    expect(style).not.toBeNull();
-    expect(style!.name).toMatch(/[A-Z]/);
-    expect(style!.rows).toHaveLength(3);
-    // D118: every row the UI shows is a figure the reader can check.
-    for (const row of style!.rows) {
-      expect(row.percent).toBeGreaterThanOrEqual(0);
-      expect(row.detail).toContain(String(row.percent));
-    }
-    expect(style!.metrics.tables).toBe(MIN_TABLES_FOR_STYLE);
+    const style = agentStyle(h.db, ids[0]!)!;
+    expect(style.metrics.cardsPlayed).toBe(100);
+    expect(style.metrics.aggression).toBe(20);    // GRAB2 + MEGARAINBOW
+    expect(style.metrics.colourControl).toBe(10); // RAINBOW + MEGARAINBOW
+    expect(style.metrics.patience).toBe(20);      // 25 draws of 125 turns
+    expect(style.rows).toHaveLength(3);
+    // D118: every row the UI shows carries the figure a reader can check.
+    for (const row of style.rows) expect(row.detail).toContain(String(row.percent));
+  });
+
+  /** A house-rule EVENT, never a card — it must not enter the mix. */
+  it('never counts a Rainbow Storm as a played card', async () => {
+    const h = boot();
+    const ids = register(h, ['ada', 'bo', 'cy']);
+    await playTables(h, ids, MIN_TABLES_FOR_STYLE);
+    seedPlay(h, ids[0]!, times('7', 60), 10);
+    const before = agentStyle(h.db, ids[0]!)!;
+
+    const sid = (h.db.prepare(`SELECT session_id AS s FROM session_players WHERE agent_id = ? LIMIT 1`)
+      .get(ids[0]!) as { s: string }).s;
+    h.db.prepare(
+      `INSERT INTO session_events (session_id, seq, event_type, payload_json, reasoning)
+       VALUES (?, 9999, 'RAINBOW_STORM', ?, NULL)`,
+    ).run(sid, JSON.stringify({ agentId: ids[0], victims: [], drawCount: 6 }));
+
+    const after = agentStyle(h.db, ids[0]!)!;
+    expect(after.metrics.cardsPlayed).toBe(before.metrics.cardsPlayed); // not a card
+    expect(after.metrics.storms).toBe(1);                               // but counted
   });
 
   /** Same log in, same name out — the archetype is computed, never stored. */
@@ -189,6 +253,7 @@ describe('agentStyle', () => {
     const h = boot();
     const ids = register(h, ['ada', 'bo', 'cy']);
     await playTables(h, ids, MIN_TABLES_FOR_STYLE);
+    seedPlay(h, ids[0]!, times('7', 80), 20);
     expect(agentStyle(h.db, ids[0]!)).toEqual(agentStyle(h.db, ids[0]!));
   });
 
