@@ -28,7 +28,7 @@ import {
 } from './ids';
 import { DISABLED_GOOGLE_OAUTH, type GoogleOAuthProvider } from './googleoauth';
 import { distributePool } from './payout';
-import { placementsFrom } from './ranking';
+import { compareRank, placementsFrom } from './ranking';
 import { computeCoinSettlement } from './coins';
 import { createWalletStore, type WalletStore } from './agent-wallet';
 import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
@@ -1269,10 +1269,19 @@ export class Orchestrator {
     netCoins: number;
     payoutAddress: string;
     games: number;
+    tablesWon: number;
+    placeScore: number | null;
   }> {
     const rows = this.db
       .prepare(
-        `SELECT a.*, COUNT(DISTINCT s.id) AS games
+        `SELECT a.*,
+                COUNT(DISTINCT s.id) AS games,
+                COUNT(DISTINCT CASE WHEN s.winner_agent_id = a.id THEN s.id END) AS tablesWon,
+                -- Normalised by table size: 0 = always first, 1 = always last.
+                -- A raw mean place would penalise agents for sitting at fuller
+                -- tables, where every finish below first carries a bigger number.
+                AVG(CASE WHEN s.id IS NOT NULL AND s.table_size > 1
+                         THEN (p.place - 1.0) / (s.table_size - 1) END) AS placeScore
            FROM competition_entries e
            JOIN agents a ON a.id = e.agent_id
            LEFT JOIN session_players p ON p.agent_id = a.id
@@ -1281,7 +1290,9 @@ export class Orchestrator {
           WHERE e.competition_id = ?
           GROUP BY a.id`,
       )
-      .all(competitionId) as Array<AgentRow & { games: number }>;
+      .all(competitionId) as Array<
+      AgentRow & { games: number; tablesWon: number; placeScore: number | null }
+    >;
 
     const rebuyCoins = this.config.rebuyCoins;
     return rows
@@ -1296,15 +1307,15 @@ export class Orchestrator {
           netCoins: r.coins - rebuysUsed * rebuyCoins,
           payoutAddress: r.payout_address as string,
           games: r.games,
+          tablesWon: r.tablesWon,
+          placeScore: r.placeScore,
         };
       })
-      // The tie-break matters MOST here: this order is the payout order. The
-      // curve pays place 1 more than place 2, so two agents tied on net coins
-      // are separated by real money — and without a stable final key, which of
-      // them got the larger share would depend on the row order the DB happened
-      // to return. Same key as the public boards, so what a reader sees ranked
-      // first is what settlement pays first.
-      .sort((a, b) => b.netCoins - a.netCoins || (a.agentId < b.agentId ? -1 : 1));
+      // THIS ORDER IS THE PAYOUT ORDER. The curve pays place 1 more than place 2,
+      // so two agents tied on net coins are separated by real money. `compareRank`
+      // exhausts wins and finishing position before it reaches the id — see the
+      // measured tie rate there for why the id alone was not good enough.
+      .sort(compareRank);
   }
 
   private resolveJackpotWinner(
@@ -2387,16 +2398,29 @@ export class Orchestrator {
     coins: number;
     rebuysUsed: number;
     netCoins: number;
+    tablesWon: number;
+    placeScore: number | null;
   }> {
+    // Membership is "took a seat in this competition"; the STATS are computed over
+    // settled tables only, so an abandoned lobby neither adds a game nor moves a
+    // finishing position.
     const rows = this.db
       .prepare(
-        `SELECT DISTINCT a.*, o.x_handle AS ownerHandle FROM agents a
+        `SELECT a.*, o.x_handle AS ownerHandle,
+                COUNT(DISTINCT CASE WHEN s.status = 'settled'
+                                     AND s.winner_agent_id = a.id THEN s.id END) AS tablesWon,
+                AVG(CASE WHEN s.status = 'settled' AND s.table_size > 1
+                         THEN (p.place - 1.0) / (s.table_size - 1) END) AS placeScore
+           FROM agents a
            LEFT JOIN owners o ON o.id = a.owner_id
            JOIN session_players p ON p.agent_id = a.id
            JOIN sessions s ON s.id = p.session_id
-          WHERE s.competition_id = ?`,
+          WHERE s.competition_id = ?
+          GROUP BY a.id`,
       )
-      .all(competitionId) as Array<AgentRow & { ownerHandle: string | null }>;
+      .all(competitionId) as Array<
+      AgentRow & { ownerHandle: string | null; tablesWon: number; placeScore: number | null }
+    >;
 
     // Netting matters more here than on the playground board, not less: this is
     // the order the on-chain prize pool is split by (top 10, spec 15), so ranking
@@ -2412,14 +2436,14 @@ export class Orchestrator {
           coins: r.coins,
           rebuysUsed,
           netCoins: r.coins - rebuysUsed * rebuyCoins,
+          tablesWon: r.tablesWon,
+          placeScore: r.placeScore,
         };
       })
-      // Ties are broken by agentId so the board is REPRODUCIBLE. This is the
-      // order the on-chain prize pool is split by, so "whichever row the DB
-      // returned first" is not good enough: two agents on identical net coins
-      // must not swap places — and therefore swap payouts — between one read and
-      // the next. The tie-break carries no meaning beyond being stable.
-      .sort((a, b) => b.netCoins - a.netCoins || (a.agentId < b.agentId ? -1 : 1));
+      // The SAME comparator settlement uses (`eligibleRanked`). A public board
+      // that ordered differently from the payout would show one agent leading and
+      // pay a different one — the failure this shares a function to prevent.
+      .sort(compareRank);
   }
 
   /** Test/diagnostic helper: is this session still being played in memory? */

@@ -180,11 +180,17 @@ describe('standings name an owner, not an id', () => {
     // not mean tied ROWS there — one of these two won the table. Sorting by id
     // is the LAST resort, not the first, and asserting otherwise here would be
     // asserting the wrong thing.
-    const board = h.o.leaderboard(h.comp).map((r) => r.agentId);
-    expect(h.o.leaderboard(h.comp).map((r) => r.agentId)).toEqual(board);
-    // The season leaderboard sorts on net coins alone, so a true tie there falls
-    // all the way through to the id — and this is the order settlement pays in.
-    expect(board).toEqual([...board].sort());
+    const board = h.o.leaderboard(h.comp);
+    expect(h.o.leaderboard(h.comp).map((r) => r.agentId)).toEqual(board.map((r) => r.agentId));
+    // Sub-spec 20 T86: a coin tie no longer falls straight to the id. It asks
+    // about wins first, so the agent that actually won the table leads — which is
+    // the whole point, since this order is what settlement pays. The id remains
+    // the final fallback; `rank-tiebreak.test.ts` pins the full chain.
+    expect(board[0]!.tablesWon).toBeGreaterThanOrEqual(board[board.length - 1]!.tablesWon);
+    const winner = h.db
+      .prepare(`SELECT winner_agent_id AS w FROM sessions WHERE competition_id = ? AND status = 'settled'`)
+      .get(h.comp) as { w: string } | undefined;
+    if (winner?.w) expect(board[0]!.agentId).toBe(winner.w);
   });
 
   it('surfaces the owner through the public standings endpoint', async () => {
