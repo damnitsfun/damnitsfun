@@ -1,25 +1,43 @@
 /**
- * Playground coin economy (sub-spec 12, T41).
+ * Playground coin economy — placement settlement (sub-spec 20, T82).
  *
- * A stateful in-game currency — NOT the on-chain BNB wallets of sub-spec 08.
+ * A stateful in-game currency, NOT the on-chain BNB wallets of sub-spec 08.
  * Every agent starts at {@link STARTING_COINS} and pays {@link PLAYGROUND_ENTRY_COINS}
- * to take a seat. The seat buy-ins are POOLED and paid back out to the winners at
- * settlement (not a sink), so coins are only ever redistributed — the table's
- * total is conserved over its lifecycle. At settlement, per the "how to calculate
- * coins" model (our reading, with the source game's ×multiplier removed → ×1):
+ * to take a seat. Those buy-ins pool, and the pool is paid back out **by finishing
+ * place**. Nothing else moves: no forfeits, no floors, no balance cap.
  *
- *  - "points" = the value of the cards left in a seat's hand at game end
- *    (engine `getHandValues`; the winner emptied their hand → 0 points).
- *  - The BOTTOM half of the table LOSES coins equal to their points, with a floor
- *    per finishing place (3rd ≥ 40, 4th ≥ 60, 5th ≥ 80, 6th ≥ 100). Their combined
- *    loss, PLUS the pooled entry pot, is what the winners share.
- *  - The TOP half WINS, splitting that pot so the seat with FEWER points takes the
- *    bigger share (the wider the point gap, the wider the coin gap).
- *  - Capped so nobody drops below 0 (bankruptcy): a loser never forfeits more than
- *    they hold. The returned deltas sum to `entryPot` (the buy-ins each seat was
- *    already charged on join), so the full join→settle cycle is zero-sum.
+ *     share(i) = entry + step x ((n + 1) / 2 - i)
  *
- * The whole function is pure and deterministic — unit-tested in `coins.test.ts`.
+ * ## Why this replaced points-based forfeits
+ *
+ * The previous rule took `max(points_in_hand, floor_by_place)` from the bottom
+ * half of the table. Measured over 4,318 losing seats on production, **47.8%**
+ * forfeited MORE than the points they actually held — an agent that shed its hand
+ * down to 5 points and finished 4th still lost 60. The floor punished exactly the
+ * play the game is trying to reward.
+ *
+ * It was also unbounded: the worst single-table loss on record is **-319 coins on
+ * a 10-coin seat**. Sub-spec 18 added five 1,000-coin rebuys so that "busting
+ * never ends your run", and was outrun — two of the five busiest agents burned
+ * their starting stack AND all five rebuys and were locked out of the season.
+ *
+ * ## The two properties that make this safe
+ *
+ * The net curve is **antisymmetric** about the middle of the field:
+ * `net(i) = -net(n+1-i)`. From that, two things follow by construction rather
+ * than by checking — the middle of the table breaks even, and the table is
+ * **zero-sum**, because the nets cancel in pairs.
+ *
+ * And because `step` is pinned at `2 x entry / (maxSeats - 1)` (see
+ * `coinPlaceStepFor`), the last seat at a full table receives nothing:
+ * **you can never lose more than your buy-in.**
+ *
+ * Points have NOT left the game. `placementsFrom` still ranks every non-winner by
+ * remaining hand value, so shedding high cards is exactly as valuable as before.
+ * This bounds the punishment, not the skill measure.
+ *
+ * The whole function is pure and deterministic — unit-tested in `coins.test.ts`
+ * and replayed against 3,186 real settled tables in `settlement-corpus.test.ts`.
  */
 
 /** Default starting balance (also the `agents.coins` DB default). */
@@ -27,87 +45,65 @@ export const STARTING_COINS = 1000;
 /** Cost, in coins, to take a seat at a table. */
 export const PLAYGROUND_ENTRY_COINS = 10;
 
-/**
- * Minimum a losing seat forfeits, by finishing place (multiplier removed → ×1).
- *
- * Sub-spec 18 (D109) continues the +20 progression to places 5 and 6. Tables were
- * fixed at four seats when this was written, so 5 and 6 could not occur and were
- * simply absent — which meant `?? 0`, i.e. NO floor at all. Once a table can seat
- * six, an unfloored 5th/6th place makes the worst finishes on the biggest tables
- * the cheapest ones to take, inverting the gradient the 40/60 pair establishes.
- */
-export const LOSS_FLOOR_BY_PLACE: Readonly<Record<number, number>> = {
-  3: 40,
-  4: 60,
-  5: 80,
-  6: 100,
-};
-
-/** Smoothing for the winners' split; larger → splits stay closer to even. */
-export const COIN_SPLIT_SMOOTHING = 20;
-
 export interface CoinSettlementInput {
-  /** 1-based finishing place per agent (1 = winner). */
+  /** 1-based finishing place per agent (1 = winner). Ties may share a place. */
   places: Record<string, number>;
-  /** Points left in hand per agent at game end (winner = 0). */
-  handValues: Record<string, number>;
-  /** Current coin balance per agent, used only to cap losses (no negatives). */
-  balances: Record<string, number>;
+  /** Coins each seat paid to sit down. Already deducted at join. */
+  entryCoins: number;
+  /** Coins between adjacent places — derived, see `coinPlaceStepFor`. */
+  placeStep: number;
+}
+
+export interface SeatSettlement {
   /**
-   * The pooled seat buy-ins to hand back to the winners on top of the losers'
-   * forfeits (the seats were already charged this on join). Default 0.
+   * Coins to ADD to the agent's balance. Never negative: the buy-in was taken at
+   * join, and settlement only ever hands some of the pool back.
    */
-  entryPot?: number;
+  credit: number;
+  /**
+   * What the table moved for this seat, buy-in included — `credit - entryCoins`.
+   *
+   * This is the number the agent is shown, and it is deliberately NOT the same as
+   * `credit`. `skill.md` promises coinDelta is "what the table moved for you,
+   * positive or negative"; the credit alone can never be negative, so reporting it
+   * would make that promise false and a last-place finisher would read `0` as
+   * "nothing happened" when it had just lost its buy-in.
+   */
+  net: number;
 }
 
 /**
- * Coin delta per agent for one settled table. Losers' deltas are negative
- * (their forfeits, capped at their balance); winners' deltas are positive and
- * split the losers' forfeits PLUS `entryPot`. The deltas therefore sum to
- * `entryPot` — the buy-ins already deducted on join — so join→settle is zero-sum.
+ * Settle one table by finishing place.
+ *
+ * Shares sum exactly to the pool (`entryCoins x seats`) and nets sum to zero, for
+ * any number of seats and any tie arrangement.
  */
-export function computeCoinSettlement(input: CoinSettlementInput): Record<string, number> {
-  const { places, handValues, balances } = input;
-  const entryPot = Math.max(0, input.entryPot ?? 0);
+export function computeCoinSettlement(
+  input: CoinSettlementInput,
+): Record<string, SeatSettlement> {
+  const { places, entryCoins, placeStep } = input;
   const agentIds = Object.keys(places);
-  const deltas: Record<string, number> = {};
-  for (const id of agentIds) deltas[id] = 0;
-  if (agentIds.length === 0) return deltas;
+  const out: Record<string, SeatSettlement> = {};
+  const n = agentIds.length;
+  if (n === 0) return out;
 
-  const half = Math.ceil(agentIds.length / 2);
-  const winners = agentIds.filter((id) => (places[id] ?? agentIds.length) <= half);
-  const losers = agentIds.filter((id) => (places[id] ?? agentIds.length) > half);
+  // Seats are paid by RANK, not by the raw place value. `placementsFrom` lets
+  // equal hand values share a place (two seats can both be 2nd), which would
+  // otherwise pay the same share twice and break the sum. Ordering by place and
+  // paying down the list keeps the pool exact; tied seats are separated by id so
+  // the result is reproducible rather than dependent on object key order.
+  const ordered = [...agentIds].sort((a, b) => {
+    const pa = places[a] ?? n;
+    const pb = places[b] ?? n;
+    if (pa !== pb) return pa - pb;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
 
-  // Losers forfeit their points (floored by place), capped at what they hold.
-  let pot = 0;
-  for (const id of losers) {
-    const floor = LOSS_FLOOR_BY_PLACE[places[id] ?? 0] ?? 0;
-    const intended = Math.max(handValues[id] ?? 0, floor);
-    const capped = Math.min(intended, Math.max(0, balances[id] ?? 0));
-    deltas[id] = -capped;
-    pot += capped;
+  const middle = (n + 1) / 2;
+  for (let rank = 1; rank <= n; rank++) {
+    const id = ordered[rank - 1]!;
+    const credit = entryCoins + placeStep * (middle - rank);
+    out[id] = { credit, net: credit - entryCoins };
   }
-
-  // Winners split the losers' forfeits PLUS the pooled buy-ins; fewer points →
-  // bigger share (K-smoothed weights). The rounding remainder goes to the top
-  // seat so the whole prize is distributed exactly.
-  const prize = pot + entryPot;
-  if (winners.length > 0 && prize > 0) {
-    const maxPts = Math.max(...winners.map((id) => handValues[id] ?? 0));
-    const weights = winners.map((id) => ({
-      id,
-      w: maxPts - (handValues[id] ?? 0) + COIN_SPLIT_SMOOTHING,
-    }));
-    const totalWeight = weights.reduce((sum, x) => sum + x.w, 0);
-    let assigned = 0;
-    for (const { id, w } of weights) {
-      const share = Math.floor((prize * w) / totalWeight);
-      deltas[id] = (deltas[id] ?? 0) + share;
-      assigned += share;
-    }
-    const top = winners.reduce((a, b) => ((places[a] ?? 0) <= (places[b] ?? 0) ? a : b));
-    deltas[top] = (deltas[top] ?? 0) + (prize - assigned);
-  }
-
-  return deltas;
+  return out;
 }

@@ -2276,16 +2276,25 @@ export class Orchestrator {
     const agentIds = Object.keys(places);
     if (agentIds.length === 0) return;
 
-    const balances: Record<string, number> = {};
-    for (const agentId of agentIds) balances[agentId] = this.getAgent(agentId).coins;
+    // Sub-spec 20: settlement reads only the finishing places. Hand values still
+    // DECIDE those places (`placementsFrom`), but they no longer size the penalty,
+    // and balances are not needed because no seat can lose more than it already
+    // paid at join.
+    const settlement = computeCoinSettlement({
+      places,
+      entryCoins: this.config.playgroundEntryCoins,
+      placeStep: this.config.coinPlaceStep,
+    });
 
-    // The seat buy-ins are pooled back into the winnings (each seat paid this on
-    // join), so the join→settle cycle conserves coins.
-    const entryPot = agentIds.length * this.config.playgroundEntryCoins;
-    const deltas = computeCoinSettlement({ places, handValues, balances, entryPot });
-    for (const [agentId, delta] of Object.entries(deltas)) {
-      if (delta !== 0) {
-        this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(delta, agentId);
+    for (const [agentId, seat] of Object.entries(settlement)) {
+      // `credit` is what returns to the balance; `net` is what the table moved
+      // for this seat once its buy-in is counted. They are different numbers and
+      // conflating them would either double-charge the entry or report a loss as
+      // zero — see SeatSettlement for why the stored one is `net`.
+      if (seat.credit !== 0) {
+        this.db
+          .prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`)
+          .run(seat.credit, agentId);
       }
       // Record the outcome on the seat, not just the balance change. Without this
       // an agent can only learn how its table went by diffing GET /agent/me before
@@ -2295,7 +2304,7 @@ export class Orchestrator {
           `UPDATE session_players SET place = ?, coin_delta = ?
             WHERE session_id = ? AND agent_id = ?`,
         )
-        .run(places[agentId] ?? null, delta, sessionId, agentId);
+        .run(places[agentId] ?? null, seat.net, sessionId, agentId);
     }
   }
 
