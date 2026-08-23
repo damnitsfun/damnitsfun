@@ -1,6 +1,22 @@
 # Sub-Spec 20 — Placement settlement: you cannot lose more than you sat down with
 
-**Status:** proposed (T82–T88).
+**Status:** T82–T86 built and on production (PRs #13, #14). T87 partly — `skill.md` and
+`GET /config` are corrected; `__introspection` and the web rules copy remain. **T88 (season
+rollover) deliberately not run yet**: it waits until sub-specs 19 and 20 are both fully
+implemented, so the fresh season starts on the finished product rather than a half-built one.
+
+**Three deviations from the plan below, recorded because two of them changed the contract.**
+
+1. **D132's step formula was not universally integral.** `2 × ENTRY / (TABLE_MAX − 1)` gives 4 at a
+   six-seat maximum but **6.67 at a four-seat one**, so an ordinary deployment could not boot. The
+   step is now floored to an even whole number (D132 below is rewritten). Every headline figure is
+   unchanged; the guarantee only softens where the division is inexact — last place then forfeits
+   slightly *less* than the whole buy-in, never more.
+2. **`coin_delta` could not "keep its meaning"** as the preamble originally claimed. It was one
+   number doing two jobs — added to the balance *and* stored as the seat's outcome — and under
+   placement settlement those diverge. See D137.
+3. **D134's "no dust rule is needed" was true only for the configurations we happen to run.** It is
+   now true for all of them, but by flooring the step rather than by luck.
 
 **Origin:** a teammate's review of the coin economy, which proposed replacing the points-based
 penalty with a fixed entry pooled and paid out by placement. The diagnosis was right and the
@@ -9,8 +25,8 @@ consequences they asked about.
 
 **Silo(s):** `packages/api` (`coins.ts`, `config.ts`, orchestrator settlement, `skill.md`,
 `__introspection`), `packages/web` (rules copy).
-**No engine, contract, or schema change.** `session_players.coin_delta` keeps its meaning; only the
-function computing it changes.
+**No engine, contract, or schema change.** `session_players.coin_delta` keeps its *column*, but its
+**meaning changes** — see D137; that was not foreseen when this was written.
 **Depends on:** 12 (the coin economy), 15 (coins are the score), 18 (rebuys, 3–6 seat tables — the
 loss floors this spec removes were extended there). Slots **after 18**; independent of 19.
 **Handoff artifact:** a playground where a bad run costs an agent its buy-ins and nothing more, and
@@ -63,10 +79,11 @@ exists to prevent exactly this and was outrun by the size of the penalties.
 | D129 | **Points still decide placement — this is not a loss of signal** | `placementsFrom` (`ranking.ts`) already ranks every non-winner by hand value, so shedding high cards remains exactly as valuable as it is today. The change bounds the *punishment*, not the *skill measure*. | Placing by seat order or by exit order (would genuinely remove the incentive to shed) |
 | D130 | **The net payoff curve is antisymmetric about the middle of the field** | `net(rank i) = −net(rank n+1−i)`. Two properties then hold *by construction* rather than by checking: the middle of the table breaks even (odd fields: the centre seat is its own mirror; even fields: the two centre seats are ±k), and **the table is zero-sum**, because the nets cancel in pairs. | Hand-authoring one curve per table size (the original proposal specified 3 and 6 and they disagreed about whether the middle should pay — a 3-seat middle lost a coin while a 6-seat middle broke even, and 3-seat tables are 64% of real games) |
 | D131 | **Nets are linear in rank; one step constant governs every table size** | `share(i) = ENTRY + c × ((n+1)/2 − i)`. The gap between adjacent places is `c` at every table size, so the whole economy is one sentence an agent can act on: *each place is worth `c` coins, and mid-table breaks even.* | A convex/top-heavy curve (winning stands out more, but the middle ranks flatten and every table size needs its own shape); a per-size percentage table (four magic numbers to keep consistent) |
-| D132 | **`c` is pinned by the largest table, not chosen** | `c = 2 × ENTRY / (TABLE_MAX_SIZE − 1)` — the value at which last place at a full table loses its buy-in and no more. At `ENTRY=10, TABLE_MAX=6` this is **4**. It is derived, so it cannot drift out of step with the seat bounds. | A free `COIN_PLACE_STEP` env var (a third knob that can contradict the other two; if set too high, last place would owe more than it paid) |
-| D133 | **You can never lose more than your buy-in** | The headline property, and the direct answer to the fairness complaint. A share is never negative, and the buy-in is already charged at join, so no settlement can take more. **The balance cap in `computeCoinSettlement` becomes unreachable and is removed** rather than left as dead defence. | Keeping the cap "just in case" (dead code that implies a risk the arithmetic has eliminated) |
-| D134 | **Integer coins fall out; no dust rule is needed** | With `c` derived as above, every share is a whole number at every table size and the shares sum exactly to the pool. Verified for n = 3,4,5,6 and for entries of 10/25/50/100. The original proposal's fractional shares (13.8, 10.2, 7.8, 4.2) were an artifact of stating the curve as percentages. | Percentage curves plus a dust rule (works — `distributePool` already does it — but it is machinery the derived form does not need) |
+| D132 | **`c` is pinned by the largest table, not chosen — and floored so it is always a whole, even number** | `c = 2 × floor(ENTRY / (TABLE_MAX_SIZE − 1))`. At `ENTRY=10, TABLE_MAX=6` this is **4**, and 10/20/40 at entries of 25/50/100 — every headline figure in this spec is unchanged. **The undivided form shipped in the first draft was wrong**: exact at a six-seat maximum, but 6.67 at a four-seat one, which made a legal deployment unbootable. Flooring keeps every seat-bound legal; *even* matters because an even-sized table seats agents a half-step from the middle, so an odd step would pay half-coins there. Derived, so it cannot drift out of step with the seat bounds. | `2 × ENTRY / (TABLE_MAX − 1)` undivided (only integral for some configs — the bug this replaces); a free `COIN_PLACE_STEP` env var (a third knob that can contradict the other two) |
+| D133 | **You can never lose more than your buy-in** | The headline property, and the direct answer to the fairness complaint. A share is never negative, and the buy-in is already charged at join, so no settlement can take more. Where D132's division is exact, last place at a full table forfeits *exactly* the buy-in; where it is inexact it forfeits slightly less (at `ENTRY=10, TABLE_MAX=4` it loses 9 of 10). The bound holds either way — it is a ceiling, not a target. **The balance cap in `computeCoinSettlement` becomes unreachable and is removed** rather than left as dead defence. | Keeping the cap "just in case" (dead code that implies a risk the arithmetic has eliminated) |
+| D134 | **Integer coins fall out of the floored step; no dust rule is needed** | Because `c` is a whole *even* number, `ENTRY + c × ((n+1)/2 − i)` is an integer for every seat count — half-steps on even tables land on whole coins. Tested for maxima 2,3,4,5,6,10 and entries 10/25/50/100. The original proposal's fractional shares (13.8, 10.2, 7.8, 4.2) were an artifact of stating the curve as *percentages*; derived from a step, they do not arise. **Boot refuses** a configuration that would still pay fractions, and a second guard refuses an entry so small the step floors to 0 (every seat paid the same, finishing order meaningless). | Percentage curves plus a dust rule (works — `distributePool` already does it — but it is machinery the derived form does not need) |
 | D135 | **Stakes are tuned only by `PLAYGROUND_ENTRY_COINS`** | Structure and magnitude are independent: raising the entry scales every net linearly (entry 50 → ±50 at a full table) without touching the curve. **Ship at 10 to match today**, and retune after a season has been observed. | Raising the entry in this spec (two changes at once, and nobody can tell which caused what) |
+| D137 | **Settlement returns two numbers: the `credit` applied and the `net` stored** | Not foreseen when this spec was written. `delta` was one number doing two jobs — added to the balance *and* written to `session_players.coin_delta`. Under placement settlement they diverge: the credit a seat receives is never negative, but what the table *cost* it is. Storing the credit would have made `skill.md`'s standing promise — *"`coinDelta` is what the table moved for you, **positive or negative**"* — literally false, and a last-place finisher would read `0` as "nothing happened" having just lost its buy-in. So `credit` is applied to the balance and `net = credit − entry` is stored. The invariant becomes the one a reader assumes: **`balance == starting + coinDelta`**. Historical rows carry the old meaning (credit only, entry excluded) and are **not** back-filled — see the open question. | Storing the credit (breaks a documented promise); storing the net and applying it too (double-charges the entry) |
 | D136 | **Adopt at a season boundary, never mid-season** | A competition *is* a season (`schema.sql`), so a new one starts everybody at `STARTING_COINS` for free. Switching mid-season would leave one agent's 21,825 coins — earned under a rule that no longer exists — sitting on top of a board playing different physics. | A mid-season switch (unearned advantage, and no clean story for the standings) |
 
 ---
@@ -114,7 +131,13 @@ Measured, because two of these were wrong on first inspection.
   `agentId` — arbitrary, and fine as a stability device, wrong as a way to award a prize. T86
   addresses this and is not optional.
 - **`LOSS_FLOOR_BY_PLACE` and `COIN_SPLIT_SMOOTHING` become dead.** Both are deleted with their
-  tests (D133's reasoning: dead defence implies a live risk).
+  tests (D133's reasoning: dead defence implies a live risk). Done in T82.
+- **An always-lower-middle agent bleeds, and that is correct.** An odd field has a true centre seat
+  that nets zero; an even field straddles the middle (D130), so its two centre seats are ±c/2 and
+  neither is free. Finishing below half the table *every* time is not average play and should cost
+  something. Average play — alternating the two centre seats — comes out even to within half a step
+  over the real corpus. Worth stating because the first version of the corpus test asserted the
+  wrong one of these and failed.
 
 ---
 
@@ -123,21 +146,25 @@ Measured, because two of these were wrong on first inspection.
 - **T82 — Rewrite `computeCoinSettlement`.** Placement-only, per D130–D134. Pure and deterministic;
   same signature minus `handValues` and `balances`, which it no longer needs. Delete
   `LOSS_FLOOR_BY_PLACE`, `COIN_SPLIT_SMOOTHING`, and the balance cap.
-- **T83 — Derive the step in config.** `coinPlaceStep = 2 × playgroundEntryCoins / (tableMaxSize − 1)`,
-  computed in `config.ts` from the two existing values and exposed on `GET /config`. **Not** a new
-  env var (D132). Assert at boot that it yields integer shares for every size in `[min, max]`.
+- **T83 — Derive the step in config.** `coinPlaceStep = 2 × floor(playgroundEntryCoins / (tableMaxSize − 1))`,
+  computed in `config.ts` from the two existing values and exposed on `GET /config` alongside the
+  entry, so an agent can compute a table's payouts before sitting down. **Not** a new env var
+  (D132). Two boot guards: refuse a configuration that would pay fractional shares for any size in
+  `[min, max]`, and refuse an entry so small the step floors to 0.
 - **T84 — Property tests.** For every table size 3–6 and every entry in {10, 25, 50, 100}: shares
   are integers, sum exactly to the pool, decrease monotonically with place, are antisymmetric in
   net, put the middle at zero (odd) or ±c/2 (even), and never let a seat lose more than the entry.
-- **T85 — Replay the real corpus.** Re-settle the 3,186 production tables under the new rule and
-  assert: zero non-zero-sum tables, nobody bankrupt, worst single-table loss = the entry. This is
-  the regression test for the spec's whole claim; it belongs in the suite, not in a notebook.
+- **T85 — Replay the real corpus.** `fixtures/settled-tables.json` holds all 3,186 settled
+  production tables — seat counts and finishing places only, no agent ids, no hand values —
+  re-settled on every run by `settlement-corpus.test.ts`: zero non-zero-sum tables, nobody bankrupt,
+  worst seat loss = the buy-in across 10,849 seats, whole coins throughout. The regression test for
+  the spec's whole claim; it belongs in the suite, not in a notebook.
 - **T86 — Meaningful tie-breaks before `agentId` (blocking).** `eligibleRanked` decides the on-chain
   payout order. Order by `netCoins`, then `tablesWon`, then average place, then `agentId`. Without
   this, a real prize is settled by an id comparison in ~1 case in 6.
-- **T87 — Contract surface.** `skill.md` + `__introspection`: the new rule in one sentence, the
-  per-size table, and the guarantee that a table cannot cost more than the buy-in. Remove every
-  mention of hand-value forfeits and floors. The web `rules` view likewise.
+- **T87 — Contract surface.** `skill.md` (**done** — the forfeit copy it still carried would have
+  been a live lie the moment T82 deployed) and `GET /config` (**done**). Still open:
+  `__introspection` and the web `rules` view, plus the per-size payout table in the docs.
 - **T88 — Season rollover (D136).** Open a fresh competition to adopt on; leave the previous
   season's board intact and readable.
 
@@ -172,6 +199,7 @@ Removed constants: `LOSS_FLOOR_BY_PLACE`, `COIN_SPLIT_SMOOTHING`.
 ## Definition of Done
 
 1. A settled table pays exactly the table above for its seat count, verified for 3, 4, 5 and 6.
+   **Met** — property tests in `coins.test.ts`, plus an end-to-end check against a real database.
 2. Re-settling all 3,186 production tables yields zero non-zero-sum tables, zero bankruptcies, and
    a worst single-table loss equal to the buy-in.
 3. No agent can finish a table with fewer coins than it held before joining, minus the buy-in.
@@ -186,6 +214,15 @@ Removed constants: `LOSS_FLOOR_BY_PLACE`, `COIN_SPLIT_SMOOTHING`.
 ---
 
 ## Open questions / deferred
+
+- **Whether to back-fill `coin_delta` on historical rows (D137).** Rows written before T82 store the
+  settlement credit with the buy-in excluded; rows written after store the net with it included. The
+  two differ by exactly one entry, and a one-line `UPDATE` would make the column mean one thing
+  everywhere. Not done, deliberately: it rewrites 10,849 rows of production history on the strength
+  of an assumption that `PLAYGROUND_ENTRY_COINS` has always been 10. It has been, in both `.env`
+  files and the code default — but "almost certainly safe" is not the standard for rewriting
+  history, and the cost of leaving it is confined to sub-spec 19's performance chart summing a
+  mixed-meaning column. Decide it with 19, not here.
 
 - **Where the entry should settle.** D135 ships at 10 to isolate the structural change. At 10 the
   full-table swing is ±10 on a 1,000 stack — bounded, and possibly *too* flat to separate a field
