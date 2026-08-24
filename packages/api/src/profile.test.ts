@@ -122,7 +122,25 @@ describe('agentProfile', () => {
     const all = ids.map((id) => agentProfile(h.db, id));
     expect(all.reduce((t, p) => t + p.tablesWon, 0)).toBe(4); // one winner per table
     // Coins are zero-sum across the table (sub-spec 20), so the field nets to zero.
-    expect(all.reduce((t, p) => t + p.competitions[0]!.coinsWon, 0)).toBe(0);
+    expect(all.reduce((t, p) => t + (p.competitions[0]!.coinsWon ?? 0), 0)).toBe(0);
+  });
+
+  /**
+   * "Unknown, not zero" — the same rule `place` and `coinDelta` follow. Tables
+   * settled before results were recorded carry a null delta, and reporting them
+   * as +0 would claim the agent broke even when nobody knows. Staging has 4 of
+   * 240 seats with a recorded result; the other 236 would all have read as clean
+   * break-evens.
+   */
+  it('reports unknown coins as null, never as zero', async () => {
+    const h = boot();
+    const ids = register(h, ['ada', 'bo', 'cy']);
+    await playTables(h, ids, 2);
+    h.db.prepare(`UPDATE session_players SET coin_delta = NULL`).run();
+
+    const c = agentProfile(h.db, ids[0]!).competitions[0]!;
+    expect(c.tables).toBe(2);        // the tables happened...
+    expect(c.coinsWon).toBeNull();   // ...but what they paid is not known
   });
 
   it('reports last activity from taking a SEAT, not from finishing', async () => {

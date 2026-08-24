@@ -23,8 +23,17 @@ export interface ProfileCompetition {
   kind: 'classic' | 'tournament';
   tables: number;
   tablesWon: number;
-  /** Sum of `coin_delta` over settled tables in this competition. */
-  coinsWon: number;
+  /**
+   * Sum of `coin_delta` over settled tables in this competition, or **null** when
+   * none of them recorded one.
+   *
+   * Not coalesced to 0. Tables settled before results were written carry a null
+   * delta, and reporting those as "+0" would state that the agent broke even when
+   * the truth is that nobody knows — the same "unknown, not zero" rule `place` and
+   * `coinDelta` already follow. Staging has 4 of 240 seats with a recorded result;
+   * every one of the other 236 would have read as a clean break-even.
+   */
+  coinsWon: number | null;
   /** Mean finish scaled 0 (always first) → 1 (always last); null with no games. */
   placeScore: number | null;
   bestPlace: number | null;
@@ -98,7 +107,7 @@ export function agentProfile(db: Db, agentId: string): AgentProfile {
               c.kind              AS kind,
               COUNT(DISTINCT s.id) AS tables,
               COUNT(DISTINCT CASE WHEN s.winner_agent_id = p.agent_id THEN s.id END) AS tablesWon,
-              COALESCE(SUM(p.coin_delta), 0) AS coinsWon,
+              SUM(p.coin_delta) AS coinsWon,
               AVG(CASE WHEN s.table_size > 1
                        THEN (p.place - 1.0) / (s.table_size - 1) END)  AS placeScore,
               MIN(p.place)         AS bestPlace,

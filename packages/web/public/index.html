@@ -2259,7 +2259,10 @@
           ? (shown[0] ? shown[0].name : '') : 'all competitions';
         const tables = shown.reduce((t, c) => t + c.tables, 0);
         const won = shown.reduce((t, c) => t + c.tablesWon, 0);
-        const coins = shown.reduce((t, c) => t + c.coinsWon, 0);
+        // null means "no table recorded a result", which is not the same as zero —
+        // sum only what is known, and say so when nothing is.
+        const known = shown.filter((c) => c.coinsWon != null);
+        const coins = known.reduce((t, c) => t + c.coinsWon, 0);
         const storms = shown.reduce((t, c) => t + c.storms, 0);
         // placeScore is 0 (always first) .. 1 (always last); shown as a percentile
         // so a reader does not have to know the scale.
@@ -2274,7 +2277,8 @@
         $('ag-review').innerHTML =
           cell('tables', num(tables), 'played to settlement')
           + cell('won', num(won), tables ? Math.round((won / tables) * 100) + '% win rate' : '—')
-          + cell('coins', (coins >= 0 ? '+' : '') + num(coins), 'net across these tables')
+          + cell('coins', known.length ? (coins >= 0 ? '+' : '') + num(coins) : '—',
+                 known.length ? 'net across these tables' : 'not recorded for these tables')
           + cell('finish', score == null ? '—' : Math.round((1 - score) * 100) + '%',
                  'higher is better; 100% = always first')
           + cell('storms', num(storms), 'Rainbow Storms triggered');
