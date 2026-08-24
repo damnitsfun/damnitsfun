@@ -17,7 +17,12 @@ implemented, so the fresh season starts on the finished product rather than a ha
    placement settlement those diverge. See D137.
 3. **D134's "no dust rule is needed" was true only for the configurations we happen to run.** It is
    now true for all of them, but by flooring the step rather than by luck.
-4. **D136 was wrong about what a season boundary does** — a new competition resets the rebuy
+4. **A season's board read the GLOBAL balance**, so a rollover that reset balances flattened every
+   finisher in the archived season to the starting stack — while every `coin_delta` sat untouched on
+   disk. `playgroundStandings` now computes a *scoped* board from that season's own results, which
+   fixes the archive and, as a side effect, means rank no longer carries between seasons at all.
+   Unscoped it still reports the live balance, which is a different and equally honest question.
+5. **D136 was wrong about what a season boundary does** — a new competition resets the rebuy
    allowance but not balances, so rolling without resetting coins produces a season that is already
    decided. Rewritten, and T88 now covers both operations.
 

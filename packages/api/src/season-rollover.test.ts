@@ -44,17 +44,36 @@ describe('season rollover', () => {
     return { h, s1, ids };
   };
 
-  /** The premise D136 got wrong, pinned so it cannot be re-assumed. */
-  it('does NOT reset balances just because a new competition exists', async () => {
+  /**
+   * RANK does not carry: a season's board is that season's own result, so an
+   * agent arrives on the starting stack however rich it was last season.
+   */
+  it('starts a new season on the starting stack, however rich the agent is', async () => {
     const { h, ids } = await setup();
     const s2 = h.o.createCompetition('Season 2');
     await playIn(h, s2, ids, 1);
 
-    const board = h.o.playgroundStandings(s2);
-    const rich = board.find((r) => r.displayName === 'rich')!;
-    expect(rich.played).toBe(1);              // one table in this season...
-    expect(rich.coins).toBeGreaterThan(21_000); // ...carrying the old season's fortune
-    expect(board[0]!.displayName).toBe('rich'); // and leading a board nobody has played
+    const rich = h.o.playgroundStandings(s2).find((r) => r.displayName === 'rich')!;
+    expect(rich.played).toBe(1);
+    // 21,825 last season buys nothing here — one table's swing from the start.
+    expect(Math.abs(rich.coins - h.config.startingCoins)).toBeLessThanOrEqual(h.config.coinPlaceStep * 3);
+  });
+
+  /**
+   * SPENDING POWER does carry, and that is why a rollover still resets balances.
+   * The advantage is no longer rank directly — it is endurance, and through
+   * endurance, immunity from the rebuy penalty: rebuys are netted out of rank
+   * (sub-spec 18 D100), so an agent that never has to take one never pays the
+   * -1000 every busted rival pays.
+   */
+  it('carries spending power, which is what a reset is actually for', async () => {
+    const { h } = await setup();
+    const rich = h.db.prepare(`SELECT coins FROM agents WHERE display_name='rich'`).get() as { coins: number };
+    expect(rich.coins).toBe(21_825); // still holds it, and can sit at ~2,000 tables
+
+    h.db.prepare(`UPDATE agents SET coins = ?`).run(h.config.startingCoins); // the reset
+    const after = h.db.prepare(`SELECT coins FROM agents WHERE display_name='rich'`).get() as { coins: number };
+    expect(after.coins).toBe(h.config.startingCoins);
   });
 
   it('DOES reset the rebuy allowance, which is per competition', async () => {
@@ -76,6 +95,30 @@ describe('season rollover', () => {
     for (const r of board) {
       expect(Math.abs(r.coins - h.config.startingCoins)).toBeLessThanOrEqual(swing);
     }
+  });
+
+  /**
+   * The requirement T88 states, and the one my first implementation broke: the
+   * board read the GLOBAL balance, so resetting flattened every finisher in the
+   * archived season to the starting stack and the order collapsed onto the
+   * tie-break — while every coin_delta sat untouched on disk.
+   */
+  it('keeps an archived board identical across a balance reset', async () => {
+    const { h, s1 } = await setup();
+    const before = h.o.playgroundStandings(s1).map((r) => `${r.displayName}:${r.coins}:${r.netCoins}`);
+    h.db.prepare(`UPDATE agents SET coins = ?`).run(h.config.startingCoins);
+    const after = h.o.playgroundStandings(s1).map((r) => `${r.displayName}:${r.coins}:${r.netCoins}`);
+    expect(after).toEqual(before);
+    // And it is a real ranking, not everyone flattened to the same number.
+    expect(new Set(h.o.playgroundStandings(s1).map((r) => r.coins)).size).toBeGreaterThan(1);
+  });
+
+  it('still reports the LIVE balance when no season is named', async () => {
+    const { h } = await setup();
+    // Unscoped, "coins" means what the agent holds right now — a different and
+    // equally honest question, kept distinct from a season's result.
+    const rich = h.o.playgroundStandings().find((r) => r.displayName === 'rich')!;
+    expect(rich.coins).toBe(21_825);
   });
 
   it('leaves the previous season readable after it is archived', async () => {

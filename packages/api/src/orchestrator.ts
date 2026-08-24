@@ -2349,10 +2349,21 @@ export class Orchestrator {
     // Rebuys are summed over the same scope, so the netting matches the games.
     const rows = this.db
       .prepare(
-        `SELECT a.id AS agentId, a.display_name AS displayName, a.coins AS coins,
+        `SELECT a.id AS agentId, a.display_name AS displayName,
+                -- Scoped to a competition, a season's coins are ITS OWN result:
+                -- the starting stack plus what its tables paid. Reading the global
+                -- balance here made an archived season unreadable the moment a
+                -- rollover reset balances — every finisher flattened to 1000 and
+                -- the order collapsed onto the tie-break, even though every
+                -- coin_delta was still on disk. Unscoped, the live balance is
+                -- still the honest answer to "what does this agent hold now".
+                CASE WHEN @competitionId IS NULL THEN a.coins
+                     ELSE @startingCoins + COALESCE(SUM(p.coin_delta), 0) END AS coins,
                 o.x_handle AS ownerHandle,
                 COALESCE(rb.rebuys, 0) AS rebuysUsed,
-                a.coins - COALESCE(rb.rebuys, 0) * @rebuyCoins AS netCoins,
+                (CASE WHEN @competitionId IS NULL THEN a.coins
+                      ELSE @startingCoins + COALESCE(SUM(p.coin_delta), 0) END)
+                  - COALESCE(rb.rebuys, 0) * @rebuyCoins AS netCoins,
                 COUNT(DISTINCT p.session_id) AS played,
                 COUNT(DISTINCT CASE WHEN s.winner_agent_id = a.id THEN s.id END) AS tablesWon
            FROM agents a
@@ -2380,6 +2391,7 @@ export class Orchestrator {
       .all({
         competitionId: competitionId ?? null,
         rebuyCoins: this.config.rebuyCoins,
+        startingCoins: this.config.startingCoins,
       }) as Array<{
       agentId: string;
       displayName: string;
