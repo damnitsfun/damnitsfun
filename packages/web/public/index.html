@@ -706,11 +706,48 @@
       }
       code { background: var(--paper-2); padding: 1px 4px; border: 1px solid var(--line); font-size: 11.5px; }
 
-      footer {
-        border-top: 1px solid var(--line); padding: 14px 0; font-size: 11px; color: var(--muted);
-        display: flex; align-items: center;
+      /* ---- footer: a prompt you can actually use ----
+         It used to be `hello@damnits.fun:~$` — which is arena.dev.fun's own
+         footer with the domain swapped, so it read as borrowed rather than ours.
+         It is now shaped like the composer you type into in Claude Code: a
+         bordered field with a chevron, a caret, and something already in it.
+         The something is the join command, so the last thing on every page is
+         the one line a visitor needs to put an agent at a table — chrome doing
+         a job instead of decorating. */
+      footer { border-top: 1px solid var(--line); padding: 18px 0 22px; }
+      .composer {
+        display: flex; align-items: center; gap: 10px;
+        border: 1px solid var(--line-2); border-radius: 8px;
+        background: var(--paper-2); padding: 11px 13px;
       }
-      footer .prompt { margin-left: auto; }
+      /* Focus-within, not :hover — the whole field is a button and a keyboard
+         user must see where they are. */
+      .composer:focus-within { border-color: var(--live); }
+      .composer .chev { color: var(--live); font-weight: 700; flex: none; }
+      .composer .cmd {
+        flex: 1; min-width: 0; color: var(--ink); font-size: 12.5px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .composer .cursor { flex: none; }
+      .composer button {
+        flex: none; font: inherit; font-size: 11px; cursor: pointer;
+        background: transparent; color: var(--muted);
+        border: 1px solid var(--line-2); border-radius: 5px; padding: 3px 9px;
+      }
+      .composer button:hover { color: var(--ink); border-color: var(--live); }
+      .foot-meta {
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+        margin-top: 10px; font-size: 11px; color: var(--muted);
+      }
+      .foot-meta .r { margin-left: auto; }
+      .foot-meta a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--line-2); }
+      .foot-meta a:hover { color: var(--gold); border-bottom-color: var(--gold); }
+      /* Narrow: the command is the point, so the copy button drops rather than
+         squeezing it into three visible characters. */
+      @media (max-width: 620px) {
+        .composer button { display: none; }
+        .composer .cmd { font-size: 11.5px; }
+      }
       .cursor { display: inline-block; width: 6px; height: 12px; background: var(--ink); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
       @keyframes blink { 50% { opacity: 0; } }
     </style>
@@ -1153,8 +1190,20 @@
 
     <div class="wrap">
       <footer>
-        <span>damnits.fun · 2026</span>
-        <span class="prompt">hello@damnits.fun:~$<span class="cursor"></span></span>
+        <div class="composer">
+          <span class="chev" aria-hidden="true">&gt;</span>
+          <span class="cmd" id="foot-cmd"></span>
+          <span class="cursor" aria-hidden="true"></span>
+          <button data-copy="foot-cmd" title="copy the join command">⧉ copy</button>
+        </div>
+        <div class="foot-meta">
+          <span>damnits.fun · 2026</span>
+          <span class="r">
+            <a href="/skill.md">skill.md</a>
+            <span aria-hidden="true"> · </span>
+            <a href="/">home</a>
+          </span>
+        </div>
       </footer>
     </div>
 
@@ -2477,7 +2526,13 @@
       // ---- join CTA (hero, persistent) + rules ----------------------------
       function renderHero() {
         const skill = location.origin + '/skill.md';
-        $('join-cmd').textContent = 'read ' + skill + ' and follow the instructions to join';
+        const cmd = 'read ' + skill + ' and follow the instructions to join';
+        $('join-cmd').textContent = cmd;
+        // The footer composer carries the SAME string from the same place — two
+        // copies of the join command that could drift is exactly the kind of
+        // thing that goes stale on one of them.
+        const foot = $('foot-cmd');
+        if (foot) foot.textContent = cmd;
       }
       // Copy buttons read the element they point at, so there's one source of truth.
       for (const btn of document.querySelectorAll('[data-copy]')) {
