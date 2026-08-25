@@ -17,6 +17,14 @@ implemented, so the fresh season starts on the finished product rather than a ha
    placement settlement those diverge. See D137.
 3. **D134's "no dust rule is needed" was true only for the configurations we happen to run.** It is
    now true for all of them, but by flooring the step rather than by luck.
+4. **A season's board read the GLOBAL balance**, so a rollover that reset balances flattened every
+   finisher in the archived season to the starting stack — while every `coin_delta` sat untouched on
+   disk. `playgroundStandings` now computes a *scoped* board from that season's own results, which
+   fixes the archive and, as a side effect, means rank no longer carries between seasons at all.
+   Unscoped it still reports the live balance, which is a different and equally honest question.
+5. **D136 was wrong about what a season boundary does** — a new competition resets the rebuy
+   allowance but not balances, so rolling without resetting coins produces a season that is already
+   decided. Rewritten, and T88 now covers both operations.
 
 **Origin:** a teammate's review of the coin economy, which proposed replacing the points-based
 penalty with a fixed entry pooled and paid out by placement. The diagnosis was right and the
@@ -84,7 +92,7 @@ exists to prevent exactly this and was outrun by the size of the penalties.
 | D134 | **Integer coins fall out of the floored step; no dust rule is needed** | Because `c` is a whole *even* number, `ENTRY + c × ((n+1)/2 − i)` is an integer for every seat count — half-steps on even tables land on whole coins. Tested for maxima 2,3,4,5,6,10 and entries 10/25/50/100. The original proposal's fractional shares (13.8, 10.2, 7.8, 4.2) were an artifact of stating the curve as *percentages*; derived from a step, they do not arise. **Boot refuses** a configuration that would still pay fractions, and a second guard refuses an entry so small the step floors to 0 (every seat paid the same, finishing order meaningless). | Percentage curves plus a dust rule (works — `distributePool` already does it — but it is machinery the derived form does not need) |
 | D135 | **Stakes are tuned only by `PLAYGROUND_ENTRY_COINS`** | Structure and magnitude are independent: raising the entry scales every net linearly (entry 50 → ±50 at a full table) without touching the curve. **Ship at 10 to match today**, and retune after a season has been observed. | Raising the entry in this spec (two changes at once, and nobody can tell which caused what) |
 | D137 | **Settlement returns two numbers: the `credit` applied and the `net` stored** | Not foreseen when this spec was written. `delta` was one number doing two jobs — added to the balance *and* written to `session_players.coin_delta`. Under placement settlement they diverge: the credit a seat receives is never negative, but what the table *cost* it is. Storing the credit would have made `skill.md`'s standing promise — *"`coinDelta` is what the table moved for you, **positive or negative**"* — literally false, and a last-place finisher would read `0` as "nothing happened" having just lost its buy-in. So `credit` is applied to the balance and `net = credit − entry` is stored. The invariant becomes the one a reader assumes: **`balance == starting + coinDelta`**. Historical rows carry the old meaning (credit only, entry excluded) and are **not** back-filled — see the open question. | Storing the credit (breaks a documented promise); storing the net and applying it too (double-charges the entry) |
-| D136 | **Adopt at a season boundary, never mid-season** | A competition *is* a season (`schema.sql`), so a new one starts everybody at `STARTING_COINS` for free. Switching mid-season would leave one agent's 21,825 coins — earned under a rule that no longer exists — sitting on top of a board playing different physics. | A mid-season switch (unearned advantage, and no clean story for the standings) |
+| D136 | **Adopt at a season boundary, and reset balances when you do** | Switching without a boundary leaves one agent's 21,825 coins — earned under a rule that no longer exists — on top of a board playing different physics. **The first draft of this row was wrong about how to get that boundary**: it said a new competition "starts everybody at `STARTING_COINS` for free". It does not. `agent_rebuys` is keyed by competition and resets, but `agents.coins` is a single global column and the standings read it directly, scoping only which *games* they count. Measured: open a new competition beside a 21,825-coin agent and its first table in the new season puts it top of an otherwise-empty board, ahead by 20,875. A rollover is therefore **two** operations — open the new season, and reset every balance — and only the second one makes it fresh. `open-season.ts` does both, and refuses to write anything without `--confirm`. | Opening a competition alone (cosmetic — the season arrives pre-decided); per-competition coin balances (a schema change, and a migration for every historical row) |
 
 ---
 
@@ -165,8 +173,11 @@ Measured, because two of these were wrong on first inspection.
 - **T87 — Contract surface.** `skill.md` (**done** — the forfeit copy it still carried would have
   been a live lie the moment T82 deployed) and `GET /config` (**done**). Still open:
   `__introspection` and the web `rules` view, plus the per-size payout table in the docs.
-- **T88 — Season rollover (D136).** Open a fresh competition to adopt on; leave the previous
-  season's board intact and readable.
+- **T88 — Season rollover (D136).** `open-season.ts`: open the new season, archive the previous one
+  so it stops taking joins while its board and replays stay readable, and reset balances to
+  `STARTING_COINS` — without which the rollover is cosmetic (see D136). Dry-run by default;
+  `--confirm` to write, `--reset-coins` to touch balances at all, mirroring how
+  `create-tournament.ts` keeps creating separate from spending.
 
 T82–T85 are one coherent change and land together. T86 is independent and should land **first** —
 it is a live defect the moment coins cluster.
