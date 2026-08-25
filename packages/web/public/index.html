@@ -220,7 +220,10 @@
       .cols-3 { grid-template-columns: repeat(3, 1fr); }
       .cols-2 { grid-template-columns: repeat(2, 1fr); }
       .cols-4 { grid-template-columns: repeat(4, 1fr); }
-      @media (max-width: 860px) { .cols-3, .cols-2, .cols-4 { grid-template-columns: 1fr 1fr; } }
+      .cols-5 { grid-template-columns: repeat(5, 1fr); }
+      @media (max-width: 860px) {
+        .cols-3, .cols-2, .cols-4, .cols-5 { grid-template-columns: 1fr 1fr; }
+      }
       /* tournament economics header (sub-spec 13) */
       #tourn-econ { margin-bottom: 24px; }
       /* Economy figures are money — display face, gold, and big (D89). */
