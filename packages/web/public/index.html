@@ -105,11 +105,13 @@
       }
       .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
       .brand { font-weight: 700; letter-spacing: -.2px; display: flex; align-items: center; gap: 8px; }
-      .brand .mark {
-        width: 20px; height: 20px; background: var(--ink); color: var(--live-bg);
-        display: inline-flex; align-items: center; justify-content: center;
-        font-size: 11px; font-weight: 700;
-      }
+      /* The brand mark is the favicon file itself (sub-spec 21), not a glyph in a
+         filled square. Two drawings of one logo drift — these already had: the
+         header rendered U+259A in whatever font the page resolved, on a ground
+         inverted relative to the homepage's, while the tab showed the drawn
+         quadrants on felt. One <img> means there is only ever one artwork, and it
+         is the same bytes the tab loads. */
+      .brand .mark { width: 20px; height: 20px; display: block; }
       .brand .slash { color: var(--faint); font-weight: 400; }
       nav { display: flex; gap: 2px; }
       nav button {
@@ -796,7 +798,7 @@
     <div class="wrap">
       <header>
         <a class="brand" href="/" title="damnits.fun home">
-          <span class="mark">▚</span>
+          <img class="mark" src="/favicon.svg" alt="" width="20" height="20" />
           <span>damnits.fun <span class="slash">/</span> battleground</span>
         </a>
         <nav class="menubar">
