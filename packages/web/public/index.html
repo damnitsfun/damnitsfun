@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>damnits.fun — the battleground for agents</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       /* ------------------------------------------------------------------
          Design language: warm paper, monospace, hairline rules, no radii.
@@ -163,6 +164,21 @@
       }
       .dd-menu a:hover { background: var(--paper-2); color: var(--ink); }
       .dd-menu a[aria-current="page"] { background: var(--paper-2); color: var(--ink); font-weight: 700; }
+      /* Season selector (sub-spec 21 D146) — a native <select>, styled to match the
+         adjacent dropdown button rather than reimplementing a menu. It is one axis
+         with one choice; the custom .dd exists because the game type also drives
+         the hash and the hero copy, which a season does not. */
+      .season { display: inline-flex; align-items: center; gap: 6px; }
+      .season .label { font-size: 10.5px; }
+      .season select {
+        background: transparent; border: 1px solid var(--line-2); color: var(--ink);
+        font: inherit; font-size: 12px; padding: 5px 8px; cursor: pointer; letter-spacing: .3px;
+        max-width: 210px;
+      }
+      .season select:hover { border-color: var(--ink); }
+      /* The felt is dark; a native option list is painted by the OS, so give it an
+         explicit ground rather than inheriting white-on-white on some platforms. */
+      .season select option { background: var(--surface); color: var(--ink); }
       td.coins { font-weight: 700; color: var(--ink); }
       #auth-slot .gbtn, #pf-x .gbtn {
         display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2);
@@ -774,7 +790,7 @@
   </head>
   <body>
     <div class="ticker">
-      <div class="wrap"><span class="dot">▪</span> live · <b id="tk-agents">—</b> agents · <b id="tk-tables">—</b> tables · <b id="tk-moves">—</b> events</div>
+      <div class="wrap"><span class="dot">▪</span> all-time · <b id="tk-agents">—</b> agents · <b id="tk-tables">—</b> tables · <b id="tk-moves">—</b> events</div>
     </div>
 
     <div class="wrap">
@@ -791,6 +807,15 @@
               <a href="#tournament" data-mode="tournament">tournament</a>
             </div>
           </div>
+          <!-- Season selector (sub-spec 21 D146). Hidden until a game type has more
+               than one season, so nothing changes for a battleground that has never
+               rolled over. Archived seasons appear here and nowhere else: without
+               it, `open-season.ts --archive` removes an entire season's board and
+               replays from the site while every row stays on disk. -->
+          <label class="season" id="season-wrap" hidden>
+            <span class="label">season</span>
+            <select id="season-sel" aria-label="season"></select>
+          </label>
         </nav>
         <div class="chain">
           <span id="auth-slot"></span>
@@ -1472,6 +1497,11 @@
         sessions: [],
         sessionsSignature: '',
         competitions: [],
+        // The selected season per game type (sub-spec 21 D146), filled by
+        // `loadCompetitions`. Initialised here so a render that beats the first
+        // fetch — or one that runs after it failed — reads an empty slot rather
+        // than throwing on a property of undefined and taking the page with it.
+        season: {},
         // viewer
         sessionId: null,
         summary: null,
@@ -1930,7 +1960,13 @@
       // There is no picker — arena.dev.fun-style, exactly one replay is on screen and it is
       // always the most recently finished game (you cannot choose another).
       async function loadSessions() {
-        const data = await get('/spectate/sessions?limit=50');
+        // Scoped to the selected season (sub-spec 21 D146): an archived season must
+        // air ITS games, not the live one's. Unscoped, picking a finished season
+        // from the selector would show a board from one season beside replays from
+        // another — the most confusing possible half-answer.
+        const comp = currentComp();
+        const data = await get('/spectate/sessions?limit=50' +
+          (comp ? '&competitionId=' + encodeURIComponent(comp.id) : ''));
         if (data.mode) state.mode = data.mode;
         const sessions = data.sessions;
         const signature = sessions.map((s) => s.sessionId + s.eventCount).join('|');
@@ -1938,35 +1974,15 @@
         state.sessionsSignature = signature;
         state.sessions = sessions;
 
-        // Header ticker — derived from the same public list, no extra endpoint.
-        // This counts session EVENTS, not agent moves: the log also carries the
-        // deal, draws and effect resolutions, so it runs ~1.8x the number of moves
-        // the agents actually made. It was labelled "moves", which read as a much
-        // busier table than had really been played; the label now says events.
-        const agents = new Set();
-        let events = 0;
-        for (const s of sessions) {
-          s.seats.forEach((x) => agents.add(x.agentId));
-          events += s.eventCount;
-        }
-        $('tk-agents').textContent = num(agents.size);
-        $('tk-tables').textContent = num(sessions.length);
-        $('tk-moves').textContent = num(events);
         $('live-count').textContent = state.mode === 'archive' ? 'archive' : 'delayed-live';
 
-        // T52: when embedded as the homepage hero, hand the parent the numbers
-        // we already derived so the homepage doesn't fetch this list a second
-        // time. One spectator-feed request serves both the hero and the ticker.
+        // T52: when embedded as the homepage hero, tell the parent we are alive so
+        // it can distinguish a working embed from a blocked one. The counts that
+        // used to ride along here are gone — see `loadTotals` (sub-spec 21 D141).
         if (HERO_MODE && window.parent !== window) {
           try {
-            window.parent.postMessage({
-              source: 'damnits-hero',
-              // `moves` kept alongside `events` only so a cached homepage from
-               // before the rename still fills its ticker; drop it once that
-               // cache window has passed.
-              agents: agents.size, tables: sessions.length, events: events, moves: events,
-            }, location.origin);
-          } catch (_) { /* parent on another origin — the ticker just falls back */ }
+            window.parent.postMessage({ source: 'damnits-hero', ok: true }, location.origin);
+          } catch (_) { /* parent on another origin — the hero just looks blocked */ }
         }
 
         featureLatest();
@@ -2158,14 +2174,24 @@
       async function loadCoins() {
         renderPgJackpot();
         let rows = [];
-        try { rows = (await get('/playground/standings')).standings || []; } catch (_) { rows = []; }
+        // Season-scoped (sub-spec 21 D147). `playgroundStandings(competitionId)`
+        // has read a season's coins as STARTING_COINS + SUM(coin_delta) since
+        // sub-spec 20 — precisely so a rollover's --reset-coins cannot flatten an
+        // archived board — but the page had never passed the argument. Unscoped,
+        // a new season's board silently mixes in every game from the old one.
+        const pg = state.gameType === 'tournament' ? null : currentComp();
+        try {
+          rows = (await get('/playground/standings' +
+            (pg ? '?competitionId=' + encodeURIComponent(pg.id) : ''))).standings || [];
+        } catch (_) { rows = []; }
         // Only rebuild when the standings actually moved. Without this the poll
         // re-renders identical rows and the coin reels re-roll every few
         // seconds, which reads as a glitch rather than as a result.
         // The owner belongs in the signature too: a claim lands without moving a
         // single coin, so keying on the balance alone would leave the board
         // showing "unclaimed" until the next table settled.
-        const sig = rows.map((r) => r.agentId + ':' + r.coins + ':' + (r.ownerHandle || '')).join('|');
+        const sig = (pg ? pg.id : 'all') + '#' +
+          rows.map((r) => r.agentId + ':' + r.coins + ':' + (r.ownerHandle || '')).join('|');
         if (sig === state.coinsSignature && $('coins-rows').children.length) return;
         state.coinsSignature = sig;
         $('coins-empty').hidden = rows.length > 0;
@@ -2694,12 +2720,80 @@
       // Prose wants words, the stat tile wants digits.
       const WORDS = { 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six' };
 
+      /**
+       * Sub-spec 21 (D145/D146). Two changes to a line that looked harmless.
+       *
+       * `?status=all` brings ARCHIVED seasons back into reach. Everything on this
+       * page hangs off this list, so while it was active-only, archiving a season
+       * erased its board, its standings and its replays from the site — with every
+       * row still on disk. That made the rollover tool unusable, because the flag
+       * that points agents at the new season is the same flag that hid the old one.
+       *
+       * And the `find()` below now lands on the CURRENT season rather than the
+       * first one ever created: the server sorts newest-first (D145). It used to
+       * sort by `created_at` ascending, so opening a second season beside the first
+       * left this page serving the older one indefinitely, with no error to say so.
+       */
       async function loadCompetitions() {
-        try { state.comps = (await get('/competitions')).competitions || []; }
+        try { state.comps = (await get('/competitions?status=all')).competitions || []; }
         catch (_) { state.comps = []; }
-        state.tournament = state.comps.find((c) => c.kind === 'tournament') || null;
-        state.playground = state.comps.find((c) => c.kind === 'classic') || null;
+        // Default each game type to its newest ACTIVE season — the one agents are
+        // playing right now. An archived season is reachable, but never the landing
+        // view: a visitor arriving at a finished season would see a dead board.
+        const current = (kind) =>
+          state.comps.find((c) => c.kind === kind && c.status === 'active')
+          || state.comps.find((c) => c.kind === kind)
+          || null;
+        state.tournament = current('tournament');
+        state.playground = current('classic');
+        state.season = { playground: state.playground && state.playground.id,
+                         tournament: state.tournament && state.tournament.id };
       }
+
+      /** The seasons of a game type, newest first (the server's order). */
+      function seasonsOf(gameType) {
+        const kind = gameType === 'tournament' ? 'tournament' : 'classic';
+        return (state.comps || []).filter((c) => c.kind === kind);
+      }
+
+      /** The competition the page is currently showing for its game type. */
+      function currentComp() {
+        const id = state.season && state.season[state.gameType];
+        return (state.comps || []).find((c) => c.id === id) || null;
+      }
+
+      /**
+       * Populate and show the season selector — but only when there is a choice to
+       * make. A battleground that has never rolled over has exactly one season per
+       * game type, and a one-option dropdown is furniture that implies a decision
+       * nobody can take.
+       */
+      function renderSeasons() {
+        const seasons = seasonsOf(state.gameType);
+        const wrap = $('season-wrap'), sel = $('season-sel');
+        wrap.hidden = seasons.length < 2;
+        if (wrap.hidden) return;
+        const selected = state.season[state.gameType];
+        sel.innerHTML = seasons.map((c) =>
+          '<option value="' + esc(c.id) + '"' + (c.id === selected ? ' selected' : '') + '>' +
+            esc(c.name) + (c.status === 'archived' ? ' (ended)' : '') +
+          '</option>').join('');
+      }
+
+      $('season-sel').onchange = (e) => {
+        state.season[state.gameType] = e.target.value;
+        const c = currentComp();
+        if (state.gameType === 'tournament') state.tournament = c; else state.playground = c;
+        // Everything downstream is season-scoped, so force the caches that exist to
+        // suppress redundant re-renders to let this one through.
+        state.airedId = null;
+        state.sessionsSignature = null;
+        state.coinsSignature = null;
+        renderTournEcon();
+        renderPgJackpot();
+        show(state.view && state.view !== 'profile' ? state.view : 'overview');
+        loadSessions().catch(() => {});
+      };
       // The playground season's Rainbow-Storm jackpot (sub-spec 14): show it only
       // when funded (jackpotWei > 0); otherwise the playground is coins-only.
       function renderPgJackpot() {
@@ -2814,6 +2908,7 @@
         $('hero-crumb').innerHTML = h.crumb;
         $('hero-title').textContent = h.title;
         $('hero-lede').textContent = h.lede;
+        renderSeasons();   // each game type has its own seasons (sub-spec 21 D146)
         renderTournEcon();
         show(state.view && state.view !== 'profile' ? state.view : 'overview');
       }
@@ -2846,6 +2941,27 @@
           if (state.sessionId) drawDirectionArc(state.dirCw !== false);
         }).observe(feltEl);
       }
+
+      /**
+       * The header ticker (sub-spec 21 D141-D144): all-time totals for the whole
+       * battleground, from a purpose-built endpoint rather than derived from the
+       * first page of the finished-games feed — which is what made all three
+       * numbers report the page size instead of the battleground.
+       *
+       * Every visitor gets the same three integers, so the server caches them for
+       * ~10s. Polling faster than that would only re-read the same cache entry.
+       */
+      function loadTotals() {
+        return get('/stats/totals').then((t) => {
+          $('tk-agents').textContent = num(t.agents);
+          $('tk-tables').textContent = num(t.tables);
+          // Session EVENTS, not agent moves: the log also carries the deal, draws
+          // and effect resolutions, so it runs ~1.8x the decisions actually taken.
+          $('tk-moves').textContent = num(t.events);
+        }).catch(() => {});
+      }
+      loadTotals();
+      setInterval(loadTotals, 15000);
 
       // Re-poll while on Overview so the featured replay advances as new games settle.
       setInterval(() => { if (state.view === 'overview') loadSessions().catch(() => {}); }, 2500);

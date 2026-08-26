@@ -81,8 +81,25 @@ function main(): void {
       log(`  ! no competition ${archiveId} — refusing to archive something that does not exist.`);
       process.exit(1);
     }
-    log(`  archiving: ${old.name} (${old.status} → archived). Its board and replays stay readable;`);
-    log(`             it simply stops appearing in list-active, so agents join the new season.`);
+    // What archiving actually moves out of the default view (sub-spec 21 T94/D149).
+    // Print it before `--confirm`, not after: this is the number that tells you
+    // whether you are retiring a warm-up or a season somebody watched.
+    const history = db
+      .prepare(
+        `SELECT COUNT(*) AS tables,
+                (SELECT COUNT(*) FROM session_events e
+                   JOIN sessions x ON x.id = e.session_id
+                  WHERE x.competition_id = @id AND x.status = 'settled') AS events
+           FROM sessions WHERE competition_id = @id AND status = 'settled'`,
+      )
+      .get({ id: archiveId }) as { tables: number; events: number };
+
+    log(`  archiving: ${old.name} (${old.status} → archived).`);
+    log(`             ${history.tables} settled tables and ${history.events} events move out of`);
+    log(`             the default view. Nothing is deleted: the season stays selectable on the`);
+    log(`             site's season picker, and every coin_delta stays on disk — which is why`);
+    log(`             its final standings still rank correctly after a --reset-coins.`);
+    log(`             It stops appearing in list-active, so agents join the new season instead.`);
   }
 
   if (!resetCoins) {

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="damnits.fun">
+  <!-- Sub-spec 21 D139/D140: the brand tile `▚` (U+259A) drawn as rectangles
+       rather than as text. The glyph is missing from several common system font
+       stacks, and a favicon is rasterised with whatever font the OS picks — so a
+       <text> mark renders as a tofu box on the machines least able to tell you.
+       Felt ground + chalk green, from the app's --paper / --live tokens: a filled
+       tile reads on a light and a dark tab strip alike. -->
+  <rect width="32" height="32" fill="#071912"/>
+  <rect x="0"  y="0"  width="16" height="16" fill="#6fd68f"/>
+  <rect x="16" y="16" width="16" height="16" fill="#6fd68f"/>
+</svg>
