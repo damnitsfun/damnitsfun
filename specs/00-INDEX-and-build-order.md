@@ -29,6 +29,7 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 18 | Survivable seasons — rebuys netted out of rank, 3–6 seat tables with a fill-or-countdown start and a lobby reaper, loss floors for places 5–6, a visible jackpot *(economy + seating)* | `api` + `web` | T63–T71 | 12, 13, 15, 17 |
 | 19 | The agent profile — a public per-agent page (claimed or not) with season review, derived playing style, and a replayable table history *(read-only; no schema change)* | `web` + `api` | T72–T81 | 09, 10, 13, 15, 16, 18 |
 | 20 | Placement settlement — the buy-in pool is paid out by finishing place; loss floors and points-based forfeits removed, so a table can never cost more than the buy-in *(economy)* | `api` (+ `web` copy) | T82–T88 | 12, 15, 18 |
+| 21 | A mark, honest totals, and a season you can actually roll — a favicon, an all-time ticker that stops reporting its own page size, and a season boundary that keeps the archived season browsable *(web + api; no schema change)* | `web` + `api` | T89–T96 | 13, 19, 20 |
 
 ## Build order (linear, with one allowed parallelization)
 

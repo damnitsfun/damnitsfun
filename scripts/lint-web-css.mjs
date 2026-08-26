@@ -71,10 +71,54 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith('.html'))) {
   }
 }
 
+/**
+ * Every .svg here must be well-formed XML.
+ *
+ * SVG is XML, not HTML, and the difference is not forgiving: a comment may not
+ * contain a double hyphen. The first favicon shipped with the CSS token names
+ * written as `--paper` / `--live` inside its comment, which made the whole
+ * document malformed. Nothing said so — the file looked right, the server sent
+ * it with a 200 and the correct content type, and Chrome simply drew the default
+ * globe. It reached staging and was found by eye.
+ *
+ * Same failure shape as the undefined-class bugs above: valid-looking input, no
+ * error anywhere, wrong pixels.
+ */
+for (const file of readdirSync(DIR).filter((f) => f.endsWith('.svg'))) {
+  const svg = readFileSync(join(DIR, file), 'utf8');
+  for (const [i, line] of svg.split('\n').entries()) {
+    // Cheap and exact: the only double hyphen legal in XML is the comment
+    // delimiters themselves.
+    const stripped = line.replaceAll('<!--', '').replaceAll('-->', '');
+    if (stripped.includes('--')) {
+      failed = true;
+      console.error(`[lint:web-css] ${file}:${i + 1} — '--' inside XML makes the file malformed:`);
+      console.error(`  ${line.trim()}`);
+    }
+  }
+  // Plus the two other ways these small hand-written files go malformed: an
+  // unterminated comment, and a bare `&` that is not an entity.
+  //
+  // This is NOT a full XML parse — Node ships no XML parser and one lint does not
+  // justify a dependency. It checks the traps that have actually bitten, in files
+  // short enough to read. If these grow into generated artwork, parse them
+  // properly instead of extending this.
+  const naked = svg.replaceAll(/<!--[\s\S]*?-->/g, '');
+  if (naked.includes('<!--')) {
+    failed = true;
+    console.error(`[lint:web-css] ${file} — unterminated XML comment.`);
+  }
+  const badAmp = naked.match(/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#x[0-9a-fA-F]+);)/);
+  if (badAmp) {
+    failed = true;
+    console.error(`[lint:web-css] ${file} — bare '&' must be written '&amp;'.`);
+  }
+}
+
 if (failed) {
   console.error('');
   console.error('An undefined class or token does not error — it silently renders unstyled.');
   console.error('Define it, or fix the name.');
   process.exit(1);
 }
-console.log('[lint:web-css] OK — every literal class and token in the markup is defined.');
+console.log('[lint:web-css] OK — markup tokens defined, SVG assets well-formed.');

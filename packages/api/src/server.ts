@@ -113,6 +113,23 @@ export function buildServer(options: BuildOptions): BuiltServer {
   app.get('/battleground', async (_request, reply) => sendPage(reply, webIndex));
   app.get('/arena', async (_request, reply) => reply.redirect('/battleground', 301));
 
+  /**
+   * The tab icon (sub-spec 21 D138). Served from the API origin like every other
+   * static asset here, because the web package has no build step to generate a
+   * multi-resolution `.ico` from. `/favicon.ico` is requested by browsers in
+   * contexts a `<link rel="icon">` does not cover (bookmarks, history, a bare API
+   * 404 page), so it redirects rather than 404ing into the JSON error handler.
+   */
+  app.get('/favicon.svg', async (_request, reply) => {
+    const icon = join(webDir, 'favicon.svg');
+    if (!existsSync(icon)) return reply.status(404).send({ error: 'WEB_UI_NOT_BUILT' });
+    return reply
+      .type('image/svg+xml')
+      .header('cache-control', 'public, max-age=86400')
+      .send(readFileSync(icon, 'utf8'));
+  });
+  app.get('/favicon.ico', async (_request, reply) => reply.redirect('/favicon.svg', 301));
+
   app.get('/skill.md', async (_request, reply) => {
     const skill = join(repoRoot, 'skill.md');
     if (!existsSync(skill)) return reply.status(404).send({ error: 'SKILL_FILE_MISSING' });
@@ -220,7 +237,19 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // ---- public competitions list (no auth, sub-spec 13 D56) ----------------
     // Public metadata so the web can split playground (classic) vs tournament
     // (pooled) and show the tournament's prize pool / jackpot / buy-in / entries.
-    scope.get('/competitions', async () => ({ competitions: orchestrator.publicCompetitions() }));
+    // `?status=all` also lists ARCHIVED seasons, so the app's season selector can
+    // reach a rolled-over season's board and replays (sub-spec 21 D146). Anything
+    // other than `all` means `active`, which is the unchanged default.
+    scope.get('/competitions', async (request) => {
+      const wanted = (request.query as { status?: string }).status === 'all' ? 'all' : 'active';
+      return { competitions: orchestrator.publicCompetitions(wanted) };
+    });
+
+    // ---- all-time totals (no auth, sub-spec 21 T91) -------------------------
+    // The site ticker. Counts the whole battleground since its first season, and
+    // deliberately does NOT count reaped lobbies as tables or registered-but-never
+    // -seated agents as agents — see `Orchestrator.totals`.
+    scope.get('/stats/totals', async () => orchestrator.totals());
 
     // ---- public agent profile (no auth, sub-spec 19 T73) --------------------
     //

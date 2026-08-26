@@ -252,10 +252,20 @@ function toApiError(error: unknown): ApiError {
   return new ApiError(500, 'INTERNAL_ERROR', message);
 }
 
+/** How long {Orchestrator.totals} reuses a computed answer (sub-spec 21 D141). */
+const TOTALS_CACHE_MS = 10_000;
+
 export class Orchestrator {
   private readonly db: Db;
   private readonly config: Config;
   private readonly clock: () => number;
+  /**
+   * Sub-spec 21 D141. The ticker polls every 2.5s per visitor and the totals are
+   * identical for all of them, so they are computed once per window and shared.
+   * Cheap even uncached (13ms over the 429k-row production event table) — this is
+   * about not doing it once per visitor per 2.5s for a number that moves slowly.
+   */
+  private totalsCache: { at: number; value: { agents: number; tables: number; events: number } } | null = null;
   private readonly hooks: SessionLifecycleHooks;
   private readonly chain: SettlementChain;
   private readonly tournament: TournamentChain;
@@ -909,8 +919,16 @@ export class Orchestrator {
     entriesCloseAt: string | null;
     requiresClaim: boolean;
   }> {
+    // NEWEST FIRST (sub-spec 21 D145). This ordered by `created_at` ascending, and
+    // every consumer picks with `find()` — the web's `state.comps.find(c => c.kind
+    // === 'classic')`, the reference agent's `pickCompetition`. So the moment a
+    // second season of a kind is open, everything selects the OLDEST one: open S2
+    // beside S1 and the site keeps serving S1's board while agents keep sitting at
+    // S1's tables, with no error anywhere to say so. The season you just opened is
+    // the season everyone means, so it sorts first. `id` breaks a same-second tie
+    // so the order is reproducible rather than query-planner luck.
     const rows = this.db
-      .prepare(`SELECT * FROM competitions WHERE status = 'active' ORDER BY created_at`)
+      .prepare(`SELECT * FROM competitions WHERE status = 'active' ORDER BY created_at DESC, id DESC`)
       .all() as CompetitionRow[];
     return rows.map((r) => ({
       id: r.id,
@@ -926,14 +944,25 @@ export class Orchestrator {
   }
 
   /**
-   * Public competition metadata (sub-spec 13 D56) — the active competitions with
-   * their kind + prize economics + entry count, for the web's playground/tournament
+   * Public competition metadata (sub-spec 13 D56) — the competitions with their
+   * kind + prize economics + entry count, for the web's playground/tournament
    * split. No secrets: pool/jackpot/fee are public (they mirror the on-chain state).
+   *
+   * `status: 'all'` includes ARCHIVED seasons (sub-spec 21 D146). Everything the
+   * site displays hangs off this call, and it filtered to `active` — so archiving
+   * a season removed its board, its standings and its replays from the site while
+   * every row stayed on disk. That made `open-season.ts --archive` unusable: the
+   * flag that points agents at the new season was also the flag that hid the old
+   * one. Agent profiles already span archived seasons, so the board was the only
+   * surface losing its history.
+   *
+   * The default stays `active`, so no existing caller changes behaviour.
    */
-  publicCompetitions(): Array<{
+  publicCompetitions(status: 'active' | 'all' = 'active'): Array<{
     id: string;
     name: string;
     kind: 'classic' | 'tournament';
+    status: string;
     entryFeeWei: string;
     poolWei: string;
     jackpotWei: string;
@@ -941,10 +970,35 @@ export class Orchestrator {
     entriesCount: number;
     requiresClaim: boolean;
   }> {
-    return this.listActiveCompetitions().map((c) => ({
+    const rows =
+      status === 'all'
+        ? (this.db
+            .prepare(
+              // Same ordering rule as listActiveCompetitions (D145): newest first,
+              // so a `find()` on kind lands on the current season, and the season
+              // selector lists seasons the way anyone would name them.
+              `SELECT * FROM competitions WHERE status IN ('active','archived')
+                ORDER BY created_at DESC, id DESC`,
+            )
+            .all() as CompetitionRow[]
+          ).map((r) => ({
+            id: r.id,
+            name: r.name,
+            kind: r.kind,
+            status: r.status,
+            entryFeeWei: r.entry_fee_wei,
+            poolWei: r.pool_wei,
+            jackpotWei: r.jackpot_seed_wei,
+            entriesCloseAt: r.entries_close_at,
+            requiresClaim: Boolean(r.requires_claim),
+          }))
+        : this.listActiveCompetitions().map((c) => ({ ...c, status: 'active' }));
+
+    return rows.map((c) => ({
       id: c.id,
       name: c.name,
       kind: c.kind,
+      status: c.status,
       entryFeeWei: c.entryFeeWei,
       poolWei: c.poolWei,
       jackpotWei: c.jackpotWei,
@@ -956,6 +1010,40 @@ export class Orchestrator {
       ).n,
       requiresClaim: c.requiresClaim,
     }));
+  }
+
+  /**
+   * All-time totals for the site ticker (sub-spec 21 T90).
+   *
+   * The ticker used to derive its three numbers from the first page of
+   * `/spectate/sessions`, so every one of them was really reporting the page
+   * size: "50 tables" was `limit=50`, unchanged since the fiftieth table ever
+   * finished. These count the whole battleground, from its first season.
+   *
+   * Two of the three obvious queries are wrong, and both were measured before
+   * being ruled out (D142/D143):
+   *
+   *   tables — `settled` ONLY, never `COUNT(*) FROM sessions`. 82% of session
+   *     rows on production are reaped empty lobbies (20,921 archived against
+   *     4,490 settled), so a row count reports 5.7x the tables anyone played.
+   *   agents — agents that have taken a SEAT, not agents that hold an API key.
+   *     20 registered, 15 ever seated; registering is not joining.
+   */
+  totals(): { agents: number; tables: number; events: number } {
+    const now = this.clock();
+    if (this.totalsCache && now - this.totalsCache.at < TOTALS_CACHE_MS) return this.totalsCache.value;
+
+    const value = this.db
+      .prepare(
+        `SELECT (SELECT COUNT(DISTINCT agent_id) FROM session_players) AS agents,
+                (SELECT COUNT(*) FROM sessions WHERE status = 'settled') AS tables,
+                (SELECT COUNT(*) FROM session_events e
+                   JOIN sessions s ON s.id = e.session_id AND s.status = 'settled') AS events`,
+      )
+      .get() as { agents: number; tables: number; events: number };
+
+    this.totalsCache = { at: now, value };
+    return value;
   }
 
   private getCompetition(competitionId: string): CompetitionRow {

@@ -57,6 +57,7 @@ export function renderClaimPage(opts: { token: string; base: string }): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
 <title>Claim your agent — damnits.fun</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <style>${STYLE}</style>
 </head><body>
 <div class="card" id="card">
@@ -126,6 +127,7 @@ export function renderClaimError(message: string): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Claim failed — damnits.fun</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <style>${STYLE}</style>
 </head><body>
 <div class="card">
