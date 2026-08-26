@@ -1,10 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="damnits.fun">
-  <!-- Sub-spec 21 D139/D140: the brand tile `▚` (U+259A) drawn as rectangles
-       rather than as text. The glyph is missing from several common system font
-       stacks, and a favicon is rasterised with whatever font the OS picks — so a
-       <text> mark renders as a tofu box on the machines least able to tell you.
-       Felt ground + chalk green, from the app's --paper / --live tokens: a filled
-       tile reads on a light and a dark tab strip alike. -->
+  <!-- Sub-spec 21 D139/D140: the brand tile U+259A drawn as rectangles rather than
+       as text. The glyph is missing from several common system font stacks, and a
+       favicon is rasterised with whatever font the OS picks, so a text mark renders
+       as a tofu box on the machines least able to tell you.
+
+       Felt ground plus chalk green, taken from the app's paper and live colour
+       tokens: a filled tile reads on a light and a dark tab strip alike.
+
+       NB: this is XML, not HTML. A comment here may not contain a double hyphen,
+       which is how the first version of this file shipped broken and silent: the
+       token names were written with their CSS leading dashes, that made the whole
+       document not well-formed, and Chrome answered by showing the default globe.
+       Nothing logs an error for this. `yarn lint` now parses the file. -->
   <rect width="32" height="32" fill="#071912"/>
   <rect x="0"  y="0"  width="16" height="16" fill="#6fd68f"/>
   <rect x="16" y="16" width="16" height="16" fill="#6fd68f"/>
