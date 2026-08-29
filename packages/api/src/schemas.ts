@@ -59,6 +59,21 @@ export const leaderboardQuerySchema = z.object({
   competitionId: z.string().min(1),
 });
 
+/**
+ * `GET /session/results` query (sub-spec 22, D162).
+ *
+ * `limit` used to be `Number(q.limit)` with a `Number.isFinite` guard, which meant
+ * `limit=0` and `limit=-5` both silently returned ONE row — a nonsensical request
+ * answered with a plausible-looking result, which is how a paging bug ships and
+ * only surfaces when someone's counter underflows. A bad limit is now a 400 like
+ * every other bad input on this API; an oversized one still clamps, because
+ * `skill.md` documents a maximum rather than an error.
+ */
+export const sessionResultsQuerySchema = z.object({
+  sessionId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().positive().optional(),
+});
+
 export const patchAgentSchema = z.object({
   payoutAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Must be a 0x-prefixed 20-byte address'),
 });

@@ -1387,12 +1387,17 @@ export class Orchestrator {
       .filter((r) => r.owner_id && r.payout_address && r.games >= this.config.minRankedSessions)
       .map((r) => {
         const rebuysUsed = this.rebuysUsed(r.id, competitionId);
+        // The single most important read of a balance on the whole API: this is
+        // the order the on-chain pool is split by. It reads THIS season's ledger
+        // (sub-spec 22, D154) — on the global balance, an agent could farm the
+        // free playground and rank here off coins no opponent could contest.
+        const coins = this.seasonCoins(r.id, competitionId);
         return {
           agentId: r.id,
           displayName: r.display_name,
-          coins: r.coins,
+          coins,
           rebuysUsed,
-          netCoins: r.coins - rebuysUsed * rebuyCoins,
+          netCoins: coins - rebuysUsed * rebuyCoins,
           payoutAddress: r.payout_address as string,
           games: r.games,
           tablesWon: r.tablesWon,
@@ -1622,7 +1627,7 @@ export class Orchestrator {
     const entry = this.config.playgroundEntryCoins;
     let rebuy: RebuyGrant | undefined;
     if (entry > 0) {
-      const balance = this.getAgent(agentId).coins;
+      const balance = this.seasonCoins(agentId, competitionId);
       if (balance < entry) {
         // Sub-spec 18 (D98/D102): being broke is no longer the end of the run.
         // Take a fresh stack if the season's allowance has any left. Automatic,
@@ -1642,7 +1647,7 @@ export class Orchestrator {
           );
         }
       }
-      this.db.prepare(`UPDATE agents SET coins = coins - ? WHERE id = ?`).run(entry, agentId);
+      this.moveSeasonCoins(agentId, competitionId, -entry);
     }
 
     const seatIndex = this.db
@@ -1709,6 +1714,79 @@ export class Orchestrator {
    * interleave — without the transaction two concurrent joins could each read
    * `used = 4` and both grant a fifth stack.
    */
+  // ---- season coin ledger (sub-spec 22, D154) --------------------------------
+
+  /**
+   * What this agent holds IN THIS SEASON.
+   *
+   * `agents.coins` is a single global integer, and using it as the score meant a
+   * season's standings carried coins won in the other game type. That is not a
+   * display bug: the tournament pool splits by this order, so it moved real BNB
+   * (sub-spec 22 § B). An agent with no row here has not sat down in this season
+   * yet, and starts where everyone starts.
+   */
+  private seasonCoins(agentId: string, competitionId: string): number {
+    const row = this.db
+      .prepare(`SELECT coins FROM competition_agents WHERE competition_id = ? AND agent_id = ?`)
+      .get(competitionId, agentId) as { coins: number } | undefined;
+    return row?.coins ?? this.config.startingCoins;
+  }
+
+  /**
+   * Move a season balance, seeding the row on first touch.
+   *
+   * `agents.coins` moves by the same delta and is now a LIFETIME total (D155) —
+   * read by the profile and the ticker, never used to rank, charge or settle. The
+   * seeding stack is deliberately not added to it: opening a second season is not
+   * an agent earning a thousand coins.
+   */
+  private moveSeasonCoins(agentId: string, competitionId: string, delta: number): void {
+    if (delta === 0) return;
+    this.db
+      .prepare(
+        `INSERT INTO competition_agents (competition_id, agent_id, coins)
+              VALUES (@competitionId, @agentId, @seeded)
+         ON CONFLICT(competition_id, agent_id) DO UPDATE SET coins = coins + @delta`,
+      )
+      .run({
+        competitionId,
+        agentId,
+        seeded: this.config.startingCoins + delta,
+        delta,
+      });
+    this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(delta, agentId);
+  }
+
+  /** Every season this agent holds a balance in — for `GET /agent/me` (D156). */
+  seasonBalances(agentId: string): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        `SELECT ca.competition_id AS competitionId, ca.coins AS coins
+           FROM competition_agents ca
+           JOIN competitions c ON c.id = ca.competition_id
+          WHERE ca.agent_id = ? AND c.status = 'active'`,
+      )
+      .all(agentId) as Array<{ competitionId: string; coins: number }>;
+    return Object.fromEntries(rows.map((r) => [r.competitionId, r.coins]));
+  }
+
+  /**
+   * The playground balance, which is what a bare `coins` means on the wire.
+   *
+   * `skill.md` has promised `coins` since sub-spec 15 and every published agent
+   * reads it, so it keeps pointing at the game type an unconfigured agent joins
+   * rather than becoming a breaking rename (D156).
+   */
+  playgroundCoins(agentId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM competitions WHERE kind = 'classic' AND status = 'active'
+          ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get() as { id: string } | undefined;
+    return row ? this.seasonCoins(agentId, row.id) : this.config.startingCoins;
+  }
+
   private grantRebuy(agentId: string, competitionId: string): RebuyGrant | null {
     const limit = this.config.rebuyLimit;
     if (limit <= 0) return null;              // rebuys disabled → pre-18 behaviour
@@ -1729,13 +1807,13 @@ export class Orchestrator {
              DO UPDATE SET used = used + 1, updated_at = datetime('now')`,
         )
         .run(competitionId, agentId);
-      this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(grant, agentId);
+      this.moveSeasonCoins(agentId, competitionId, grant);
 
       return {
         granted: grant,
         used: used + 1,
         remaining: limit - (used + 1),
-        balance: this.getAgent(agentId).coins,
+        balance: this.seasonCoins(agentId, competitionId),
       };
     });
 
@@ -1958,6 +2036,8 @@ export class Orchestrator {
   /** Deal the table: commit a seed, construct the GameSession, start the clock. */
   private startSession(sessionId: string): void {
     const seats = this.seatsOf(sessionId);
+    // Dealt: everyone at this table has something new to read.
+    this.wakeSession(sessionId);
     // Freeze the size this table actually dealt at (sub-spec 18). Until now the
     // row carried the lobby's CAPACITY; a countdown deal fills fewer seats than
     // that, and the spectator feed and replay both read this to lay out the felt.
@@ -2010,6 +2090,90 @@ export class Orchestrator {
   // ---- polling + acting -----------------------------------------------------
 
   /** §5 `GET /session/pending-actions`. Legal moves come from the engine only. */
+  // ---- turn notification (sub-spec 22, D158) ---------------------------------
+
+  /**
+   * Agents parked in a long poll, by agent id.
+   *
+   * Before this the only in-process signal was `SessionLifecycleHooks`, which is
+   * session-level (`onSessionStarted` / `onSessionSettled`) and says nothing about
+   * whose turn it is. So an agent could only learn its turn had arrived by asking
+   * again — and the production soak spent **83.9% of every request** on
+   * `pending-actions`, of which only 15.2% carried a turn. Five requests in six
+   * existed to say "not yet".
+   *
+   * In-memory and deliberately so: a waiter is a held HTTP connection on THIS
+   * process, so it cannot outlive the process, and a missed wake costs a poll
+   * rather than a hang — `waitForTurn` always takes a deadline.
+   */
+  private readonly turnWaiters = new Map<string, Set<() => void>>();
+
+  /** Wake every seat at a table whose state just moved. */
+  private wakeSession(sessionId: string): void {
+    if (this.turnWaiters.size === 0) return;
+    const seats = this.db
+      .prepare(`SELECT agent_id FROM session_players WHERE session_id = ?`)
+      .all(sessionId) as Array<{ agent_id: string }>;
+    for (const seat of seats) this.wakeAgent(seat.agent_id);
+  }
+
+  private wakeAgent(agentId: string): void {
+    const waiting = this.turnWaiters.get(agentId);
+    if (!waiting) return;
+    this.turnWaiters.delete(agentId);
+    for (const wake of waiting) wake();
+  }
+
+  /**
+   * Resolve as soon as something at this agent's table changes, or after `waitMs`.
+   *
+   * It resolves on ANY change at the table, not strictly on the agent's turn: a
+   * table ending is exactly as urgent to hear about as a turn arriving, and the
+   * caller re-reads `pendingActions` either way. Returning early on a false wake
+   * costs one extra read; missing a real one would cost a whole poll interval.
+   */
+  waitForTurn(agentId: string, waitMs: number): Promise<void> {
+    if (waitMs <= 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let done = false;
+      const finish = (): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this.turnWaiters.get(agentId)?.delete(finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, waitMs);
+      // Never hold the process open for a poll that nobody is waiting on.
+      if (typeof timer.unref === 'function') timer.unref();
+      const set = this.turnWaiters.get(agentId) ?? new Set<() => void>();
+      set.add(finish);
+      this.turnWaiters.set(agentId, set);
+    });
+  }
+
+  /**
+   * How long this agent should wait before asking again (D159).
+   *
+   * Advice, not enforcement — an agent that ignores it is no worse off than
+   * before. But it is strictly better advice than a constant: during a lobby
+   * countdown the correct answer is "when the countdown ends", and every agent
+   * currently guesses at that.
+   */
+  pollAfterMs(sessions: PendingSession[]): number {
+    if (sessions.length === 0) return 1000;      // between tables: rejoin shortly
+    if (sessions.some((s) => s.yourTurn)) return 0; // it is your move; go
+    const lobby = sessions.find((s) => s.status === 'lobby');
+    if (lobby) {
+      const startsIn = lobby.startsInMs;
+      // A lobby with no countdown is waiting for company, which is not something
+      // a fast poll can hurry along.
+      if (startsIn == null) return 2000;
+      return Math.max(250, Math.min(startsIn, 5000));
+    }
+    return 250; // in a hand, someone else's turn — the next move could be quick
+  }
+
   pendingActions(agentId: string): PendingSession[] {
     this.tick();
 
@@ -2224,12 +2388,19 @@ export class Orchestrator {
         .all(sessionId) as Array<{ agent_id: string }>;
       const refund = this.config.playgroundEntryCoins;
       if (refund > 0) {
-        for (const seat of seats) {
-          this.db
-            .prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`)
-            .run(refund, seat.agent_id);
+        // Back into the season the seat was bought in, not the global balance —
+        // a refund that lands somewhere else is a slow leak between seasons.
+        const competitionId = (
+          this.db.prepare(`SELECT competition_id AS id FROM sessions WHERE id = ?`).get(sessionId) as
+            | { id: string }
+            | undefined
+        )?.id;
+        if (competitionId) {
+          for (const seat of seats) this.moveSeasonCoins(seat.agent_id, competitionId, refund);
         }
       }
+      // Wake before the seats are deleted — after, there is nobody left to find.
+      this.wakeSession(sessionId);
       this.db.prepare(`DELETE FROM session_players WHERE session_id = ?`).run(sessionId);
       this.db
         .prepare(
@@ -2257,6 +2428,15 @@ export class Orchestrator {
       return;
     }
     entry.deadlineAt = this.clock() + this.config.decisionTimeoutMs;
+    // Wake ONLY the agent that now holds the turn (D158).
+    //
+    // Waking the whole table would wake three or five agents per move, of whom at
+    // most one has anything to do — measured at 2.39 polls per move against 1.04
+    // for this version. The other seats have nothing to read: `pending-actions` is
+    // actionable when it is your turn or when the table has ended, and the end is
+    // broadcast to everyone by `settle`.
+    const next = entry.game.currentAgentId;
+    if (next) this.wakeAgent(next);
   }
 
   // ---- settlement -----------------------------------------------------------
@@ -2267,6 +2447,9 @@ export class Orchestrator {
    */
   private settle(sessionId: string, entry: LiveSession): void {
     this.live.delete(sessionId);
+    // A table LEAVING pending-actions is the contract's one end signal, so a
+    // waiter needs waking for it exactly as much as for its own turn.
+    this.wakeSession(sessionId);
 
     const current = this.db
       .prepare(
@@ -2364,14 +2547,35 @@ export class Orchestrator {
     const agentIds = Object.keys(places);
     if (agentIds.length === 0) return;
 
+    // Coins settle into the SEASON this table was played in (D154). Reading the
+    // global balance here is what let one game type's results decide the other's
+    // standings — and the tournament's on-chain split.
+    const competitionId = (
+      this.db.prepare(`SELECT competition_id AS id FROM sessions WHERE id = ?`).get(sessionId) as
+        | { id: string }
+        | undefined
+    )?.id;
+    if (!competitionId) return;
+
     // Sub-spec 20: settlement reads only the finishing places. Hand values still
     // DECIDE those places (`placementsFrom`), but they no longer size the penalty,
     // and balances are not needed because no seat can lose more than it already
     // paid at join.
+    // Deal order, for the one thing settlement is allowed to use an ordering for:
+    // resolving a rounding remainder inside a tied group (sub-spec 22 D152). It is
+    // NOT the agent id — settling money on the id ordered every tie the same way,
+    // forever, in favour of whoever registered under a lower string.
+    const seatOrder = (
+      this.db
+        .prepare(`SELECT agent_id FROM session_players WHERE session_id = ? ORDER BY seat_index`)
+        .all(sessionId) as Array<{ agent_id: string }>
+    ).map((r) => r.agent_id);
+
     const settlement = computeCoinSettlement({
       places,
       entryCoins: this.config.playgroundEntryCoins,
       placeStep: this.config.coinPlaceStep,
+      seatOrder,
     });
 
     for (const [agentId, seat] of Object.entries(settlement)) {
@@ -2379,11 +2583,7 @@ export class Orchestrator {
       // for this seat once its buy-in is counted. They are different numbers and
       // conflating them would either double-charge the entry or report a loss as
       // zero — see SeatSettlement for why the stored one is `net`.
-      if (seat.credit !== 0) {
-        this.db
-          .prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`)
-          .run(seat.credit, agentId);
-      }
+      if (seat.credit !== 0) this.moveSeasonCoins(agentId, competitionId, seat.credit);
       // Record the outcome on the seat, not just the balance change. Without this
       // an agent can only learn how its table went by diffing GET /agent/me before
       // and after — which is what one actually resorted to.
@@ -2507,28 +2707,56 @@ export class Orchestrator {
     coins: number;
     rebuysUsed: number;
     netCoins: number;
+    tables: number;
     tablesWon: number;
     placeScore: number | null;
   }> {
+    // An unknown id is a 404, not an empty board (sub-spec 22, D161). `/session/join`
+    // already answers 404 for the same id, so returning `200 {"leaderboard": []}`
+    // here made one typo an error on one endpoint and a plausible success on the
+    // other. It matters more since sub-spec 21 made rollover real: an agent holding
+    // a stale id needs to be told the season is gone, not shown an empty table.
+    // An ARCHIVED competition still exists and still answers — `skill.md` promises
+    // the previous season stays readable.
+    const exists = this.db
+      .prepare(`SELECT 1 FROM competitions WHERE id = ?`)
+      .get(competitionId) as { 1: number } | undefined;
+    if (!exists) {
+      throw new ApiError(404, 'COMPETITION_NOT_FOUND', `No such competition: ${competitionId}`);
+    }
+
     // Membership is "took a seat in this competition"; the STATS are computed over
     // settled tables only, so an abandoned lobby neither adds a game nor moves a
     // finishing position.
     const rows = this.db
       .prepare(
         `SELECT a.*, o.x_handle AS ownerHandle,
+                -- THIS season's balance, not the global one (sub-spec 22, D154).
+                -- An agent with no ledger row has taken a seat but not yet settled
+                -- a table, so it still holds the starting stack.
+                COALESCE(ca.coins, @startingCoins) AS seasonCoins,
+                COUNT(DISTINCT CASE WHEN s.status = 'settled' THEN s.id END) AS tables,
                 COUNT(DISTINCT CASE WHEN s.status = 'settled'
                                      AND s.winner_agent_id = a.id THEN s.id END) AS tablesWon,
                 AVG(CASE WHEN s.status = 'settled' AND s.table_size > 1
                          THEN (p.place - 1.0) / (s.table_size - 1) END) AS placeScore
            FROM agents a
            LEFT JOIN owners o ON o.id = a.owner_id
+           LEFT JOIN competition_agents ca
+             ON ca.agent_id = a.id AND ca.competition_id = @competitionId
            JOIN session_players p ON p.agent_id = a.id
            JOIN sessions s ON s.id = p.session_id
-          WHERE s.competition_id = ?
+          WHERE s.competition_id = @competitionId
           GROUP BY a.id`,
       )
-      .all(competitionId) as Array<
-      AgentRow & { ownerHandle: string | null; tablesWon: number; placeScore: number | null }
+      .all({ competitionId, startingCoins: this.config.startingCoins }) as Array<
+      AgentRow & {
+        ownerHandle: string | null;
+        seasonCoins: number;
+        tables: number;
+        tablesWon: number;
+        placeScore: number | null;
+      }
     >;
 
     // Netting matters more here than on the playground board, not less: this is
@@ -2542,9 +2770,13 @@ export class Orchestrator {
           agentId: r.id,
           displayName: r.display_name,
           ownerHandle: r.ownerHandle,
-          coins: r.coins,
+          coins: r.seasonCoins,
           rebuysUsed,
-          netCoins: r.coins - rebuysUsed * rebuyCoins,
+          netCoins: r.seasonCoins - rebuysUsed * rebuyCoins,
+          // How many tables this agent has actually played HERE (D157). Without
+          // it, `tablesWon: 0` beside a healthy balance reads like a hard-luck
+          // agent when it may be one that imported its coins from elsewhere.
+          tables: r.tables,
           tablesWon: r.tablesWon,
           placeScore: r.placeScore,
         };

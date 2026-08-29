@@ -87,3 +87,51 @@ describe('assertValidCurve', () => {
     expect(() => assertValidCurve([120, -20])).toThrow();
   });
 });
+
+/**
+ * Sub-spec 22 (T109, D168) — the shipped default, not a hypothetical fraction.
+ *
+ * `PAYOUT_FIELD_FRACTION` was 1.0, which meant the curve length did all the work:
+ * every field of ten or more paid exactly ten. On a twenty-agent board that pays
+ * the median, and the median is provably where an agent that enters and stops
+ * sits (D165) — so the pool was reachable without competing for it. A third puts
+ * it out of reach while changing nothing for a field that is actually healthy.
+ */
+describe('the shipped payout depth (PAYOUT_FIELD_FRACTION = 1/3)', () => {
+  const SHIPPED = 0.3333;
+  const TIERS = 10;
+
+  it('pays 7 of a 20-agent field — the size sub-spec 22 measured', () => {
+    expect(payoutRankCount(20, TIERS, SHIPPED)).toBe(7);
+  });
+
+  it('is a no-op once the field is healthy: 30 or more still pays 10', () => {
+    expect(payoutRankCount(30, TIERS, SHIPPED)).toBe(10);
+    expect(payoutRankCount(50, TIERS, SHIPPED)).toBe(10);
+    expect(payoutRankCount(500, TIERS, SHIPPED)).toBe(10);
+  });
+
+  it('leaves the median outside the money at every field size it can reach', () => {
+    // The property the change exists for: an agent sitting at the middle of the
+    // board is not paid. Checked across the whole range where the cap is not
+    // already doing it — beyond ~30 the cap alone keeps 10 well above the median.
+    for (let field = 3; field <= 30; field++) {
+      const paid = payoutRankCount(field, TIERS, SHIPPED);
+      const medianRank = Math.ceil(field / 2);
+      expect(paid).toBeLessThan(medianRank + 1);
+    }
+  });
+
+  it('still pays somebody, however thin the field', () => {
+    for (let field = 1; field <= 5; field++) {
+      expect(payoutRankCount(field, TIERS, SHIPPED)).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('splits the whole pool across exactly those ranks', () => {
+    const pool = 1_000_000_000_000_000_000n;
+    const amounts = distributePool(pool, 20, CURVE, SHIPPED);
+    expect(amounts.length).toBe(7);
+    expect(amounts.reduce((a, b) => a + b, 0n)).toBe(pool);
+  });
+});

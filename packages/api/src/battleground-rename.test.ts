@@ -47,6 +47,9 @@ describe('battleground rename (T42)', () => {
       lobbyCountdownMs: 15000,
       playgroundEntryCoins: 10,
       coinPlaceStep: 6,
+      // Sub-spec 22 (D153): ties are 10.2% of tables, so the rule that settles
+      // them belongs in the published config alongside the curve itself.
+      coinTieRule: 'mean',
       startingHand: 7,
       decisionTimeoutMs: 3000,
       gameTimeLimitMs: 120000,

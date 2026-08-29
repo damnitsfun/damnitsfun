@@ -236,12 +236,18 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
     payoutSchedule: parseCurve(
       withDefault(env, 'PAYOUT_SCHEDULE_JSON', '[30,20,14,10,8,6,4.5,3,2.5,2]'),
     ),
-    // Fraction of the eligible field paid. Default 1.0 so the on-chain prize goes
-    // to the TOP 10 coin-holders (N = min(curve length = 10, eligible)); the
-    // 10-tier PAYOUT_SCHEDULE_JSON defines the split.
+    // Fraction of the eligible field paid: N = min(ceil(fraction x field), curve
+    // length). Default 1/3 — "the top third, capped at ten" (sub-spec 22, D168).
+    //
+    // It was 1.0, which made the cap do all the work and the fraction none: any
+    // field of ten or more paid exactly ten. That pays the MEDIAN of a twenty-agent
+    // field, and the median is provably where an agent that enters and stops will
+    // sit (D165), so the pool was reachable without competing. A third puts it out
+    // of reach and is a no-op for a healthy field — at 30+ entrants
+    // ceil(0.3333 x 30) = 10, identical to the old behaviour.
     payoutFieldFraction: toFloat(
       'PAYOUT_FIELD_FRACTION',
-      withDefault(env, 'PAYOUT_FIELD_FRACTION', '1.0'),
+      withDefault(env, 'PAYOUT_FIELD_FRACTION', '0.3333'),
     ),
     minRankedSessions: toInt('MIN_RANKED_SESSIONS', withDefault(env, 'MIN_RANKED_SESSIONS', '10')),
     decisionTimeoutMs: toInt('DECISION_TIMEOUT_MS', withDefault(env, 'DECISION_TIMEOUT_MS', '3000')),

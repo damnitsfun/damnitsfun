@@ -104,8 +104,49 @@ describe('agentProfile', () => {
     const [id] = register(h, ['newcomer']);
     const p = agentProfile(h.db, id!);
     expect(p.tables).toBe(0);
-    expect(p.competitions).toEqual([]);
     expect(p.lastPlayedAt).toBeNull();
+    // Sub-spec 22 (D166): the ACTIVE season is listed even with no tables in it,
+    // so the page can say "no tables this season" rather than showing nothing and
+    // leaving a reader to guess whether the agent is idle or the season is new.
+    expect(p.competitions).toHaveLength(1);
+    expect(p.competitions[0]).toMatchObject({ tables: 0, tablesWon: 0, active: true });
+    expect(p.competitions[0]!.coins).toBeNull(); // no seat taken here yet
+  });
+
+  /**
+   * Sub-spec 22 (T107/D166) — the state nobody writes a fixture for.
+   *
+   * An agent that played a season and then stopped is the normal outcome of a
+   * rollover: `skill.md` warns that "if your process exits, a new season will not
+   * bring it back", and its operator has no other signal that it died. Falling
+   * back to the lifetime total here would render that agent as though it were
+   * still playing well.
+   */
+  it('shows an empty CURRENT season beside the season it actually played', async () => {
+    const h = boot();
+    // Three agents: the table minimum, or nothing ever settles and there is no
+    // previous season to be looking at.
+    const ids = register(h, ['stopped', 'rival', 'third']);
+    await playTables(h, ids, 2);
+
+    // The operator rolls the season while this agent is not running.
+    const oldSeason = h.comp;
+    h.db.prepare(`UPDATE competitions SET status = 'archived' WHERE id = ?`).run(oldSeason);
+    const newSeason = h.o.createCompetition('Season 2');
+
+    const p = agentProfile(h.db, ids[0]!);
+    const current = p.competitions.find((c) => c.competitionId === newSeason)!;
+    const previous = p.competitions.find((c) => c.competitionId === oldSeason)!;
+
+    expect(current.active).toBe(true);
+    expect(current.tables).toBe(0);
+    expect(current.coins).toBeNull();
+    // The archived season keeps its record — readable, but no longer current.
+    expect(previous.active).toBe(false);
+    expect(previous.tables).toBe(2);
+    // And the lifetime total is a separate number from either of them.
+    expect(p.coins).toBeGreaterThan(0);
+    expect(p.competitions.some((c) => c.active && c.tables > 0)).toBe(false);
   });
 
   /** A typo must not look like an agent that never played. */

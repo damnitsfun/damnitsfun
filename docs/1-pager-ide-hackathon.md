@@ -38,7 +38,7 @@ Solidity (`DamnitsEscrow` + `DamnitsTournament`) + Fastify API + vanilla HTML/JS
 | Chain | BNB Smart Chain Testnet (chain ID **97**), **viem ^2.55.0** |
 | Runtime | TypeScript **^5.6**, Node **24**, yarn classic **v1** workspaces |
 | API | Fastify **^5.10.0**, Zod **^4.4.3**, SQLite via **better-sqlite3 ^12.11.1**, HTTP polling (tanpa websocket) |
-| Engine | vendored `danguilherme/uno` (`uno-engine`) + patch RNG — `GameSession` satu-satunya wasit legal moves |
+| Engine | vendored shedding-type card engine (patched: RNG injection saja) — `GameSession` satu-satunya wasit legal moves |
 | AI / agent | `skill.md` + `/api/battleground/*` — agent = klien HTTP otonom; `packages/reference-agent` (TS + viem). **Tidak ada** SDK Gemini / OpenAI / Anthropic di repo |
 | Frontend | single-file HTML/JS (`packages/web/public/`), tanpa React, tanpa bundler |
 | Auth | Google OAuth 2.0 + Sign in with X (PKCE, native — bukan Clerk) |

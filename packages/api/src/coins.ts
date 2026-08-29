@@ -52,6 +52,17 @@ export interface CoinSettlementInput {
   entryCoins: number;
   /** Coins between adjacent places — derived, see `coinPlaceStepFor`. */
   placeStep: number;
+  /**
+   * Seat order (the order seats were dealt), used for ONE purpose: resolving a
+   * rounding remainder when a tied group's mean share is fractional (D152).
+   *
+   * It is deliberately not the agent id. Deal order is something the agent took
+   * part in; its id is a string it was handed at registration, and settling money
+   * on that ordered every tie in favour of the same agents forever — measured at
+   * 142 of 142 tied groups on production (sub-spec 22 § A). Seats missing from
+   * this list keep the order they arrived in.
+   */
+  seatOrder?: readonly string[];
 }
 
 export interface SeatSettlement {
@@ -77,33 +88,102 @@ export interface SeatSettlement {
  *
  * Shares sum exactly to the pool (`entryCoins x seats`) and nets sum to zero, for
  * any number of seats and any tie arrangement.
+ *
+ * ## Tied seats are paid the same (sub-spec 22, D150)
+ *
+ * `placementsFrom` lets equal hand values SHARE a place. This used to pay them by
+ * rank anyway and separate them with `agentId < agentId` — so two seats reported
+ * at the same place received different money, and the agent whose id sorted lower
+ * won. On production that was **142 of 142 tied groups, with no exceptions**, on
+ * 10.2% of tables: not a tie-break but a permanent advantage keyed to a string.
+ *
+ * So a tied group of `k` seats spanning ranks `r … r+k-1` now splits the shares of
+ * that whole span equally. The pool stays exact — the same shares are paid, just
+ * redistributed inside the group — so the zero-sum and antisymmetry properties
+ * above are untouched. And because averaging can only move a share UP from the
+ * span's minimum (the last rank pays a credit of 0), no seat can lose more than
+ * its buy-in, still by construction rather than by check.
  */
 export function computeCoinSettlement(
   input: CoinSettlementInput,
 ): Record<string, SeatSettlement> {
-  const { places, entryCoins, placeStep } = input;
+  const { places, entryCoins, placeStep, seatOrder } = input;
   const agentIds = Object.keys(places);
   const out: Record<string, SeatSettlement> = {};
   const n = agentIds.length;
   if (n === 0) return out;
 
-  // Seats are paid by RANK, not by the raw place value. `placementsFrom` lets
-  // equal hand values share a place (two seats can both be 2nd), which would
-  // otherwise pay the same share twice and break the sum. Ordering by place and
-  // paying down the list keeps the pool exact; tied seats are separated by id so
-  // the result is reproducible rather than dependent on object key order.
-  const ordered = [...agentIds].sort((a, b) => {
-    const pa = places[a] ?? n;
-    const pb = places[b] ?? n;
-    if (pa !== pb) return pa - pb;
-    return a < b ? -1 : a > b ? 1 : 0;
+  // Deal order, used only to break a rounding remainder (D152). Anything absent
+  // from `seatOrder` keeps the order it arrived in, which keeps the function
+  // total even when a caller does not supply one.
+  const dealOrder = new Map<string, number>();
+  (seatOrder ?? []).forEach((id, i) => dealOrder.set(id, i));
+  agentIds.forEach((id, i) => {
+    if (!dealOrder.has(id)) dealOrder.set(id, (seatOrder?.length ?? 0) + i);
   });
 
-  const middle = (n + 1) / 2;
-  for (let rank = 1; rank <= n; rank++) {
-    const id = ordered[rank - 1]!;
-    const credit = entryCoins + placeStep * (middle - rank);
-    out[id] = { credit, net: credit - entryCoins };
+  // Group the seats that SHARE a place. Groups are ordered by place and nothing
+  // else — no agent id is read here or anywhere below (D151).
+  const groups = new Map<number, string[]>();
+  for (const id of agentIds) {
+    const place = places[id] ?? n;
+    const existing = groups.get(place);
+    if (existing) existing.push(id);
+    else groups.set(place, [id]);
+  }
+  const byPlace = [...groups.entries()].sort((a, b) => a[0] - b[0]);
+
+  // `share(rank)` doubled, so the `(n+1)/2` midpoint stays integer arithmetic and
+  // the only division left is the one the tie rule actually asks for.
+  const share2 = (rank: number): number => 2 * entryCoins + placeStep * (n + 1 - 2 * rank);
+
+  interface Draft {
+    id: string;
+    whole: number;
+    /** Numerator of the leftover fraction, over `denominator`. */
+    remainder: number;
+    denominator: number;
+    order: number;
+  }
+  const drafts: Draft[] = [];
+  let rank = 1;
+  for (const [, members] of byPlace) {
+    const k = members.length;
+    let sum2 = 0;
+    for (let r = rank; r < rank + k; r++) sum2 += share2(r);
+    // Every member of the group receives sum2 / (2k) — exactly, as a rational.
+    const denominator = 2 * k;
+    const whole = Math.floor(sum2 / denominator);
+    const remainder = sum2 - whole * denominator;
+    for (const id of members) {
+      drafts.push({ id, whole, remainder, denominator, order: dealOrder.get(id) ?? 0 });
+    }
+    rank += k;
+  }
+
+  // Largest remainder, so the pool is neither short nor over. Rounding each share
+  // independently would not sum: three seats splitting 5 coins would pay 6 or 3.
+  // The exact credits always total the pool (they are the same shares, reordered),
+  // so `leftover` is the whole-coin shortfall the floors introduced.
+  const pool = entryCoins * n;
+  const distributed = drafts.reduce((sum, d) => sum + d.whole, 0);
+  let leftover = pool - distributed;
+  const queue = [...drafts].sort((a, b) => {
+    const fa = a.remainder / a.denominator;
+    const fb = b.remainder / b.denominator;
+    if (fa !== fb) return fb - fa;
+    return a.order - b.order;
+  });
+  const bonus = new Map<string, number>();
+  for (const draft of queue) {
+    if (leftover <= 0) break;
+    bonus.set(draft.id, 1);
+    leftover--;
+  }
+
+  for (const draft of drafts) {
+    const credit = draft.whole + (bonus.get(draft.id) ?? 0);
+    out[draft.id] = { credit, net: credit - entryCoins };
   }
   return out;
 }

@@ -32,11 +32,24 @@ const flag = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
+// `--smoke`: the CI shape. Small, fast, and fails on ANY contract finding — the
+// point is not load, it is that a real fleet can still play the documented
+// contract end to end after a change (sub-spec 22, T106).
+const SMOKE = argv.includes('--smoke');
+
 const CFG = {
-  base: String(flag('base', 'https://damnits.fun')).replace(/\/$/, ''),
-  agents: Number(flag('agents', 20)),
-  games: Number(flag('games', 2000)),
-  modes: String(flag('modes', 'classic,tournament')).split(','),
+  base: String(flag('base', SMOKE ? 'http://localhost:8080' : 'https://damnits.fun')).replace(/\/$/, ''),
+  agents: Number(flag('agents', SMOKE ? 3 : 20)),
+  games: Number(flag('games', SMOKE ? 5 : 2000)),
+  smoke: SMOKE,
+  modes: String(flag('modes', SMOKE ? 'classic' : 'classic,tournament')).split(','),
+  /**
+   * Long-poll (sub-spec 22, D158): hold `pending-actions` open until the turn
+   * arrives. 0 disables it and falls back to interval polling, which is what the
+   * original 4,004-table run measured — keep that path exercised so the report
+   * can still show the before/after.
+   */
+  waitMs: Number(flag('wait', 20000)),
   pollMs: Number(flag('poll', 500)),
   lobbyPollMs: Number(flag('lobby-poll', 1000)),
   betweenTablesMs: Number(flag('between', 400)),
@@ -66,6 +79,8 @@ const M = {
   gameDurations: {},        // mode => [ms]
   lobbyWaits: {},           // mode => [ms]
   net: { fetchErrors: 0, retries: 0 },
+  polls: 0,
+  movesSubmitted: 0,
   serverConfig: null,
   settlement: { checked: 0, mismatches: 0, samples: [], byShape: {} },
   coinsSeen: {},            // agentId => last observed balance
@@ -308,12 +323,27 @@ async function recordResult(agent, sessionId, mode) {
   // are fully determined by (place, placedOf). Check every row against that.
   const step = M.serverConfig?.coinPlaceStep;
   if (step != null && r.place != null && r.placedOf != null && r.coinDelta != null) {
-    const expected = Math.round(step * ((r.placedOf + 1) / 2 - r.place));
+    // A seat at place `p` is paid the mean of the ranks its TIED GROUP spans
+    // (sub-spec 22, D150), and a group at place p always starts at rank p. So the
+    // legal pays are the means of p..p+k-1 for k = 1 … (seats - p + 1); k = 1 is
+    // the untied case and reduces to the published curve.
+    //
+    // This still catches the defect the first run found. The old rule paid a tied
+    // seat some *single* share(r) with r > p, and share(p+1) is never the mean of
+    // a span starting at p — the means step by half a place, the shares by a full
+    // one.
+    const net = (rank) => step * ((r.placedOf + 1) / 2 - rank);
+    const allowed = [];
+    for (let k = 1; k <= r.placedOf - r.place + 1; k++) {
+      let sum = 0;
+      for (let rank = r.place; rank < r.place + k; rank++) sum += net(rank);
+      allowed.push(sum / k);
+    }
     M.settlement.checked++;
-    if (expected !== r.coinDelta) {
+    if (!allowed.some((v) => Math.abs(v - r.coinDelta) < 1e-9)) {
       M.settlement.mismatches++;
-      finding('COIN_DELTA_OFF_PLACEMENT_CURVE', JSON.stringify({ ...r, expected }).slice(0, 400));
-      if (M.settlement.samples.length < 10) M.settlement.samples.push({ ...r, expected });
+      finding('COIN_DELTA_OFF_PLACEMENT_CURVE', JSON.stringify({ ...r, allowed }).slice(0, 400));
+      if (M.settlement.samples.length < 10) M.settlement.samples.push({ ...r, allowed });
     }
     (M.settlement.byShape[`${r.placedOf}seats/place${r.place}`] ??= new Set()).add(r.coinDelta);
   }
@@ -395,8 +425,18 @@ async function playOneTable(agent) {
       return;
     }
     let pending;
-    try { pending = await api('GET', '/session/pending-actions', undefined, { agent }); }
+    const path = CFG.waitMs > 0
+      ? `/session/pending-actions?wait=${CFG.waitMs}`
+      : '/session/pending-actions';
+    try { pending = await api('GET', path, undefined, { agent }); }
     catch { await sleep(CFG.pollMs); continue; }
+    M.polls++;
+
+    // D159: the battleground now says when to come back. It is advisory, so a
+    // missing field is a contract regression rather than a crash.
+    if (pending && typeof pending.pollAfterMs !== 'number') {
+      finding('PENDING_MISSING_pollAfterMs', JSON.stringify(pending).slice(0, 200));
+    }
 
     const sessions = pending?.sessions ?? [];
     if (sessions.length > 1) finding('AGENT_SEATED_AT_MULTIPLE_TABLES', JSON.stringify(sessions.map((s) => s.sessionId)));
@@ -421,7 +461,9 @@ async function playOneTable(agent) {
 
     if (mine.status !== 'in_progress') {
       lastProgress = now();
-      await sleep(CFG.lobbyPollMs);
+      // Take the battleground's own advice when it gives any (D159); long-polling
+      // already blocked for us, so there is nothing left to wait out.
+      await sleep(CFG.waitMs > 0 ? 0 : (pending.pollAfterMs ?? CFG.lobbyPollMs));
       continue;
     }
     if (!sawInProgress) {
@@ -429,7 +471,10 @@ async function playOneTable(agent) {
       dealtAt = now();
       reservoir(M.lobbyWaits[mode], dealtAt - joinedAt);
     }
-    if (!mine.yourTurn) { await sleep(CFG.pollMs); continue; }
+    if (!mine.yourTurn) {
+      await sleep(CFG.waitMs > 0 ? 0 : (pending.pollAfterMs ?? CFG.pollMs));
+      continue;
+    }
 
     const move = decide(mine.legalMoves, mine.view ? { ...mine.view, selfId: agent.agentId } : null);
     if (!move) { finding('DECIDE_PRODUCED_NO_MOVE', JSON.stringify(mine.legalMoves)); await sleep(CFG.pollMs); continue; }
@@ -439,7 +484,7 @@ async function playOneTable(agent) {
         reasoning: 'soak: playing the documented baseline heuristic from skill.md',
         idempotencyKey: `${agent.agentId}-${sessionId}-${step++}`,
       }, { agent });
-      moves++; lastProgress = now();
+      moves++; M.movesSubmitted++; lastProgress = now();
     } catch (e) {
       if (e.status === 400) {
         pm.illegalMoveRejections++;
@@ -518,6 +563,10 @@ function auditCoins() {
         const deltas = new Set(group.map((g) => g.coinDelta));
         if (deltas.size > 1) {
           out.ties.groupsWithUnequalPay++;
+          // After D150 this is a hard failure, not a statistic: seats that
+          // finished level must be paid level. It is the single check the
+          // original run would have wanted on day one.
+          finding('TIED_SEATS_PAID_DIFFERENTLY', JSON.stringify({ sessionId: sid, group }).slice(0, 400));
           const sorted = [...group].sort((x, y) => (x.id < y.id ? -1 : 1));
           const best = [...group].sort((x, y) => y.coinDelta - x.coinDelta)[0];
           if (best.id === sorted[0].id) out.ties.lowerIdPaidMore++;
@@ -550,6 +599,14 @@ function buildReport() {
     startedAt: M.startedAt, at: new Date().toISOString(),
     elapsedSec: Math.round((now() - START) / 1000),
     config: CFG, perMode, latency, http: M.http, net: M.net,
+    polling: {
+      polls: M.polls,
+      moves: M.movesSubmitted,
+      // The number D158 exists to move. It was 6.58 over 234,928 moves with
+      // interval polling; with `wait` it should sit near 1.
+      pollsPerMove: M.movesSubmitted > 0 ? +(M.polls / M.movesSubmitted).toFixed(2) : null,
+      longPollMs: CFG.waitMs,
+    },
     findings: M.findings, findingSamples: M.findingSamples,
     serverConfig: M.serverConfig,
     settlement: {
@@ -598,6 +655,18 @@ await Promise.all(fleet.map((a, i) => sleep(i * 150).then(() => runAgent(a))));
 
 clearInterval(ticker);
 
+// In smoke mode the harness IS the assertion: any contract deviation fails CI.
+const smokeFailure = () => {
+  const found = Object.keys(M.findings);
+  if (found.length > 0) return `contract findings: ${found.join(', ')}`;
+  for (const m of CFG.modes) {
+    if (M.perMode[m].completedSessions.size < CFG.games) {
+      return `${m}: only ${M.perMode[m].completedSessions.size}/${CFG.games} tables completed`;
+    }
+  }
+  return null;
+};
+
 // Closing snapshot: what the standings and our balances actually look like.
 M.finalSnapshot = { agents: [], leaderboards: {} };
 for (const a of fleet) {
@@ -629,3 +698,12 @@ for (const m of CFG.modes) {
 
 const final = writeReport();
 process.stdout.write(`\nDONE in ${final.elapsedSec}s — report at ${CFG.report}\n`);
+
+if (CFG.smoke) {
+  const failure = smokeFailure();
+  if (failure) {
+    process.stderr.write(`\nSMOKE FAILED — ${failure}\n`);
+    process.exit(1);
+  }
+  process.stdout.write('SMOKE OK — the documented contract still plays end to end.\n');
+}

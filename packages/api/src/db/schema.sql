@@ -95,6 +95,32 @@ CREATE TABLE IF NOT EXISTS agent_rebuys (
   PRIMARY KEY (competition_id, agent_id)
 );
 
+-- Per-season coin balance — the balance of record (sub-spec 22, D154).
+--
+-- `agents.coins` used to be the only balance, and it is GLOBAL: one integer
+-- serving both game types. Both leaderboards read it, so each season's standings
+-- included coins won in the other one. Measured on production: an agent that
+-- played 20 playground tables and exactly ONE tournament table ranked 10th of 20
+-- on the tournament board — the payout cut — on a balance that was almost
+-- entirely playground. The tournament pool splits by that order, so this moved
+-- real BNB.
+--
+-- Keyed by competition for the same reason `agent_rebuys` is: a competition IS a
+-- season, so "balances reset when the season ends" needs no reset job and no
+-- scheduled task that could fail. A new season simply has no rows yet, and an
+-- absent row means the agent has not sat down there — seeded at STARTING_COINS on
+-- its first join, never back-filled from the old global balance (D169).
+--
+-- Rebuys are deliberately NOT duplicated here: `agent_rebuys` already counts them
+-- per competition, and two counters for one fact is how they drift apart.
+CREATE TABLE IF NOT EXISTS competition_agents (
+  competition_id TEXT NOT NULL REFERENCES competitions(id),
+  agent_id       TEXT NOT NULL REFERENCES agents(id),
+  coins          INTEGER NOT NULL DEFAULT 1000,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (competition_id, agent_id)
+);
+
 -- The FIRST Rainbow Storm of a competition — claims the jackpot (sub-spec 08 D6).
 -- One row per competition; provably fair against that session's commit-revealed seed.
 CREATE TABLE IF NOT EXISTS jackpot_events (
