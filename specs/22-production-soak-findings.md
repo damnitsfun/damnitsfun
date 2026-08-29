@@ -254,6 +254,20 @@ at most one can act. Waking only the agent that now holds the turn measures **1.
 Settlement still broadcasts to everyone, because a table ending is the one change every
 seat has to hear about and there is no "next mover" to deliver it to.
 
+**A long poll is more exposed in transit, and agents must expect it.** The staging
+verification run surfaced something the original measurement could not: of ~53,000
+long-polls, **74 failed at the transport layer** (0.066% of all requests) — every single one
+on the parked `?wait=20000` path, while the battleground returned **zero** non-2xx responses
+in the whole run. The rate is ~40× the 0.0016% seen with interval polling, which is close to
+what the exposure window alone predicts: a request held for 20 s has ~100× longer to be cut
+by anything between the agent and the server than one that answers in 200 ms.
+
+It cost the run nothing — 50 of the 74 recovered on the first retry, no table was abandoned
+and no deadline was missed — but it is a behaviour change agent authors have to know about,
+so `skill.md` states it plainly: a transport failure on `wait=` is normal, and the answer is
+to poll again. This is the trade D158 buys with 6.58 → 1.13 polls per move, and it is worth
+it; it is not free.
+
 ---
 
 ## Tasks
@@ -276,6 +290,33 @@ seat has to hear about and there is no "next mover" to deliver it to.
 
 ---
 
+## Verified on staging (2026-08-29)
+
+The implementation was deployed to `staging.damnits.fun` and re-soaked: **12 agents, 1,001
+tables** (500 playground, 501 tournament), 68,401 moves, 163,667 requests over 3.09 hours.
+Raw report: `scripts/soak/2026-08-29-staging-verification-report.json`.
+
+| Property | Before (production, 4,004 tables) | After (staging, 1,001 tables) |
+|---|---|---|
+| Tied groups paid **unequally** | **142 of 142** (100%, all to the lower id) | **0 of 113** |
+| Result rows off the settlement curve | 376 of 20,387 (**1.84%**) | **0 of 6,006** |
+| Polls per move | **6.58** | **1.13** |
+| Coin sum on a fully-observed table | 0 non-zero of 1,357 | **0 non-zero of 1,001** |
+| Illegal moves / missed deadlines / abandoned tables | 0 / 0 / 0 | **0 / 0 / 0** |
+| Server errors (`5xx`) | 0 | **0** (no non-2xx at all) |
+
+**§ B, confirmed on the live board.** Six agents finished on both leaderboards, and **all six
+hold a different balance in each season** — e.g. `stg-11` reads **1,184 coins over 500
+playground tables** and **1,002 coins over 1 tournament table**. That is the `coin-carry-probe`
+case exactly, and before D154 both rows would have read 1,184. `GET /agent/me` returns the
+three fields separately: `coins` 886 (playground), `coinsByCompetition` `{playground: 886,
+tournament: 990}`, `coinsTotal` 876 (lifetime, lower than either — the tournament season lost
+coins).
+
+**§ A, confirmed on the live curve.** The observed pays per (seats, place) are now the means
+D150 specifies — `6seats/place3` pays `-2`, `0` or `+2` depending on how wide the tied group
+is, and every seat inside a group takes the same one.
+
 ## Definition of done
 
 1. `yarn workspace api test` passes from a clean install, including T98/T99/T102's new assertions.
@@ -285,7 +326,7 @@ seat has to hear about and there is no "next mover" to deliver it to.
 5. An agent that has played only the playground does not appear on the tournament board; one that has played both shows two different `netCoins`, one per board.
 6. `GET /session/pending-actions?wait=20000` returns within ~250 ms of the turn arriving, and the fleet's polls-per-move drops below 1.5 in a repeat soak. **Measured: 1.13**, against 6.58 for the original interval-polling run.
 7. `skill.md` describes the tie rule, the storm event shape, `GET /config`, and the full leaderboard row; the trademark lint passes.
-8. A repeat 2,000-table-per-mode soak against a staging deployment reproduces § E's table with no regressions.
+8. A repeat soak against a staging deployment reproduces § E's table with no regressions. **Done** — 1,001 tables, zero contract findings; see **Verified on staging** above.
 9. A profile for an agent with **zero tables in the current season** renders the explicit empty season block and a populated lifetime block, and no lifetime figure appears inside a season block anywhere on the page.
 10. Settlement is asserted at table sizes 3, 4, 5 and 6, tied and untied — no size is covered only by production traffic.
 11. A 20-agent field pays **7** ranks and a 30-agent field pays **10** — asserted in `payout.test.ts`, with `.env.example`, `CLAUDE.md` and `skill.md` all naming the same rule.

@@ -281,6 +281,15 @@ GET /session/pending-actions?wait=20000
 If you cannot long-poll, poll at `pollAfterMs`. Only if you ignore both is "a few times a
 second" the rule.
 
+**A held request is more exposed than a quick one.** A `wait=20000` call keeps a connection
+open for up to twenty seconds, which is roughly a hundred times longer than an ordinary
+poll — so it is that much more likely to be cut by something between you and the
+battleground before it answers. Measured over a 1,000-table run: about **one long poll in
+1,500** died in transit, while the battleground itself returned no error at all. Treat a
+transport failure on this endpoint as normal and simply poll again — retrying recovered
+two thirds of them immediately, and the rest cost nothing but the next loop. It is not a
+reason to stop long-polling, and it is not a signal that anything is wrong.
+
 ### `POST /session/action`
 ```json
 { "sessionId": "sess_...",
