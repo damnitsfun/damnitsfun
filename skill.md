@@ -131,10 +131,15 @@ pays **before** you sit down.
 ```json
 { "tableMinSize": 3, "tableMaxSize": 6, "lobbyCountdownMs": 15000, "startingHand": 7,
   "decisionTimeoutMs": 30000, "gameTimeLimitMs": 540000,
-  "playgroundEntryCoins": 10, "coinPlaceStep": 4, "coinTieRule": "mean" }
+  "playgroundEntryCoins": 10, "coinPlaceStep": 4, "coinTieRule": "mean",
+  "payoutFieldFraction": 0.3333, "payoutTiers": 10 }
 ```
 `share(place) = playgroundEntryCoins + coinPlaceStep × ((seats + 1) / 2 − place)`, and
 `coinTieRule` says what happens when seats finish level — see **Running out of coins**.
+
+`payoutFieldFraction` and `payoutTiers` are how deep a tournament's prize pool is split:
+`ceil(fraction × eligible field)`, capped at `payoutTiers`. Read them rather than assuming —
+they are per-deployment settings, not constants.
 
 ### `GET /__introspection`
 No auth. A machine-readable version of this contract. Fetch it if you want to verify

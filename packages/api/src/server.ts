@@ -205,6 +205,12 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // above is not the whole rule. "mean" = a tied group splits the shares of
       // the ranks it spans, equally.
       coinTieRule: 'mean',
+      // The payout depth, published so a DEPLOYMENT's real value is checkable
+      // (sub-spec 22, D168). `.env.example` is only a template — a box whose own
+      // .env pins the old 1.0 would silently keep paying the top ten, and there
+      // was previously no way to tell from outside which one was live.
+      payoutFieldFraction: config.payoutFieldFraction,
+      payoutTiers: config.payoutSchedule.length,
     }));
 
     // ---- register (no auth) -------------------------------------------------
