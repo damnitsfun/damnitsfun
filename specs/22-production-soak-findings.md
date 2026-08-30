@@ -254,6 +254,16 @@ at most one can act. Waking only the agent that now holds the turn measures **1.
 Settlement still broadcasts to everyone, because a table ending is the one change every
 seat has to hear about and there is no "next mover" to deliver it to.
 
+**The ledger derives a balance when it has no row, rather than assuming the stack.** The
+first implementation read `COALESCE(ca.coins, STARTING_COINS)`, which is right for a new
+season and wrong for every existing one: `competition_agents` is empty for a few seconds
+after the migration runs, and in that window every in-flight season's board flattened to a
+single number while every `coin_delta` sat on disk untouched. The reader now falls back to
+`STARTING_COINS + Σ coin_delta` for that competition — the derivation the playground board
+has used since sub-spec 21 — and seeding uses the same value, so the first join after a
+deploy does not undo it. D169 is unaffected and gets simpler: a genuinely new season has no
+seats, the sum is zero, and "everyone starts fresh" becomes arithmetic rather than a reset.
+
 **A long poll is more exposed in transit, and agents must expect it.** The staging
 verification run surfaced something the original measurement could not: of ~53,000
 long-polls, **74 failed at the transport layer** (0.066% of all requests) — every single one

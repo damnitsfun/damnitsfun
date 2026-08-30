@@ -1729,7 +1729,31 @@ export class Orchestrator {
     const row = this.db
       .prepare(`SELECT coins FROM competition_agents WHERE competition_id = ? AND agent_id = ?`)
       .get(competitionId, agentId) as { coins: number } | undefined;
-    return row?.coins ?? this.config.startingCoins;
+    if (row) return row.coins;
+    // No ledger row yet. That is NOT the same as "starts at the stack": it is also
+    // the state every in-flight season is in the moment this migration lands, and
+    // answering `startingCoins` there would silently erase a live season's
+    // standings while every `coin_delta` sat on disk untouched.
+    //
+    // So derive it the way the playground board already does (sub-spec 21): the
+    // stack plus what this agent's settled tables here actually paid. A genuinely
+    // new season has no seats, the sum is zero, and this reduces to the stack —
+    // which is exactly D169's "the new season starts everyone fresh", now true by
+    // arithmetic rather than by wiping anything.
+    return this.derivedSeasonCoins(agentId, competitionId);
+  }
+
+  /** The stack plus every settled `coin_delta` this agent has in this competition. */
+  private derivedSeasonCoins(agentId: string, competitionId: string): number {
+    const sum = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(p.coin_delta), 0) AS delta
+           FROM session_players p
+           JOIN sessions s ON s.id = p.session_id
+          WHERE p.agent_id = ? AND s.competition_id = ? AND s.status = 'settled'`,
+      )
+      .get(agentId, competitionId) as { delta: number };
+    return this.config.startingCoins + sum.delta;
   }
 
   /**
@@ -1751,7 +1775,10 @@ export class Orchestrator {
       .run({
         competitionId,
         agentId,
-        seeded: this.config.startingCoins + delta,
+        // Seed at whatever this agent ALREADY holds here (see `seasonCoins`), not
+        // at a bare stack — otherwise the first join after the migration undoes
+        // the very history the read path preserves.
+        seeded: this.seasonCoins(agentId, competitionId) + delta,
         delta,
       });
     this.db.prepare(`UPDATE agents SET coins = coins + ? WHERE id = ?`).run(delta, agentId);
@@ -2731,10 +2758,18 @@ export class Orchestrator {
     const rows = this.db
       .prepare(
         `SELECT a.*, o.x_handle AS ownerHandle,
-                -- THIS season's balance, not the global one (sub-spec 22, D154).
-                -- An agent with no ledger row has taken a seat but not yet settled
-                -- a table, so it still holds the starting stack.
-                COALESCE(ca.coins, @startingCoins) AS seasonCoins,
+                -- THIS season's balance, not the global one (sub-spec 22, D154),
+                -- with the same fallback the seasonCoins() reader uses: no ledger
+                -- row means derive from the settled deltas, never flatten the whole
+                -- board to the starting stack. That state is not hypothetical — it
+                -- is exactly what an in-flight season looks like the moment the
+                -- migration lands, with every delta still on disk.
+                -- (No backticks in here: this is inside a JS template literal.)
+                COALESCE(
+                  ca.coins,
+                  @startingCoins + COALESCE(
+                    SUM(CASE WHEN s.status = 'settled' THEN p.coin_delta END), 0)
+                ) AS seasonCoins,
                 COUNT(DISTINCT CASE WHEN s.status = 'settled' THEN s.id END) AS tables,
                 COUNT(DISTINCT CASE WHEN s.status = 'settled'
                                      AND s.winner_agent_id = a.id THEN s.id END) AS tablesWon,

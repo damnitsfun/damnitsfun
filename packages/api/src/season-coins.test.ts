@@ -142,3 +142,67 @@ describe('coins are scoped to a season (D154)', () => {
     expect(h.o.playgroundCoins(a)).toBe(balances[h.classic]);
   });
 });
+
+/**
+ * Sub-spec 22 — the state the migration actually lands in.
+ *
+ * Caught by asking what production looks like the moment the new build starts:
+ * seasons in flight, every `coin_delta` on disk, and `competition_agents` empty
+ * because it was created seconds ago. The first version answered `STARTING_COINS`
+ * for every one of those agents, which flattened a live board to a single number
+ * and would have read as "the season was wiped".
+ */
+describe('an in-flight season that predates the ledger', () => {
+  it('keeps its standings when the ledger is empty', async () => {
+    const h = boot();
+    const a = h.o.registerAgent('veteran').agentId;
+    const b = h.o.registerAgent('rival').agentId;
+    // An ODD number of tables, so the two agents cannot finish level: every table
+    // has exactly one winner, so the win counts differ and so must the totals.
+    // A spread is the whole point — a board where everyone already holds the same
+    // number could not show the flattening this test exists to catch.
+    for (let i = 0; i < 7; i++) await playTable(h, h.classic, a, b);
+
+    const before = h.o.leaderboard(h.classic).map((r) => [r.displayName, r.coins] as const);
+    expect(new Set(before.map(([, c]) => c)).size).toBeGreaterThan(1);
+
+    // Exactly what the migration produces: history intact, ledger empty.
+    h.db.prepare(`DELETE FROM competition_agents`).run();
+
+    const after = h.o.leaderboard(h.classic).map((r) => [r.displayName, r.coins] as const);
+    expect(after).toEqual(before);
+  });
+
+  it('does not undo that history on the next join', async () => {
+    const h = boot();
+    const a = h.o.registerAgent('veteran').agentId;
+    const b = h.o.registerAgent('rival').agentId;
+    for (let i = 0; i < 6; i++) await playTable(h, h.classic, a, b);
+    const earned = h.o.leaderboard(h.classic).find((r) => r.agentId === a)!.coins;
+    h.db.prepare(`DELETE FROM competition_agents`).run();
+
+    // Seeding reads the derived balance, so the first seat after the migration is
+    // charged against what the agent actually holds — not against a fresh stack.
+    await h.o.joinSession(a, h.classic);
+    const row = h.db
+      .prepare(`SELECT coins FROM competition_agents WHERE competition_id = ? AND agent_id = ?`)
+      .get(h.classic, a) as { coins: number };
+    expect(row.coins).toBe(earned - ENTRY);
+  });
+
+  it('still starts a genuinely new season at the stack', async () => {
+    const h = boot();
+    const a = h.o.registerAgent('veteran').agentId;
+    const b = h.o.registerAgent('rival').agentId;
+    for (let i = 0; i < 6; i++) await playTable(h, h.classic, a, b);
+
+    // No seats in the tournament, so the derivation sums nothing and reduces to
+    // the stack — D169 without needing to wipe a thing.
+    await h.o.enterCompetition(a, h.tournament);
+    await h.o.joinSession(a, h.tournament);
+    const row = h.db
+      .prepare(`SELECT coins FROM competition_agents WHERE competition_id = ? AND agent_id = ?`)
+      .get(h.tournament, a) as { coins: number };
+    expect(row.coins).toBe(START - ENTRY);
+  });
+});
