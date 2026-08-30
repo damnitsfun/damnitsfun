@@ -38,6 +38,18 @@ export interface ProfileCompetition {
   placeScore: number | null;
   bestPlace: number | null;
   storms: number;
+  /**
+   * Whether this competition is the season currently being played (sub-spec 22,
+   * D166). An ACTIVE season is listed even with `tables: 0`, so a profile can say
+   * "no tables this season" instead of quietly showing the last season it played
+   * as though it were the current one.
+   */
+  active: boolean;
+  /**
+   * What the agent holds in THIS season (D154), or null before it has taken a
+   * seat here. Not the lifetime total on `AgentProfile.coins`.
+   */
+  coins: number | null;
 }
 
 export interface AgentProfile {
@@ -49,6 +61,12 @@ export interface AgentProfile {
   registeredAt: string;
   /** When this agent last took a seat, or null if it never has. */
   lastPlayedAt: string | null;
+  /**
+   * LIFETIME coins, across every season ever played (sub-spec 22, D155). It is
+   * deliberately not a season figure: a lifetime number rendered inside a season
+   * block is the same defect sub-spec 21 § B found in the ticker, and § B of 22
+   * found in the leaderboards. Per-season balances live on `competitions[].coins`.
+   */
   coins: number;
   /** Totals across every competition, and the per-competition breakdown. */
   tables: number;
@@ -102,6 +120,10 @@ export function agentProfile(db: Db, agentId: string): AgentProfile {
 
   const competitions = db
     .prepare(
+      // A LEFT JOIN from `competitions`, not an inner join from the seats: an
+      // active season the agent has not played must still appear (D166). The old
+      // shape listed only seasons with a seat in them, so an agent that stopped at
+      // a rollover showed its previous season with no sign it was over.
       `SELECT c.id                AS competitionId,
               c.name              AS name,
               c.kind              AS kind,
@@ -112,15 +134,26 @@ export function agentProfile(db: Db, agentId: string): AgentProfile {
                        THEN (p.place - 1.0) / (s.table_size - 1) END)  AS placeScore,
               MIN(p.place)         AS bestPlace,
               (SELECT COUNT(*) FROM jackpot_events j
-                WHERE j.agent_id = p.agent_id AND j.competition_id = c.id) AS storms
-         FROM session_players p
-         JOIN sessions s     ON s.id = p.session_id AND s.status = 'settled'
-         JOIN competitions c ON c.id = s.competition_id
-        WHERE p.agent_id = ?
+                WHERE j.agent_id = @agentId AND j.competition_id = c.id) AS storms,
+              CASE WHEN c.status = 'active' THEN 1 ELSE 0 END AS active,
+              ca.coins            AS coins
+         FROM competitions c
+         LEFT JOIN sessions s ON s.competition_id = c.id AND s.status = 'settled'
+         LEFT JOIN session_players p ON p.session_id = s.id AND p.agent_id = @agentId
+         LEFT JOIN competition_agents ca
+                ON ca.competition_id = c.id AND ca.agent_id = @agentId
+        WHERE c.status = 'active' OR p.agent_id IS NOT NULL
         GROUP BY c.id
-        ORDER BY tables DESC, c.created_at`,
+        HAVING c.status = 'active' OR COUNT(DISTINCT p.session_id) > 0
+        ORDER BY active DESC, tables DESC, c.created_at`,
     )
-    .all(agentId) as ProfileCompetition[];
+    .all({ agentId }) as Array<Omit<ProfileCompetition, 'active'> & { active: number }>;
+
+  const seasons: ProfileCompetition[] = competitions.map((c) => ({
+    ...c,
+    active: c.active === 1,
+    coins: c.coins ?? null,
+  }));
 
   // "Last played" counts taking a SEAT, not finishing a table: an agent sitting in
   // a lobby right now is active, and saying otherwise would read as inactive.
@@ -140,9 +173,9 @@ export function agentProfile(db: Db, agentId: string): AgentProfile {
     registeredAt: agent.created_at,
     lastPlayedAt: last.at,
     coins: agent.coins,
-    tables: competitions.reduce((t, c) => t + c.tables, 0),
-    tablesWon: competitions.reduce((t, c) => t + c.tablesWon, 0),
-    competitions,
+    tables: seasons.reduce((t, c) => t + c.tables, 0),
+    tablesWon: seasons.reduce((t, c) => t + c.tablesWon, 0),
+    competitions: seasons,
   };
 }
 

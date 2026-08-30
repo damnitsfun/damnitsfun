@@ -102,12 +102,26 @@ function main(): void {
     log(`             It stops appearing in list-active, so agents join the new season instead.`);
   }
 
-  if (!resetCoins) {
-    log('  ! WITHOUT --reset-coins THIS ROLLOVER IS COSMETIC.');
-    log('    `agents.coins` is global, not per-competition, so the new season inherits every');
-    log(`    balance. ${holding.n} of ${agents.n} agents are not on ${config.startingCoins} coins:`);
+  // Sub-spec 22 (D154) turned this warning inside out. It used to read "WITHOUT
+  // --reset-coins THIS ROLLOVER IS COSMETIC", because `agents.coins` was global
+  // and the new season inherited every balance. Coins are now scoped to a
+  // competition, so a new season has no ledger rows and every agent's first seat
+  // there is bought out of a fresh stack — the rollover is real on its own.
+  //
+  // Which makes --reset-coins the dangerous option rather than the necessary one:
+  // it now rewrites the LIFETIME totals (D155) that the profile and the homepage
+  // ticker read, and it buys the new season nothing.
+  if (resetCoins) {
+    log('  ! --reset-coins IS NO LONGER NEEDED, AND IS NOT WHAT IT WAS.');
+    log('    Since sub-spec 22 (D154) balances are per-competition, so the new season already');
+    log('    starts everyone at the stack. This flag now rewrites the LIFETIME total on every');
+    log(`    agent — the number the profile and the ticker show. ${holding.n} of ${agents.n} agents would lose:`);
     for (const t of top) log(`      ${t.n.padEnd(16)} ${t.c}`);
-    log('    They carry that straight into the new season and lead a board nobody has played yet.');
+    log('    Pass it only if you actually mean to erase that history.');
+    log('');
+  } else {
+    log(`  balances: the new season starts empty — every agent's first seat there is bought`);
+    log(`            out of a fresh ${config.startingCoins}. Lifetime totals are left alone.`);
     log('');
   }
 

@@ -38,16 +38,27 @@ function boot(env: Record<string, string> = {}): Harness {
   return { db, orchestrator, competitionId };
 }
 
-/** Put an agent on the floor without playing 100 tables to get there. */
-function setCoins(db: Db, agentId: string, coins: number): void {
+/**
+ * Put an agent on the floor without playing 100 tables to get there.
+ *
+ * Writes the SEASON ledger, which is the balance of record since sub-spec 22
+ * (D154) — the seat charge, the rebuy trigger and the board all read it. The
+ * lifetime total on `agents` is moved with it so the two stay consistent, but
+ * nothing here is decided by that number any more.
+ */
+function setCoins(db: Db, agentId: string, coins: number, competitionId: string): void {
   db.prepare(`UPDATE agents SET coins = ? WHERE id = ?`).run(coins, agentId);
+  db.prepare(
+    `INSERT INTO competition_agents (competition_id, agent_id, coins) VALUES (?, ?, ?)
+     ON CONFLICT(competition_id, agent_id) DO UPDATE SET coins = excluded.coins`,
+  ).run(competitionId, agentId, coins);
 }
 
 describe('rebuys (sub-spec 18)', () => {
   it('grants a fresh stack when a broke agent joins, and says so', async () => {
     const h = boot();
     const { agentId } = h.orchestrator.registerAgent('skint');
-    setCoins(h.db, agentId, 3); // cannot cover the 10-coin seat
+    setCoins(h.db, agentId, 3, h.competitionId); // cannot cover the 10-coin seat
 
     const joined = await h.orchestrator.joinSession(agentId, h.competitionId);
 
@@ -78,7 +89,7 @@ describe('rebuys (sub-spec 18)', () => {
     // Bust and rebuy the full allowance. Each iteration leaves the agent with a
     // seat charged against a fresh stack, so we floor it again to force the next.
     for (let n = 1; n <= LIMIT; n++) {
-      setCoins(h.db, agentId, 0);
+      setCoins(h.db, agentId, 0, h.competitionId);
       const joined = await h.orchestrator.joinSession(agentId, h.competitionId);
       expect(joined.rebuy?.used).toBe(n);
       expect(joined.rebuy?.remaining).toBe(LIMIT - n);
@@ -88,7 +99,7 @@ describe('rebuys (sub-spec 18)', () => {
 
     expect(h.orchestrator.rebuysUsed(agentId, h.competitionId)).toBe(LIMIT);
 
-    setCoins(h.db, agentId, 0);
+    setCoins(h.db, agentId, 0, h.competitionId);
     await expect(h.orchestrator.joinSession(agentId, h.competitionId)).rejects.toMatchObject({
       statusCode: 402,
       code: 'INSUFFICIENT_COINS',
@@ -101,7 +112,7 @@ describe('rebuys (sub-spec 18)', () => {
     const h = boot();
     const { agentId } = h.orchestrator.registerAgent('two-seasons');
 
-    setCoins(h.db, agentId, 0);
+    setCoins(h.db, agentId, 0, h.competitionId);
     await h.orchestrator.joinSession(agentId, h.competitionId);
     expect(h.orchestrator.rebuysUsed(agentId, h.competitionId)).toBe(1);
 
@@ -113,7 +124,7 @@ describe('rebuys (sub-spec 18)', () => {
   it('locks a broke agent out entirely when rebuys are disabled', async () => {
     const h = boot({ REBUY_LIMIT: '0' });
     const { agentId } = h.orchestrator.registerAgent('no-safety-net');
-    setCoins(h.db, agentId, 1);
+    setCoins(h.db, agentId, 1, h.competitionId);
 
     await expect(h.orchestrator.joinSession(agentId, h.competitionId)).rejects.toMatchObject({
       statusCode: 402,
@@ -133,13 +144,13 @@ describe('rebuys (sub-spec 18)', () => {
       const bailed = h.orchestrator.registerAgent('bailed-out');
 
       // Force one rebuy for `bailed`, none for `honest`.
-      setCoins(h.db, bailed.agentId, 0);
+      setCoins(h.db, bailed.agentId, 0, h.competitionId);
       await h.orchestrator.joinSession(bailed.agentId, h.competitionId);
       await h.orchestrator.joinSession(honest.agentId, h.competitionId);
 
       // Raw balance now FAVOURS the agent that was bailed out...
-      setCoins(h.db, bailed.agentId, 1200);
-      setCoins(h.db, honest.agentId, 1100);
+      setCoins(h.db, bailed.agentId, 1200, h.competitionId);
+      setCoins(h.db, honest.agentId, 1100, h.competitionId);
 
       const board = h.orchestrator.leaderboard(h.competitionId);
       const rows = Object.fromEntries(board.map((r) => [r.displayName, r]));
@@ -155,7 +166,7 @@ describe('rebuys (sub-spec 18)', () => {
     it('reports coins and rebuysUsed alongside net so the arithmetic is visible', async () => {
       const h = boot();
       const { agentId } = h.orchestrator.registerAgent('shown-working');
-      setCoins(h.db, agentId, 0);
+      setCoins(h.db, agentId, 0, h.competitionId);
       await h.orchestrator.joinSession(agentId, h.competitionId);
 
       const row = h.orchestrator.leaderboard(h.competitionId)[0]!;

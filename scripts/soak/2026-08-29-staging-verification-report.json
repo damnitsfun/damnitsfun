@@ -1,0 +1,1745 @@
+{
+  "startedAt": "2026-08-29T13:49:30.963Z",
+  "at": "2026-08-29T16:54:46.793Z",
+  "elapsedSec": 11116,
+  "config": {
+    "base": "https://staging.damnits.fun",
+    "agents": 12,
+    "games": 500,
+    "smoke": false,
+    "modes": [
+      "classic",
+      "tournament"
+    ],
+    "waitMs": 20000,
+    "pollMs": 500,
+    "lobbyPollMs": 1000,
+    "betweenTablesMs": 400,
+    "state": "stg-state.json",
+    "report": "stg-report.json",
+    "namePrefix": "stg"
+  },
+  "perMode": {
+    "classic": {
+      "competitionId": "comp_045cf199f1a12c3b",
+      "competitionName": "damnits.fun Open",
+      "tablesCompleted": 3000,
+      "tablesAbandoned": 0,
+      "joins": 3000,
+      "moves": 34197,
+      "wins": 500,
+      "timeoutFinishes": 0,
+      "emptyHandFinishes": 3000,
+      "deadlineMisses": 0,
+      "illegalMoveRejections": 0,
+      "notYourTurn409": 0,
+      "alreadySeated409": 0,
+      "insufficientCoins": 0,
+      "rebuys": 0,
+      "distinctTables": 500,
+      "gameDurationMs": {
+        "p50": 17003,
+        "p90": 35431,
+        "p99": 64439,
+        "max": 117444
+      },
+      "lobbyWaitMs": {
+        "p50": 752,
+        "p90": 1618,
+        "max": 5811
+      }
+    },
+    "tournament": {
+      "competitionId": "comp_42309c5e4c2f5444",
+      "competitionName": "damnits.fun Championship",
+      "tablesCompleted": 3006,
+      "tablesAbandoned": 0,
+      "joins": 3006,
+      "moves": 34204,
+      "wins": 501,
+      "timeoutFinishes": 0,
+      "emptyHandFinishes": 3006,
+      "deadlineMisses": 0,
+      "illegalMoveRejections": 0,
+      "notYourTurn409": 0,
+      "alreadySeated409": 0,
+      "insufficientCoins": 0,
+      "rebuys": 0,
+      "distinctTables": 501,
+      "gameDurationMs": {
+        "p50": 17089,
+        "p90": 36634,
+        "p99": 64919,
+        "max": 124237
+      },
+      "lobbyWaitMs": {
+        "p50": 752,
+        "p90": 1513,
+        "max": 9875
+      }
+    }
+  },
+  "latency": {
+    "GET /config": {
+      "n": 1,
+      "p50": 649,
+      "p90": 649,
+      "p99": 649,
+      "max": 649
+    },
+    "POST /register": {
+      "n": 12,
+      "p50": 208,
+      "p90": 217,
+      "p99": 638,
+      "max": 638
+    },
+    "GET /competition/list-active": {
+      "n": 4000,
+      "p50": 207,
+      "p90": 318,
+      "p99": 400,
+      "max": 1217
+    },
+    "POST /session/join": {
+      "n": 4000,
+      "p50": 210,
+      "p90": 317,
+      "p99": 384,
+      "max": 2586
+    },
+    "POST /competition/enter": {
+      "n": 12,
+      "p50": 607,
+      "p90": 638,
+      "p99": 1054,
+      "max": 1054
+    },
+    "GET /session/pending-actions": {
+      "n": 4000,
+      "p50": 1491,
+      "p90": 3877,
+      "p99": 8090,
+      "max": 20405
+    },
+    "POST /session/action": {
+      "n": 4000,
+      "p50": 296,
+      "p90": 322,
+      "p99": 747,
+      "max": 3353
+    },
+    "GET /session/results": {
+      "n": 4000,
+      "p50": 224,
+      "p90": 613,
+      "p99": 888,
+      "max": 2770
+    },
+    "GET /agent/me": {
+      "n": 12,
+      "p50": 285,
+      "p90": 303,
+      "p99": 306,
+      "max": 306
+    },
+    "GET /competition/leaderboard": {
+      "n": 2,
+      "p50": 1267,
+      "p90": 1267,
+      "p99": 1267,
+      "max": 1267
+    }
+  },
+  "http": {
+    "GET /config -> 200": 1,
+    "POST /register -> 201": 12,
+    "GET /competition/list-active -> 200": 6006,
+    "POST /session/join -> 200": 6006,
+    "POST /competition/enter -> 200": 12,
+    "GET /session/pending-actions -> 200": 77209,
+    "POST /session/action -> 200": 68401,
+    "GET /session/results -> 200": 6006,
+    "GET /agent/me -> 200": 12,
+    "GET /competition/leaderboard -> 200": 2
+  },
+  "net": {
+    "fetchErrors": 74,
+    "retries": 50
+  },
+  "polling": {
+    "polls": 77209,
+    "moves": 68401,
+    "pollsPerMove": 1.13,
+    "longPollMs": 20000
+  },
+  "findings": {
+    "NETWORK_FAILURE_AFTER_RETRIES": 24
+  },
+  "findingSamples": {
+    "NETWORK_FAILURE_AFTER_RETRIES": {
+      "at": "2026-08-29T15:26:53.331Z",
+      "detail": "GET /session/pending-actions?wait=20000: TypeError: fetch failed"
+    }
+  },
+  "serverConfig": {
+    "tableMinSize": 3,
+    "tableMaxSize": 6,
+    "tableSize": 6,
+    "lobbyCountdownMs": 15000,
+    "startingHand": 7,
+    "decisionTimeoutMs": 30000,
+    "gameTimeLimitMs": 540000,
+    "gameTimeLimitFloorMs": 120000,
+    "playgroundEntryCoins": 10,
+    "coinPlaceStep": 4,
+    "coinTieRule": "mean"
+  },
+  "settlement": {
+    "checked": 6006,
+    "mismatches": 0,
+    "samples": [],
+    "byShape": {
+      "6seats/place3": [
+        2,
+        0,
+        -2
+      ],
+      "6seats/place4": [
+        -2,
+        -4,
+        -6
+      ],
+      "6seats/place5": [
+        -6,
+        -8
+      ],
+      "6seats/place6": [
+        -10
+      ],
+      "6seats/place2": [
+        6,
+        4,
+        2
+      ],
+      "6seats/place1": [
+        10
+      ]
+    }
+  },
+  "coinAudit": {
+    "checked": 1001,
+    "fullTables": 1001,
+    "nonZeroSum": 0,
+    "samples": [],
+    "duplicatePlaces": 112,
+    "worstAbsSum": 0,
+    "ties": {
+      "tiedGroups": 113,
+      "groupsWithUnequalPay": 0,
+      "lowerIdPaidMore": 0,
+      "higherIdPaidMore": 0,
+      "samples": []
+    }
+  },
+  "coinsSeen": {
+    "agent_hsoaotvhzk1gtxhf": 886,
+    "agent_xs3gf4tlm0gy9sih": 1000,
+    "agent_4r4jolpxbmvjnnz8": 910,
+    "agent_o0onvksi1uswm8vw": 1000,
+    "agent_ssz09y4o6l9ndre0": 1042,
+    "agent_uhtfztk3woyzbv6g": 1000,
+    "agent_otlg803t9ycbrno8": 974,
+    "agent_dot1cpz1xxyc3jne": 1000,
+    "agent_dnz5m9h0qg1vd4jo": 1004,
+    "agent_cwnq5o5exmvbmv7x": 1000,
+    "agent_4gl318cjwjmsxqv2": 1184,
+    "agent_h9z8jo76w9273c60": 1000
+  },
+  "storms": [
+    {
+      "at": "2026-08-29T13:58:09.309Z",
+      "sessionId": "sess_ulf6bsmwfgj8w7c9",
+      "ev": {
+        "seq": 137,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T13:58:09.009Z"
+      }
+    },
+    {
+      "at": "2026-08-29T13:58:09.527Z",
+      "sessionId": "sess_ulf6bsmwfgj8w7c9",
+      "ev": {
+        "seq": 137,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T13:58:09.009Z"
+      }
+    },
+    {
+      "at": "2026-08-29T13:58:09.732Z",
+      "sessionId": "sess_ulf6bsmwfgj8w7c9",
+      "ev": {
+        "seq": 137,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T13:58:09.009Z"
+      }
+    },
+    {
+      "at": "2026-08-29T13:58:09.932Z",
+      "sessionId": "sess_ulf6bsmwfgj8w7c9",
+      "ev": {
+        "seq": 137,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T13:58:09.009Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:05:11.609Z",
+      "sessionId": "sess_8qlxuyj3umqbhy5w",
+      "ev": {
+        "seq": 49,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_dot1cpz1xxyc3jne",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_o0onvksi1uswm8vw",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:05:11.315Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:05:11.808Z",
+      "sessionId": "sess_8qlxuyj3umqbhy5w",
+      "ev": {
+        "seq": 49,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_dot1cpz1xxyc3jne",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_o0onvksi1uswm8vw",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:05:11.315Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:05:12.012Z",
+      "sessionId": "sess_8qlxuyj3umqbhy5w",
+      "ev": {
+        "seq": 49,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_dot1cpz1xxyc3jne",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_o0onvksi1uswm8vw",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:05:11.315Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:05:12.207Z",
+      "sessionId": "sess_8qlxuyj3umqbhy5w",
+      "ev": {
+        "seq": 49,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_dot1cpz1xxyc3jne",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_o0onvksi1uswm8vw",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:05:11.315Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:05:12.405Z",
+      "sessionId": "sess_8qlxuyj3umqbhy5w",
+      "ev": {
+        "seq": 49,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_dot1cpz1xxyc3jne",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_o0onvksi1uswm8vw",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:05:11.315Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:05:12.599Z",
+      "sessionId": "sess_8qlxuyj3umqbhy5w",
+      "ev": {
+        "seq": 49,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_dot1cpz1xxyc3jne",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_o0onvksi1uswm8vw",
+            "agent_cwnq5o5exmvbmv7x"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:05:11.315Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:11:59.110Z",
+      "sessionId": "sess_p8apwpfoo03tz4np",
+      "ev": {
+        "seq": 300,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_h9z8jo76w9273c60",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_o0onvksi1uswm8vw"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:11:58.777Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:11:59.309Z",
+      "sessionId": "sess_p8apwpfoo03tz4np",
+      "ev": {
+        "seq": 300,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_h9z8jo76w9273c60",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_o0onvksi1uswm8vw"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:11:58.777Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:11:59.507Z",
+      "sessionId": "sess_p8apwpfoo03tz4np",
+      "ev": {
+        "seq": 300,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_h9z8jo76w9273c60",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_o0onvksi1uswm8vw"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:11:58.777Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:11:59.703Z",
+      "sessionId": "sess_p8apwpfoo03tz4np",
+      "ev": {
+        "seq": 300,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_h9z8jo76w9273c60",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_o0onvksi1uswm8vw"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:11:58.777Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:11:59.932Z",
+      "sessionId": "sess_p8apwpfoo03tz4np",
+      "ev": {
+        "seq": 300,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_h9z8jo76w9273c60",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_o0onvksi1uswm8vw"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:11:58.777Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:12:00.140Z",
+      "sessionId": "sess_p8apwpfoo03tz4np",
+      "ev": {
+        "seq": 300,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_uhtfztk3woyzbv6g",
+          "victims": [
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih",
+            "agent_h9z8jo76w9273c60",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_o0onvksi1uswm8vw"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:11:58.777Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:17.272Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:17.680Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:17.880Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:18.083Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:18.281Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:18.480Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:18.680Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:15:19.089Z",
+      "sessionId": "sess_rv6skoxwfrle6geb",
+      "ev": {
+        "seq": 57,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_hsoaotvhzk1gtxhf",
+          "victims": [
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_4gl318cjwjmsxqv2",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:15:16.943Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:53.940Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:54.340Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:54.543Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:54.749Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.165Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.165Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 129,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_o0onvksi1uswm8vw",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:54.837Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.368Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.368Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 129,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_o0onvksi1uswm8vw",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:54.837Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.572Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 117,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_o0onvksi1uswm8vw",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:53.622Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.572Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 129,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_o0onvksi1uswm8vw",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:54.837Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.775Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 129,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_o0onvksi1uswm8vw",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:54.837Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:55.978Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 129,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_o0onvksi1uswm8vw",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:54.837Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:16:56.191Z",
+      "sessionId": "sess_tykw0zyon5poso4r",
+      "ev": {
+        "seq": 129,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_o0onvksi1uswm8vw",
+          "victims": [
+            "agent_uhtfztk3woyzbv6g",
+            "agent_cwnq5o5exmvbmv7x",
+            "agent_h9z8jo76w9273c60",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:16:54.837Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:39.398Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:39.603Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:39.811Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:40.019Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:40.214Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:40.625Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:19:40.835Z",
+      "sessionId": "sess_ihnp1kdbjrdpsxmh",
+      "ev": {
+        "seq": 102,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_4gl318cjwjmsxqv2",
+          "victims": [
+            "agent_otlg803t9ycbrno8",
+            "agent_ssz09y4o6l9ndre0",
+            "agent_dnz5m9h0qg1vd4jo",
+            "agent_4r4jolpxbmvjnnz8",
+            "agent_hsoaotvhzk1gtxhf"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:19:39.080Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:48:41.004Z",
+      "sessionId": "sess_9cadzrboum6wt6ti",
+      "ev": {
+        "seq": 193,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_h9z8jo76w9273c60",
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_uhtfztk3woyzbv6g",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:48:40.723Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:48:41.204Z",
+      "sessionId": "sess_9cadzrboum6wt6ti",
+      "ev": {
+        "seq": 193,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_h9z8jo76w9273c60",
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_uhtfztk3woyzbv6g",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:48:40.723Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:48:41.405Z",
+      "sessionId": "sess_9cadzrboum6wt6ti",
+      "ev": {
+        "seq": 193,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_h9z8jo76w9273c60",
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_uhtfztk3woyzbv6g",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:48:40.723Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:48:41.615Z",
+      "sessionId": "sess_9cadzrboum6wt6ti",
+      "ev": {
+        "seq": 193,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_h9z8jo76w9273c60",
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_uhtfztk3woyzbv6g",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:48:40.723Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:48:41.815Z",
+      "sessionId": "sess_9cadzrboum6wt6ti",
+      "ev": {
+        "seq": 193,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_h9z8jo76w9273c60",
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_uhtfztk3woyzbv6g",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:48:40.723Z"
+      }
+    },
+    {
+      "at": "2026-08-29T14:48:42.017Z",
+      "sessionId": "sess_9cadzrboum6wt6ti",
+      "ev": {
+        "seq": 193,
+        "type": "RAINBOW_STORM",
+        "payload": {
+          "agentId": "agent_cwnq5o5exmvbmv7x",
+          "victims": [
+            "agent_h9z8jo76w9273c60",
+            "agent_o0onvksi1uswm8vw",
+            "agent_dot1cpz1xxyc3jne",
+            "agent_uhtfztk3woyzbv6g",
+            "agent_xs3gf4tlm0gy9sih"
+          ],
+          "drawCount": 6
+        },
+        "reasoning": null,
+        "createdAt": "2026-08-29T14:48:40.723Z"
+      }
+    }
+  ],
+  "rebuys": [],
+  "errorSamples": [],
+  "finalSnapshot": {
+    "agents": [
+      {
+        "displayName": "stg-01",
+        "mode": "tournament",
+        "agentId": "agent_hsoaotvhzk1gtxhf",
+        "coins": 886,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_hsoaotvhzk1gtxhf"
+      },
+      {
+        "displayName": "stg-02",
+        "mode": "tournament",
+        "agentId": "agent_xs3gf4tlm0gy9sih",
+        "coins": 1000,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_xs3gf4tlm0gy9sih"
+      },
+      {
+        "displayName": "stg-03",
+        "mode": "tournament",
+        "agentId": "agent_4r4jolpxbmvjnnz8",
+        "coins": 910,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_4r4jolpxbmvjnnz8"
+      },
+      {
+        "displayName": "stg-04",
+        "mode": "tournament",
+        "agentId": "agent_o0onvksi1uswm8vw",
+        "coins": 1000,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_o0onvksi1uswm8vw"
+      },
+      {
+        "displayName": "stg-05",
+        "mode": "tournament",
+        "agentId": "agent_ssz09y4o6l9ndre0",
+        "coins": 1042,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_ssz09y4o6l9ndre0"
+      },
+      {
+        "displayName": "stg-06",
+        "mode": "tournament",
+        "agentId": "agent_uhtfztk3woyzbv6g",
+        "coins": 1000,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_uhtfztk3woyzbv6g"
+      },
+      {
+        "displayName": "stg-07",
+        "mode": "tournament",
+        "agentId": "agent_otlg803t9ycbrno8",
+        "coins": 974,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_otlg803t9ycbrno8"
+      },
+      {
+        "displayName": "stg-08",
+        "mode": "tournament",
+        "agentId": "agent_dot1cpz1xxyc3jne",
+        "coins": 1000,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_dot1cpz1xxyc3jne"
+      },
+      {
+        "displayName": "stg-09",
+        "mode": "tournament",
+        "agentId": "agent_dnz5m9h0qg1vd4jo",
+        "coins": 1004,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_dnz5m9h0qg1vd4jo"
+      },
+      {
+        "displayName": "stg-10",
+        "mode": "tournament",
+        "agentId": "agent_cwnq5o5exmvbmv7x",
+        "coins": 1000,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_cwnq5o5exmvbmv7x"
+      },
+      {
+        "displayName": "stg-11",
+        "mode": "tournament",
+        "agentId": "agent_4gl318cjwjmsxqv2",
+        "coins": 1184,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_4gl318cjwjmsxqv2"
+      },
+      {
+        "displayName": "stg-12",
+        "mode": "tournament",
+        "agentId": "agent_h9z8jo76w9273c60",
+        "coins": 1000,
+        "profileUrl": "https://staging.damnits.fun/agent/agent_h9z8jo76w9273c60"
+      }
+    ],
+    "leaderboards": {
+      "classic": {
+        "competitionId": "comp_045cf199f1a12c3b",
+        "size": 45,
+        "top": [
+          {
+            "agentId": "agent_4gl318cjwjmsxqv2",
+            "displayName": "stg-11",
+            "ownerHandle": null,
+            "coins": 1184,
+            "rebuysUsed": 0,
+            "netCoins": 1184,
+            "tables": 500,
+            "tablesWon": 90,
+            "placeScore": 0.4776
+          },
+          {
+            "agentId": "agent_ssz09y4o6l9ndre0",
+            "displayName": "stg-05",
+            "ownerHandle": null,
+            "coins": 1042,
+            "rebuysUsed": 0,
+            "netCoins": 1042,
+            "tables": 500,
+            "tablesWon": 80,
+            "placeScore": 0.492
+          },
+          {
+            "agentId": "agent_dnz5m9h0qg1vd4jo",
+            "displayName": "stg-09",
+            "ownerHandle": null,
+            "coins": 1004,
+            "rebuysUsed": 0,
+            "netCoins": 1004,
+            "tables": 500,
+            "tablesWon": 77,
+            "placeScore": 0.49560000000000004
+          },
+          {
+            "agentId": "agent_g4byiugic1rur32j",
+            "displayName": "style-cy",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 24,
+            "tablesWon": 11,
+            "placeScore": 0.3541666666666667
+          },
+          {
+            "agentId": "agent_3l8mu2es95536j47",
+            "displayName": "style-ada",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 24,
+            "tablesWon": 7,
+            "placeScore": 0.5625
+          },
+          {
+            "agentId": "agent_66q1vfrro7npv39m",
+            "displayName": "style-bo",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 24,
+            "tablesWon": 6,
+            "placeScore": 0.5833333333333334
+          },
+          {
+            "agentId": "agent_07e7lbwwagyv6na4",
+            "displayName": "r2-3",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 12,
+            "tablesWon": 4,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_6e8pv5rjikaltm56",
+            "displayName": "runner-1",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 9,
+            "tablesWon": 4,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_pgnlj18k2wao8cp6",
+            "displayName": "r2-4",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 11,
+            "tablesWon": 4,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_prnpat6zsb4t34ql",
+            "displayName": "s3-5",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 16,
+            "tablesWon": 4,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_65dzq1v7xizsn21c",
+            "displayName": "s3-4",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 16,
+            "tablesWon": 3,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_lciukujjvdbtcmd1",
+            "displayName": "s3-1",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 16,
+            "tablesWon": 3,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_ubx5xcelszx5t8tk",
+            "displayName": "s3-2",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 13,
+            "tablesWon": 3,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_9qvxv4dgb1qnoq8b",
+            "displayName": "runner-3",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 10,
+            "tablesWon": 2,
+            "placeScore": null
+          },
+          {
+            "agentId": "agent_atc5dqpyyrwlmckr",
+            "displayName": "sx-1",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 6,
+            "tablesWon": 2,
+            "placeScore": null
+          }
+        ]
+      },
+      "tournament": {
+        "competitionId": "comp_42309c5e4c2f5444",
+        "size": 16,
+        "top": [
+          {
+            "agentId": "agent_o0onvksi1uswm8vw",
+            "displayName": "stg-04",
+            "ownerHandle": null,
+            "coins": 1144,
+            "rebuysUsed": 0,
+            "netCoins": 1144,
+            "tables": 500,
+            "tablesWon": 76,
+            "placeScore": 0.48319999999999996
+          },
+          {
+            "agentId": "agent_h9z8jo76w9273c60",
+            "displayName": "stg-12",
+            "ownerHandle": null,
+            "coins": 1110,
+            "rebuysUsed": 0,
+            "netCoins": 1110,
+            "tables": 500,
+            "tablesWon": 84,
+            "placeScore": 0.484
+          },
+          {
+            "agentId": "agent_uhtfztk3woyzbv6g",
+            "displayName": "stg-06",
+            "ownerHandle": null,
+            "coins": 1024,
+            "rebuysUsed": 0,
+            "netCoins": 1024,
+            "tables": 500,
+            "tablesWon": 87,
+            "placeScore": 0.49440000000000006
+          },
+          {
+            "agentId": "agent_dnz5m9h0qg1vd4jo",
+            "displayName": "stg-09",
+            "ownerHandle": null,
+            "coins": 1010,
+            "rebuysUsed": 0,
+            "netCoins": 1010,
+            "tables": 1,
+            "tablesWon": 1,
+            "placeScore": 0
+          },
+          {
+            "agentId": "agent_otlg803t9ycbrno8",
+            "displayName": "stg-07",
+            "ownerHandle": null,
+            "coins": 1006,
+            "rebuysUsed": 0,
+            "netCoins": 1006,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 0.2
+          },
+          {
+            "agentId": "agent_4gl318cjwjmsxqv2",
+            "displayName": "stg-11",
+            "ownerHandle": null,
+            "coins": 1002,
+            "rebuysUsed": 0,
+            "netCoins": 1002,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 0.4
+          },
+          {
+            "agentId": "agent_fmxhiu1nhc5tfjdw",
+            "displayName": "tk-1",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 1,
+            "tablesWon": 1,
+            "placeScore": 0
+          },
+          {
+            "agentId": "agent_3a99m9wgrknxypor",
+            "displayName": "tk-3",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 0.3333333333333333
+          },
+          {
+            "agentId": "agent_n6gcixyz87qr7e92",
+            "displayName": "tk-2",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 0.6666666666666666
+          },
+          {
+            "agentId": "agent_bgreee3cyfskk3f4",
+            "displayName": "t-probe",
+            "ownerHandle": null,
+            "coins": 1000,
+            "rebuysUsed": 0,
+            "netCoins": 1000,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 1
+          },
+          {
+            "agentId": "agent_4r4jolpxbmvjnnz8",
+            "displayName": "stg-03",
+            "ownerHandle": null,
+            "coins": 998,
+            "rebuysUsed": 0,
+            "netCoins": 998,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 0.6
+          },
+          {
+            "agentId": "agent_ssz09y4o6l9ndre0",
+            "displayName": "stg-05",
+            "ownerHandle": null,
+            "coins": 994,
+            "rebuysUsed": 0,
+            "netCoins": 994,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 0.8
+          },
+          {
+            "agentId": "agent_hsoaotvhzk1gtxhf",
+            "displayName": "stg-01",
+            "ownerHandle": null,
+            "coins": 990,
+            "rebuysUsed": 0,
+            "netCoins": 990,
+            "tables": 1,
+            "tablesWon": 0,
+            "placeScore": 1
+          },
+          {
+            "agentId": "agent_dot1cpz1xxyc3jne",
+            "displayName": "stg-08",
+            "ownerHandle": null,
+            "coins": 914,
+            "rebuysUsed": 0,
+            "netCoins": 914,
+            "tables": 500,
+            "tablesWon": 79,
+            "placeScore": 0.5052
+          },
+          {
+            "agentId": "agent_cwnq5o5exmvbmv7x",
+            "displayName": "stg-10",
+            "ownerHandle": null,
+            "coins": 912,
+            "rebuysUsed": 0,
+            "netCoins": 912,
+            "tables": 500,
+            "tablesWon": 89,
+            "placeScore": 0.5032
+          }
+        ]
+      }
+    }
+  }
+}

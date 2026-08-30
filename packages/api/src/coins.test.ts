@@ -174,3 +174,149 @@ describe('edge cases', () => {
     expect(PLAYGROUND_ENTRY_COINS).toBe(10);
   });
 });
+
+/**
+ * Sub-spec 22 (T98/T99) — ties.
+ *
+ * `placementsFrom` lets equal hand values share a place. Settlement used to pay
+ * those seats by RANK anyway and separate them with `agentId < agentId`, so two
+ * seats reported at the same place got different money. On production that fired
+ * on 10.2% of tables and went the same way **142 times out of 142** — a permanent
+ * advantage keyed to a registration string. These pin the fix.
+ */
+describe('computeCoinSettlement — tied seats (D150–D152)', () => {
+  /** Settle an explicit place map (ties allowed). */
+  const settlePlaces = (
+    places: Record<string, number>,
+    seatOrder?: readonly string[],
+  ): Record<string, SeatSettlement> =>
+    computeCoinSettlement({ places, entryCoins: ENTRY, placeStep: STEP, seatOrder });
+
+  it('pays seats that share a place identically', () => {
+    // Two seats tie for 2nd at a six-seat table: they split ranks 2 and 3.
+    const s = settlePlaces({ a: 1, b: 2, c: 2, d: 4, e: 5, f: 6 });
+    expect(s.b!.net).toBe(s.c!.net);
+    expect(s.b!.net).toBe((6 + 2) / 2); // mean of rank 2 and rank 3
+  });
+
+  it('splits a three-way tie across the three ranks it spans', () => {
+    const s = settlePlaces({ a: 1, b: 2, c: 2, d: 2, e: 5, f: 6 });
+    expect(s.b!.net).toBe(s.c!.net);
+    expect(s.c!.net).toBe(s.d!.net);
+    expect(s.b!.net).toBe((6 + 2 + -2) / 3); // ranks 2, 3, 4
+  });
+
+  it('is unchanged by the agent ids — the bias that was measured', () => {
+    // Same table, same finishing order, different names. Under the old rule the
+    // ids decided who took the better half of every tie; now they decide nothing.
+    const shape = [1, 2, 2, 4, 4, 6];
+    const namesA = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'];
+    const namesB = ['z9', 'y8', 'x7', 'w6', 'v5', 'u4'];
+    const byIndexA = settlePlaces(Object.fromEntries(namesA.map((id, i) => [id, shape[i]!])), namesA);
+    const byIndexB = settlePlaces(Object.fromEntries(namesB.map((id, i) => [id, shape[i]!])), namesB);
+    expect(namesA.map((id) => byIndexA[id]!.net)).toEqual(namesB.map((id) => byIndexB[id]!.net));
+  });
+
+  it('does not care what order the seats are handed to it', () => {
+    const places: Record<string, number> = { a: 1, b: 2, c: 2, d: 4, e: 5, f: 6 };
+    const forwards = settlePlaces(places);
+    // Built by walking the entries back to front by index rather than with the
+    // obvious array method, whose name is one of the vendored card terms the CI
+    // trademark lint guards outside packages/engine.
+    const entries = Object.entries(places);
+    const flipped: Record<string, number> = {};
+    for (let i = entries.length - 1; i >= 0; i--) flipped[entries[i]![0]] = entries[i]![1];
+    const backwards = settlePlaces(flipped);
+    for (const id of Object.keys(places)) expect(backwards[id]!.net).toBe(forwards[id]!.net);
+  });
+
+  /**
+   * Exhaustive rather than sampled: every way a field of 3–6 can tie is a small
+   * enough space to enumerate, and the properties must hold on all of them.
+   */
+  it('keeps the pool exact and the table zero-sum on every tie arrangement, 3–6 seats', () => {
+    let checked = 0;
+    for (let n = 3; n <= 6; n++) {
+      // Every "shared place" pattern: walk the seats in finishing order, and at
+      // each step either share the previous place or start a new one.
+      for (let mask = 0; mask < 1 << (n - 1); mask++) {
+        const places: number[] = [1];
+        for (let i = 1; i < n; i++) {
+          places.push((mask >> (i - 1)) & 1 ? places[i - 1]! : i + 1);
+        }
+        const ids = Array.from({ length: n }, (_, i) => `s${i}`);
+        const s = settlePlaces(Object.fromEntries(ids.map((id, i) => [id, places[i]!])), ids);
+        const credits = ids.map((id) => s[id]!.credit);
+        const nets = ids.map((id) => s[id]!.net);
+
+        expect(credits.reduce((a, b) => a + b, 0)).toBe(ENTRY * n); // pool exact
+        expect(nets.reduce((a, b) => a + b, 0)).toBe(0);            // zero-sum
+        for (const c of credits) expect(c).toBeGreaterThanOrEqual(0); // never below the buy-in
+        for (const net of nets) expect(net).toBeGreaterThanOrEqual(-ENTRY);
+        for (const c of credits) expect(Number.isInteger(c)).toBe(true);
+
+        // Seats sharing a place are paid the same, by construction.
+        for (let i = 0; i < n; i++) {
+          for (let j = i + 1; j < n; j++) {
+            if (places[i] === places[j]) expect(nets[i]).toBe(nets[j]);
+          }
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBe(4 + 8 + 16 + 32);
+  });
+});
+
+/**
+ * Sub-spec 22 (T108/D167) — the sizes production stops dealing.
+ *
+ * Table size is bimodal under load: over the last 1,000 settled seats of the
+ * 4,004-table run, 944 were six-seat and 56 three-seat, with **no four- or
+ * five-seat tables at all**. The lobby rule is right (fill to six, or deal on the
+ * countdown at the minimum) and a thin field still produces the middle sizes — but
+ * a busy one does not, so production traffic cannot be trusted to exercise them.
+ * That coverage has to live here instead.
+ */
+describe('every table size the battleground can deal (D167)', () => {
+  const config = loadConfig({ env: {} });
+
+  it('brackets the sizes it advertises', () => {
+    expect(config.tableMinSize).toBeGreaterThanOrEqual(2);
+    expect(config.tableMaxSize).toBeGreaterThanOrEqual(config.tableMinSize);
+    // The step is derived from the MAXIMUM seat count, so a settlement at any
+    // smaller table is a prefix of the same curve rather than a separate rule.
+    expect(coinPlaceStepFor(config.playgroundEntryCoins, config.tableMaxSize)).toBeGreaterThan(0);
+  });
+
+  it('settles correctly at every size in that range, tied and untied', () => {
+    const entry = config.playgroundEntryCoins;
+    const step = coinPlaceStepFor(entry, config.tableMaxSize);
+    for (let n = config.tableMinSize; n <= config.tableMaxSize; n++) {
+      const ids = Array.from({ length: n }, (_, i) => `s${i}`);
+
+      const clean = computeCoinSettlement({
+        places: Object.fromEntries(ids.map((id, i) => [id, i + 1])),
+        entryCoins: entry,
+        placeStep: step,
+        seatOrder: ids,
+      });
+      const cleanNets = ids.map((id) => clean[id]!.net);
+      expect(cleanNets.reduce((a, b) => a + b, 0)).toBe(0);
+      expect(Math.min(...cleanNets)).toBeGreaterThanOrEqual(-entry);
+      // Strictly descending: without a tie, every place is worth more than the next.
+      for (let i = 1; i < n; i++) expect(cleanNets[i]!).toBeLessThan(cleanNets[i - 1]!);
+
+      // ...and with the whole field tied, which is the extreme of D150.
+      const allTied = computeCoinSettlement({
+        places: Object.fromEntries(ids.map((id) => [id, 1])),
+        entryCoins: entry,
+        placeStep: step,
+        seatOrder: ids,
+      });
+      const tiedNets = ids.map((id) => allTied[id]!.net);
+      expect(tiedNets.reduce((a, b) => a + b, 0)).toBe(0);
+      expect(new Set(tiedNets).size).toBe(1); // level finish, level money
+    }
+  });
+});

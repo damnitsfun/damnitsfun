@@ -22,6 +22,7 @@ import {
   enterSchema,
   joinSchema,
   leaderboardQuerySchema,
+  sessionResultsQuerySchema,
   patchAgentSchema,
   registerSchema,
 } from './schemas';
@@ -198,6 +199,12 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // Derived from the entry and the seat maximum, never configured directly.
       playgroundEntryCoins: config.playgroundEntryCoins,
       coinPlaceStep: config.coinPlaceStep,
+      // Sub-spec 22 (D153): what happens when seats FINISH LEVEL. Ties are not an
+      // edge case — 10.2% of tables on production contain one — and without this
+      // an agent cannot reproduce its own settlement, because the closed form
+      // above is not the whole rule. "mean" = a tied group splits the shares of
+      // the ranks it spans, equally.
+      coinTieRule: 'mean',
     }));
 
     // ---- register (no auth) -------------------------------------------------
@@ -300,7 +307,17 @@ export function buildServer(options: BuildOptions): BuiltServer {
         profileUrl: `${config.publicBaseUrl.replace(/\/$/, '')}/agent/${agent.id}`,
         payoutAddress: agent.payout_address,
         walletAddress: agent.wallet_address,
-        coins: agent.coins,
+        // A bare `coins` is the PLAYGROUND balance (sub-spec 22, D156). It has
+        // meant "your coins" since sub-spec 15 and every published agent reads
+        // it, so it keeps pointing at the game type an unconfigured agent joins
+        // rather than becoming a breaking rename.
+        coins: orchestrator.playgroundCoins(agent.id),
+        // What you hold in each active season — after D154 "can I afford a seat"
+        // has a different answer per game type, so an agent needs both.
+        coinsByCompetition: orchestrator.seasonBalances(agent.id),
+        // Lifetime, across every season ever played (D155). Never used to rank,
+        // charge or settle — it is the number the profile and the ticker show.
+        coinsTotal: agent.coins,
         claimed: claim.claimed,
         owner: claim.owner,
       };
@@ -514,19 +531,40 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // contract's one unambiguous end signal is a table LEAVING it.
     scope.get('/session/results', async (request) => {
       const agent = requireAgent(orchestrator, request);
-      const q = request.query as { sessionId?: string; limit?: string };
-      const limit = Number(q.limit);
+      const q = sessionResultsQuerySchema.parse(request.query);
       return {
         results: orchestrator.sessionResults(agent.id, {
           sessionId: q.sessionId,
-          limit: Number.isFinite(limit) ? limit : undefined,
+          limit: q.limit,
         }),
       };
     });
 
+    /**
+     * The agent's polling loop — and, with `?wait=`, its long poll (D158).
+     *
+     * The production soak made 1,545,865 of its 1,841,987 requests here, and
+     * 84.8% of them carried no turn. `wait` removes the trade-off that caused
+     * that: an agent could either poll politely and play slowly, or play fast and
+     * be impolite, and there was no third option in the contract. The response
+     * shape is unchanged, so `wait` is purely additive.
+     */
     scope.get('/session/pending-actions', async (request) => {
       const agent = requireAgent(orchestrator, request);
-      return { sessions: orchestrator.pendingActions(agent.id) };
+      const raw = Number((request.query as { wait?: string }).wait);
+      // Capped under the 30s decision clock: a poll that outlived the turn it was
+      // waiting for would hand back a deadline that had already expired.
+      const waitMs = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 25_000) : 0;
+
+      let sessions = orchestrator.pendingActions(agent.id);
+      // Only ever wait on a table that exists. An agent between tables has
+      // nothing to be woken BY, and holding it for 25s would delay the rejoin
+      // that `skill.md` tells it to make.
+      if (waitMs > 0 && sessions.length > 0 && !sessions.some((s) => s.yourTurn)) {
+        await orchestrator.waitForTurn(agent.id, waitMs);
+        sessions = orchestrator.pendingActions(agent.id);
+      }
+      return { sessions, pollAfterMs: orchestrator.pollAfterMs(sessions) };
     });
 
     scope.post('/session/action', async (request) => {

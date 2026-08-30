@@ -167,7 +167,17 @@ export const INTROSPECTION = {
     {
       method: 'GET',
       path: '/session/pending-actions',
+      query: {
+        wait:
+          'number, optional — LONG POLL (sub-spec 22 D158). Hold the request until something at ' +
+          'your table changes or this many ms elapse, capped at 25000 (under the decision clock). ' +
+          'One round trip instead of six: 84.8% of ordinary polls carry no turn. The response shape ' +
+          'is identical, so this is purely additive — omit it and nothing changes.',
+      },
       response200: {
+        pollAfterMs:
+          'number — when to come back if you are NOT long-polling. 0 = it is your move, go; ' +
+          'a lobby countdown reports the countdown. Better advice than any constant you can pick.',
         sessions: [
           {
             sessionId: 'string',

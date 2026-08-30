@@ -87,22 +87,70 @@ describe('replaying every real settled table', () => {
     // one is not average play — it is finishing below half the table every single
     // time — and it should, correctly, bleed. Alternating between the two is what
     // average actually looks like.
+    // Tables where the sampled seat SHARES its place are left out, and the reason
+    // is the whole of sub-spec 22 § A. A tied seat is not "the centre seat" — it
+    // is one of several seats holding the centre between them, and under D150 they
+    // split that span rather than one of them taking the better half. This walk
+    // used to include them and balance to zero only because the old rule handed
+    // the sampled seat the winning side of every tie it was in, which is exactly
+    // the bias that was removed.
     let balance = START;
     let flip = false;
+    let skippedTied = 0;
     for (const t of TABLES) {
       const n = settle(t);
+      const shared = (i: number): boolean =>
+        t.places.filter((p) => p === t.places[i]).length > 1;
       if (n.length % 2 === 1) {
-        balance += n[(n.length - 1) / 2]!; // exact centre: always 0
+        const i = (n.length - 1) / 2;
+        if (shared(i)) { skippedTied++; continue; }
+        balance += n[i]!; // exact centre, untied: always 0
       } else {
-        balance += n[n.length / 2 - (flip ? 1 : 0)]!;
+        const i = n.length / 2 - (flip ? 1 : 0);
+        if (shared(i)) { skippedTied++; continue; }
+        balance += n[i]!;
         flip = !flip;
       }
     }
+    // A tie at the sampled seat is rare — a few dozen tables in 3,186 — so the
+    // walk still covers essentially the whole corpus.
+    expect(skippedTied).toBeGreaterThan(0);
+    expect(skippedTied).toBeLessThan(TABLES.length * 0.05);
     // Within half a step of where it started. Not exactly equal: the corpus holds
-    // 1,091 even-sized tables — an odd count — so one lower-middle seat is left
+    // an odd number of even-sized tables, so one lower-middle seat is left
     // unpaired by the alternation. Average play is free to within that rounding,
     // which is the strongest true statement available here.
     expect(Math.abs(balance - START)).toBeLessThanOrEqual(STEP / 2);
+  });
+
+  /**
+   * Sub-spec 22 (T98) — the defect this corpus could not see before.
+   *
+   * The old rule paid tied seats by rank and separated them with `agentId <
+   * agentId`. Measured on production: 142 of 142 tied groups paid unequally, and
+   * every single one favoured the lexicographically smaller id. Nothing about a
+   * finishing place can justify that, so the assertion is the flat one.
+   */
+  it('pays seats that share a place exactly the same, across the whole corpus', () => {
+    const offenders: Array<{ table: Table; place: number; nets: number[] }> = [];
+    let tiedGroups = 0;
+    for (const t of TABLES) {
+      const nets = settle(t);
+      const byPlace = new Map<number, number[]>();
+      t.places.forEach((place, i) => {
+        const g = byPlace.get(place);
+        if (g) g.push(nets[i]!);
+        else byPlace.set(place, [nets[i]!]);
+      });
+      for (const [place, group] of byPlace) {
+        if (group.length < 2) continue;
+        tiedGroups++;
+        if (new Set(group).size !== 1) offenders.push({ table: t, place, nets: group });
+      }
+    }
+    // The corpus has to actually contain ties or this proves nothing.
+    expect(tiedGroups).toBeGreaterThan(50);
+    expect(offenders).toEqual([]);
   });
 
   it('keeps the field bunched instead of concentrating it in one agent', () => {

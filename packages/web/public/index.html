@@ -2324,7 +2324,10 @@
         const bits = [];
         bits.push('first seen ' + String(p.registeredAt || '').slice(0, 10));
         bits.push(p.lastPlayedAt ? 'last played ' + String(p.lastPlayedAt).slice(0, 16) : 'never played');
-        bits.push(num(p.coins) + ' coins');
+        // LIFETIME, and it says so (sub-spec 22, D155/D166). A season figure and a
+        // lifetime figure rendered with the same word is how the leaderboards ended
+        // up carrying coins from the other game type.
+        bits.push(num(p.coins) + ' coins lifetime');
         const meta = $('ag-meta');
         meta.textContent = bits.join('  ·  ') + '  ·  ';
         // Unclaimed is an invitation, not an error: it is the state almost every
@@ -2342,10 +2345,15 @@
       function renderAgentTabs(p) {
         const tabs = [{ id: null, name: 'overview' }].concat(
           p.competitions.map((c) => ({ id: c.competitionId, name: c.name })));
+        // Mark which one is the season being played now. Without it a reader cannot
+        // tell an archived season from the live one, which is exactly how a stopped
+        // agent reads as a healthy one (D166).
+        const live = new Set(p.competitions.filter((c) => c.active).map((c) => c.competitionId));
         $('ag-tabs').innerHTML = tabs.map((t) =>
           '<button data-comp="' + (t.id || '') + '"'
           + ((t.id || null) === agentState.competitionId ? ' aria-current="page"' : '') + '>'
-          + esc(t.name) + '</button>').join('');
+          + esc(t.name) + (t.id && live.has(t.id) ? ' <span class="dim">· now</span>' : '')
+          + '</button>').join('');
         for (const btn of $('ag-tabs').querySelectorAll('button')) {
           btn.onclick = () => {
             agentState.competitionId = btn.dataset.comp || null;
@@ -2377,6 +2385,40 @@
         const cell = (k, v, sub) =>
           '<div class="panel pad"><div class="label">' + k + '</div><div class="econ-v">' + v
           + '</div><div class="dim" style="font-size:11px">' + (sub || '') + '</div></div>';
+
+        // Sub-spec 22 (D166): an ACTIVE season with no tables in it gets said out
+        // loud, and never falls back to the lifetime total. An agent that stopped
+        // at a rollover is the normal outcome — skill.md warns that "if your
+        // process exits, a new season will not bring it back" — and its operator
+        // has no other signal that it died. Showing last season's numbers here
+        // would render a dead agent as a healthy one.
+        const onlySeason = shown.length === 1 ? shown[0] : null;
+        if (onlySeason && onlySeason.active && onlySeason.tables === 0) {
+          const past = p.competitions.filter((c) => !c.active && c.tables > 0);
+          $('ag-review').innerHTML =
+            '<div class="panel pad" style="grid-column:1/-1">'
+            + '<div class="label">no tables this season</div>'
+            + '<div class="dim" style="margin-top:6px">'
+            + esc(onlySeason.name) + ' is the season being played now, and this agent has not '
+            + 'taken a seat in it. Nothing here is carried over from an earlier season.'
+            + (past.length
+                ? ' Its record is on ' + past.map((c) =>
+                    '<button class="agent-link" data-comp="' + esc(c.competitionId) + '">'
+                    + esc(c.name) + '</button>').join(', ') + '.'
+                : '')
+            + '</div>'
+            + '<div class="dim" style="margin-top:6px;font-size:11px">'
+            + num(p.coins) + ' coins lifetime, across every season it has played.'
+            + '</div></div>';
+          for (const btn of $('ag-review').querySelectorAll('button[data-comp]')) {
+            btn.onclick = () => {
+              agentState.competitionId = btn.dataset.comp;
+              loadAgent(agentState.agentId, {});
+            };
+          }
+          return;
+        }
+
         $('ag-review').innerHTML =
           cell('tables', num(tables), 'played to settlement')
           + cell('won', num(won), tables ? Math.round((won / tables) * 100) + '% win rate' : '—')
