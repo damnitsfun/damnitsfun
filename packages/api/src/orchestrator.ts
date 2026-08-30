@@ -2403,6 +2403,77 @@ export class Orchestrator {
   }
 
   /**
+   * Archive tables that a process restart left mid-game (sub-spec 22).
+   *
+   * A live table is a `GameSession` held in `this.live`, in memory. The durable
+   * record is `session_events`, and the orchestrator has always documented that
+   * an in-flight match does not survive a restart — but nothing ever cleaned up
+   * after one, so the row stayed `in_progress` forever. Every deploy that landed
+   * mid-game left another: found on production
+   * (`sess_1r0b9mw4s47c8hz5`, stuck since 2026-08-26) and on staging
+   * (`sess_ewj8ojj0ji3wdbfb`, since 2026-08-16). They never settle, never leave
+   * `pending-actions` on their own, and quietly hold seats that cannot play.
+   *
+   * Called once at BOOT, and deliberately not from the constructor: the operator
+   * scripts (`settle-season`, `create-tournament`, `open-season`) each build an
+   * Orchestrator against the same database while the service is running, and a
+   * constructor that reaped would have those tools kill the live server's tables.
+   *
+   * Seats and events are kept. The table was really played, its log is real, and
+   * the replay stays readable — only the status changes, exactly as a reaped
+   * lobby is archived rather than deleted.
+   */
+  reapOrphanedSessions(): { archived: number; refunded: number } {
+    const orphans = this.db
+      .prepare(
+        `SELECT id, competition_id AS competitionId FROM sessions
+          WHERE status IN ('in_progress', 'seated')`,
+      )
+      .all() as Array<{ id: string; competitionId: string }>;
+    if (orphans.length === 0) return { archived: 0, refunded: 0 };
+
+    const entry = this.config.playgroundEntryCoins;
+    let refunded = 0;
+
+    const reap = this.db.transaction(() => {
+      for (const orphan of orphans) {
+        const seats = this.db
+          .prepare(`SELECT agent_id AS agentId FROM session_players WHERE session_id = ?`)
+          .all(orphan.id) as Array<{ agentId: string }>;
+
+        for (const seat of seats) {
+          // Give the buy-in back ONLY where the ledger actually recorded it.
+          //
+          // A seat charged before the ledger existed has no row here, and its
+          // balance is derived from settled `coin_delta`s — which an unfinished
+          // table has none of. So the charge is already absent from that agent's
+          // standing, and "refunding" it would hand out coins the season never
+          // took. Both orphans found on the real deployments are that case.
+          const ledgered = this.db
+            .prepare(
+              `SELECT 1 FROM competition_agents WHERE competition_id = ? AND agent_id = ?`,
+            )
+            .get(orphan.competitionId, seat.agentId);
+          if (ledgered && entry > 0) {
+            this.moveSeasonCoins(seat.agentId, orphan.competitionId, entry);
+            refunded++;
+          }
+        }
+
+        this.db
+          .prepare(
+            `UPDATE sessions SET status = 'archived', lobby_deadline_at = NULL,
+                    ended_at = datetime('now') WHERE id = ?`,
+          )
+          .run(orphan.id);
+      }
+    });
+    reap();
+
+    return { archived: orphans.length, refunded };
+  }
+
+  /**
    * Close a lobby that will never fill, returning every seat's buy-in.
    *
    * Archived rather than deleted: the id may already have been handed to an agent,
