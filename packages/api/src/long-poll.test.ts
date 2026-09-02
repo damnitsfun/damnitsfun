@@ -36,6 +36,10 @@ function boot(): H {
       DECISION_TIMEOUT_MS: '600000',
       GAME_TIME_LIMIT_MS: '3600000',
       GAME_LIMIT_MIN_ROUNDS: '0',
+      // A Rainbow Storm returns the turn to the agent that played, so it is one
+      // more way for no waiter to be woken. Rare, but this suite is about the
+      // wake mechanism and has no business depending on it.
+      RAINBOW_STORM_CHANCE: '0',
     },
   });
   const db = openDatabase(':memory:');
@@ -75,18 +79,37 @@ describe('waitForTurn (D158)', () => {
     // Park every seat that is not on move. Exactly one of them gets the turn, and
     // only that one is woken — waking the whole table would wake two agents per
     // move with nothing to do, which is the polling cost this exists to remove.
-    const parked = Promise.race(waiting.map((id) => h.o.waitForTurn(id, 5000)));
+    //
+    // The cap is well under this test's own timeout on purpose: if nothing wakes,
+    // the assertion below should say so with a number, rather than the suite
+    // dying on an opaque Jest timeout.
+    const parked = Promise.race(waiting.map((id) => h.o.waitForTurn(id, 3000)));
 
-    // The other agent moves ~50ms later. Before the notification existed, the
+    // The agent on move plays ~50ms later. Before the notification existed, the
     // waiting agent could only find out by asking again.
+    //
+    // It plays until the turn actually LEAVES this seat, which is not the same as
+    // playing once: `drawCard` keeps the turn, and a deal where the opening seat
+    // holds nothing playable is ordinary. Acting once made this test depend on
+    // the shuffle, and it failed on CI exactly when the deal went that way.
+    let actError: unknown = null;
     setTimeout(() => {
-      const mine = h.o.pendingActions(onMove)[0]!;
-      h.o.applyAction(onMove, sessionId, chooseMove(mine.legalMoves) as never, 'test', 'k1');
+      try {
+        for (let step = 0; step < 12; step++) {
+          const mine = h.o.pendingActions(onMove)[0];
+          if (!mine || !mine.yourTurn) break;
+          h.o.applyAction(onMove, sessionId, chooseMove(mine.legalMoves) as never, 'test', `k${step}`);
+        }
+      } catch (error) {
+        // Surface it through the assertion instead of losing it in a timer.
+        actError = error;
+      }
     }, 50);
 
     await parked;
+    if (actError) throw actError;
     const elapsed = Date.now() - started;
-    expect(elapsed).toBeLessThan(1500); // woken by the move, not by the 5s cap
+    expect(elapsed).toBeLessThan(2500); // woken by the move, not by the 3s cap
 
     // The wake means "the table moved", not "it is your turn" — and it has to.
     // At a two-seat table a PASS or GRAB2 hands the turn straight back to the
@@ -98,7 +121,7 @@ describe('waitForTurn (D158)', () => {
     expect(events.n).toBeGreaterThan(0);
     expect(waiting.some((id) => h.o.pendingActions(id)[0]!.yourTurn)).toBe(true);
     await h.app.close();
-  });
+  }, 20_000);
 
   it('returns on time when no turn comes', async () => {
     const h = boot();
@@ -130,7 +153,7 @@ describe('waitForTurn (D158)', () => {
     expect(Date.now() - started).toBeLessThan(3000);
     expect(h.o.pendingActions(seats[0]!)).toEqual([]); // gone from the list = it ended
     await h.app.close();
-  });
+  }, 20_000);
 
   it('does not park an agent that is between tables', async () => {
     const h = boot();
