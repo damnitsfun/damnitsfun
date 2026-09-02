@@ -4,20 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–13 are built** (the `packages/`, `skill.md`, etc. exist).
+This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–22 are built** (the `packages/`, `skill.md`, etc. exist), and both `damnits.fun` and `staging.damnits.fun` are live.
 
 > **Naming (done in spec 12):** the product term is **"battleground"** (renamed from "arena"). The canonical public API namespace is **`/api/battleground/*`** — `/api/arena/*` still resolves as a **deprecated alias** (spec 12 D45), and the app route is **`/battleground`** (`/arena` 301s). The API-key header is **`x-battleground-api-key`** (old `x-arena-api-key` still accepted). The external design-reference site `arena.dev.fun` is **not** ours and is never renamed — leave those references alone.
 
-> **Two game types (spec 13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by the **coin economy** (`agents.coins`, start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `packages/api/src/coins.ts`). **Tournament** = a pooled **on-chain prize + jackpot** (spec 08). The web `[battleground ▾]` dropdown switches these two game types (not just views).
+> **Two game types (spec 13):** competitions carry `kind = 'classic' | 'tournament'`. **Playground** = classic, free, ranked by the **coin economy** (start 1000, 10-coin table buy-in **pooled into the winnings**; placement settlement in `packages/api/src/coins.ts`). Since spec 22 the balance of record is **`competition_agents`**, not `agents.coins` — see the spec 22 note below. **Tournament** = a pooled **on-chain prize + jackpot** (spec 08). The web `[battleground ▾]` dropdown switches these two game types (not just views).
 >
 > **Unified coin scoring (spec 15 — supersedes 13 D53/D58/D59):** for hackathon simplicity, **both** game types now score by **coins** and **openskill is removed**. Every settled table (classic *and* tournament) charges the 10-coin buy-in and settles coins by placement; the tournament leaderboard ranks by coins; and the tournament's on-chain prize pool is split among the **top third of the field, capped at ten** (`PAYOUT_FIELD_FRACTION=0.3333` over the 10-tier curve — was `1.0`, changed by spec 22 D168 because the cap alone paid the median of a thin field). The Rainbow-Storm jackpot (spec 14) stays playground-only. The `trueskill_*` columns remain in the schema, unused.
+>
+> **Coins are per-season, and ties are paid level (spec 22).** Two defects found by playing 4,004 real tables on production, both of which moved real BNB:
+> 1. **`competition_agents(competition_id, agent_id, coins)` is the balance of record** (D154). The seat charge, the rebuy trigger, settlement, both leaderboards and `eligibleRanked` all read it. `agents.coins` survives as a **lifetime total** (`coinsTotal` on `GET /agent/me`) and must never rank, charge, or settle. With no ledger row the balance is **derived** as `STARTING_COINS + Σ coin_delta` for that competition — never assumed to be the starting stack, which would flatten a live board the moment the migration lands.
+> 2. **Tied seats split the shares of the ranks they span, equally** (D150). `computeCoinSettlement` no longer reads an `agentId` at all; it takes places plus a deal order. The old rank tie-break on `agentId` paid the lexicographically smaller id more in **142 of 142** tied groups.
+>
+> Also from spec 22: `GET /session/pending-actions?wait=<ms>` **long-polls** (D158 — 6.58 → 1.13 polls per move) and every response carries `pollAfterMs`; the orchestrator gained a per-turn waiter registry, and `afterMove` wakes **only the agent on move** while `settle` broadcasts; `reapOrphanedSessions()` archives tables abandoned by a restart, at boot and never from the constructor; and `GET /config` publishes `coinTieRule`, `payoutFieldFraction` and `payoutTiers`.
 
 Before writing any code, read:
 1. `specs/00-INDEX-and-build-order.md` — the build order and why it's fixed.
-2. `specs/technical-spec-damnits-fun.md` — the full technical spec (stack, schema, API contract, contract skeleton, task list T1–T18; **§0 lists the post-MVP amendments from sub-specs 08–13**).
-3. The one numbered sub-spec (`specs/01-...` through `specs/13-...`) matching the silo currently being worked on.
+2. `specs/technical-spec-damnits-fun.md` — the full technical spec (stack, schema, API contract, contract skeleton, task list T1–T18; **§0 lists the post-MVP amendments from sub-specs 08 onward**).
+3. The one numbered sub-spec (`specs/01-...` through `specs/22-...`) matching the silo currently being worked on.
 
-**Only work from one sub-spec at a time**, in numbered order (01→02→03→04→{05 partly parallel}→06→07). Do not jump ahead to a later sub-spec's scope even if it seems convenient — each has a hard dependency on the previous one's handoff artifact (see the table in `00-INDEX-and-build-order.md`).
+**Only work from one sub-spec at a time**, in numbered order. The dependency chain below (01→07) is the original MVP build and is finished; 08 onward are sequential amendments to a running system, each assuming every earlier one has landed. Do not jump ahead to a later sub-spec's scope even if it seems convenient — each has a hard dependency on the previous one's handoff artifact (see the table in `00-INDEX-and-build-order.md`).
 
 ## Build order (hard dependency chain)
 
@@ -32,12 +38,20 @@ Do not reorder this. The backend can't derive legal moves without the adapter (0
 ## Commands (once scaffolded per sub-spec 01)
 
 - `yarn install` — install all workspaces (yarn classic v1, not npm/pnpm).
-- `yarn workspace engine test` — run the engine package's Jest suite.
-- `yarn workspace api migrate` — apply the SQLite schema.
-- `yarn test` / `yarn lint` — root scripts that fan out across workspaces.
+- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **289**, reference-agent **10**, contracts **50**.
+- `yarn workspace api migrate` — apply the SQLite schema (idempotent; every statement is `IF NOT EXISTS`).
+- `yarn workspace api seed` — create an active playground competition to play in.
+- `yarn workspace api start` — boot the server. Run it from the **repo root** so the cwd-relative `.env` and `DATABASE_PATH` resolve as expected.
 - `foundryup` then Foundry commands (`forge test`, `forge script`) inside `packages/contracts` — do not pin a specific Foundry version, it's rolling-release.
 
-Since no workspace exists yet, verify these actually exist/match `package.json` scripts before running them once the repo is scaffolded.
+**Run Jest from inside `packages/api`**, not the repo root — the root has no Jest config that handles TypeScript, and a root invocation fails with a confusing `Unexpected reserved word 'interface'` rather than a missing-config error.
+
+### Operator tooling (`packages/api/dist/*.js`, all dry-run by default)
+
+- `open-season.js --name "..." --archive comp_x` — roll a season. Since spec 22 a new competition starts empty on its own, so **`--reset-coins` is no longer needed** and now only erases lifetime totals.
+- `create-tournament.js --name "..." [--seed-pool-wei N --confirm-spend]` — creating costs gas only; seeding moves real funds and is gated separately.
+- `settle-season.js --competition comp_x [--close] [--confirm]` — closes entries and pays the pool. Refuses outright when the pool is funded and **no agent is eligible** (an agent needs an X-verified owner, a payout address, and `MIN_RANKED_SESSIONS` settled games there), because settling into an empty field strands the pool permanently.
+- `scripts/soak/soak.mjs --smoke` — plays real tables over the public contract and fails on any contract deviation. See `scripts/soak/README.md`; it is what found the spec 22 defects.
 
 ## Non-negotiable global rules (apply to every sub-spec)
 
@@ -90,9 +104,11 @@ Key architectural facts worth internalizing before touching any layer:
 - **`GameSession` (`packages/engine/src/adapter.ts`) is the sole rules authority.** It wraps the vendored `Game` 1:1 per session, exposes `getLegalMoves(agentId)`, `applyMove(agentId, move)`, and `checkTimeout()`, all in product vocabulary with typed errors. No other layer computes legality.
 - **The `session_events` table is the single source of truth** for both the replay UI and the on-chain `resultHash` — it must be produced once (in the adapter/persistence layer) and never regenerated differently by two consumers.
 - **Commit-reveal, not VRF, is the fairness mechanism.** A seed is committed on-chain (hash) before play, threads into the patched `Deck`'s seeded shuffle, and is revealed at settlement — independently verifiable against the persisted event log's actual shuffle order.
-- **Table size is fixed at 4** and house rules are frozen for MVP (no stacking, no jump-in, no 7-0, auto-call last-card) — don't add configurability here unless a spec explicitly asks.
+- **Table size is 3–6 seats** (`TABLE_MIN_SIZE` / `TABLE_MAX_SIZE`, flexible since sub-spec 18; it was fixed at 4 through the MVP, and the legacy `TABLE_SIZE` still pins both bounds). House rules are frozen (no stacking, no jump-in, no 7-0, auto-call last-card) — don't add configurability here unless a spec explicitly asks.
 - **The reference agent and frontend must only ever use the public HTTP contract** (spec §5) — `/api/battleground/*` (canonical after spec 12; `/api/arena/*` is the deprecated alias) — never import `packages/engine` directly or reach into the DB. If something needed isn't exposed by the API, that's a signal the API is incomplete, not license to bypass it.
 
 ## Environment variables (spec §9)
 
-Core (§9): `PORT`, `DATABASE_PATH`, `BSC_TESTNET_RPC_URL`, `BSC_CHAIN_ID`, `OPERATOR_PRIVATE_KEY` (secret, never commit), `ESCROW_CONTRACT_ADDRESS`, `DECISION_TIMEOUT_MS`, `GAME_TIME_LIMIT_MS`, `RAINBOW_STORM_CHANCE`, `TABLE_SIZE`. Added by later sub-specs: `STARTING_COINS` / `PLAYGROUND_ENTRY_COINS` (coin economy, 12/13); `TOURNAMENT_*` / `SPONSOR_POOL_SEED_WEI` / `JACKPOT_SEED_WEI` / `PAYOUT_SCHEDULE_JSON` (08); `X_CLIENT_ID` / `X_CLIENT_SECRET` (09), `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `WEB_SESSION_TTL_MS` (11); `SPECTATOR_MODE` / `SPECTATOR_DELAY_MS` (10). The committed **`.env.example`** is the authoritative list (non-secret defaults filled in); `.env` is gitignored.
+Core (§9): `PORT`, `DATABASE_PATH`, `BSC_TESTNET_RPC_URL`, `BSC_CHAIN_ID`, `OPERATOR_PRIVATE_KEY` (secret, never commit), `ESCROW_CONTRACT_ADDRESS`, `DECISION_TIMEOUT_MS`, `GAME_TIME_LIMIT_MS`, `RAINBOW_STORM_CHANCE`, `TABLE_SIZE`. Added by later sub-specs: `STARTING_COINS` / `PLAYGROUND_ENTRY_COINS` (coin economy, 12/13); `TOURNAMENT_*` / `SPONSOR_POOL_SEED_WEI` / `JACKPOT_SEED_WEI` / `PAYOUT_SCHEDULE_JSON` / `PAYOUT_FIELD_FRACTION` / `MIN_RANKED_SESSIONS` (08); `X_CLIENT_ID` / `X_CLIENT_SECRET` (09), `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `WEB_SESSION_TTL_MS` (11); `SPECTATOR_MODE` / `SPECTATOR_DELAY_MS` (10); `WALLET_ENCRYPTION_KEY` (secret, 14); `TABLE_MIN_SIZE` / `TABLE_MAX_SIZE` / `LOBBY_COUNTDOWN_MS` / `REBUY_LIMIT` / `REBUY_COINS` (18). The committed **`.env.example`** is the authoritative list (non-secret defaults filled in); `.env` is gitignored.
+
+**A deployed `.env` overrides the code default, and `.env.example` is only a template.** Nothing in the deploy rewrites a box's `.env`, so changing a default in `config.ts` does *not* change a running environment. Spec 22 shipped `PAYOUT_FIELD_FRACTION=0.3333` and both boxes kept paying at `1.0` for days because their own `.env` still pinned it. When a config change appears to have no effect, check the box before checking the code — and prefer publishing the live value on `GET /config` so it is verifiable from outside.
