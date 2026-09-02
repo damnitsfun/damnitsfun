@@ -640,6 +640,17 @@ export async function start(): Promise<void> {
     hooks: createChainHooks(db, chain, log),
   });
 
+  // A restart abandons every in-flight table — they live in memory, not on disk.
+  // Clean up after the PREVIOUS process before accepting traffic, so an agent
+  // never polls a table that can no longer move (sub-spec 22).
+  const reaped = orchestrator.reapOrphanedSessions();
+  if (reaped.archived > 0) {
+    log(
+      `[boot] archived ${reaped.archived} table(s) abandoned by a previous restart` +
+        `${reaped.refunded > 0 ? `, refunding ${reaped.refunded} seat(s)` : ''}`,
+    );
+  }
+
   const { app } = buildServer({ db, config, orchestrator, logger: true });
 
   // Sweep decision deadlines even when nobody is polling, so a table with an
