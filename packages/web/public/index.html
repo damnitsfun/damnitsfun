@@ -1515,8 +1515,15 @@
         timer: null,
         // arena.dev.fun-style featured replay: always the last FINISHED game, advancing as
         // new ones settle. No live table is ever public — the feed is replay-only.
+        // Sub-spec 23: featured replay finish-then-switch — queue newer games while
+        // the current broadcast plays; hold 5 s on the final board before cutting.
         mode: 'delayed',
         airedId: null,
+        featuredAuto: false,
+        pendingFeaturedId: null,
+        handoffTimer: null,
+        handoffHold: false,
+        featureForceNext: false,
         // web account (sub-spec 11)
         session: null,
       };
@@ -1958,9 +1965,9 @@
         return res.json();
       }
 
-      // Poll the finished-games list: refresh the ticker and feature the newest one.
-      // There is no picker — arena.dev.fun-style, exactly one replay is on screen and it is
-      // always the most recently finished game (you cannot choose another).
+      // Poll the finished-games list and advance the featured replay when the current
+      // broadcast finishes (sub-spec 23). There is no picker — exactly one replay is
+      // on screen; a newer finished game waits until this one reaches its last event.
       async function loadSessions() {
         // Scoped to the selected season (sub-spec 21 D146): an archived season must
         // air ITS games, not the live one's. Unscoped, picking a finished season
@@ -1990,9 +1997,15 @@
         featureLatest();
       }
 
-      // Feature the newest FINISHED game, advancing as new ones settle. When none
-      // exist yet, show the empty note instead of the board.
+      // Feature the newest FINISHED game of the current kind/season. When a replay is
+      // still airing, queue the newcomer and hand off after it finishes (sub-spec 23).
       function featureLatest() {
+        const force = state.featureForceNext;
+        if (force) {
+          state.featureForceNext = false;
+          clearHandoffTimer();
+          state.pendingFeaturedId = null;
+        }
         // Feature the newest finished game OF THE CURRENT GAME TYPE (sub-spec 13):
         // playground airs classic games, tournament airs tournament games.
         const kind = state.gameType === 'tournament' ? 'tournament' : 'classic';
@@ -2002,6 +2015,7 @@
         const newest = list[0];
         const viewer = $('viewer'), empty = $('overview-empty');
         if (!newest) {
+          cancelFeaturedHandoff();
           viewer.hidden = true;
           empty.hidden = false;
           empty.textContent = kind === 'tournament'
@@ -2011,13 +2025,28 @@
         }
         viewer.hidden = false;
         empty.hidden = true;
-        if (newest.sessionId === state.airedId) return; // already featuring it
-        state.airedId = newest.sessionId;
-        openSession(newest.sessionId);
+        if (newest.sessionId === state.airedId && !state.pendingFeaturedId) return;
+
+        // Game-type / season switch, or first load — cut immediately.
+        if (force || state.airedId == null || !state.sessionId) {
+          cancelFeaturedHandoff();
+          state.pendingFeaturedId = null;
+          state.airedId = newest.sessionId;
+          openSession(newest.sessionId, { featured: true });
+          return;
+        }
+        if (newest.sessionId === state.airedId) return;
+
+        state.pendingFeaturedId = newest.sessionId;
+        if (!replayComplete()) return;
+        if (!state.handoffHold) startFeaturedHandoffHold();
       }
 
-      async function openSession(sessionId) {
+      async function openSession(sessionId, opts) {
+        opts = opts || {};
+        cancelFeaturedHandoff();
         stopTimers();
+        state.featuredAuto = opts.featured === true;
         state.sessionId = sessionId;
         state.events = [];
         state.cursor = 0;
@@ -2057,6 +2086,7 @@
         $('scrub').value = String(state.cursor);
         $('scrub-label').textContent = state.cursor + ' / ' + state.events.length;
         renderBoard();
+        if (!state.playing) maybeStartFeaturedHandoffHold();
       }
 
       function stopTimers() {
@@ -2066,6 +2096,56 @@
       }
 
       // ---- replay transport ------------------------------------------------
+      // Sub-spec 23 (D177): wall-clock pause on the final board before the next
+      // featured game replaces this one. Hero embed keeps its own loop timing.
+      const FEATURED_HANDOFF_MS = 5000;
+
+      function replayComplete() {
+        return state.events.length > 0 && state.cursor >= state.events.length;
+      }
+
+      function clearHandoffTimer() {
+        if (state.handoffTimer) { clearTimeout(state.handoffTimer); state.handoffTimer = null; }
+        state.handoffHold = false;
+      }
+
+      function cancelFeaturedHandoff() {
+        clearHandoffTimer();
+        state.pendingFeaturedId = null;
+      }
+
+      function maybeStartFeaturedHandoffHold() {
+        if (HERO_MODE || state.mode === 'archive') return;
+        if (!state.featuredAuto || state.view !== 'overview') return;
+        if (!replayComplete()) return;
+        if (!state.pendingFeaturedId || state.pendingFeaturedId === state.airedId) return;
+        if (state.handoffHold) return;
+        startFeaturedHandoffHold();
+      }
+
+      function startFeaturedHandoffHold() {
+        if (HERO_MODE || state.mode === 'archive') return;
+        if (!state.featuredAuto || state.view !== 'overview') return;
+        if (!state.pendingFeaturedId || state.pendingFeaturedId === state.airedId) {
+          state.pendingFeaturedId = null;
+          return;
+        }
+        state.handoffHold = true;
+        stopTimers();
+        $('live-note').hidden = false;
+        $('live-note').textContent = 'table finished · next game in 5s';
+        clearHandoffTimer();
+        state.handoffTimer = setTimeout(() => {
+          state.handoffTimer = null;
+          state.handoffHold = false;
+          const next = state.pendingFeaturedId;
+          state.pendingFeaturedId = null;
+          if (!next || next === state.airedId || state.view !== 'overview' || !state.featuredAuto) return;
+          state.airedId = next;
+          openSession(next, { featured: true });
+        }, FEATURED_HANDOFF_MS);
+      }
+
       // One definition of a tick, shared by play and by a mid-playback speed change.
       // These used to be two near-copies, and the copy behind `speed.onchange` was
       // missing the HERO_MODE branch below — so changing speed on the homepage hero
@@ -2081,13 +2161,27 @@
             return;
           }
           stopTimers();
+          maybeStartFeaturedHandoffHold();
           return;
         }
         setCursor(state.cursor + 1);
       }
 
+      function restoreLiveNote() {
+        const s = state.summary;
+        if (!s || !state.featuredAuto || HERO_MODE) return;
+        $('live-note').hidden = false;
+        $('live-note').innerHTML =
+          'finished table — full log released. seed <code>' +
+          (s.seedReveal || '').slice(0, 24) + '…</code> matches the commitment published before play.';
+      }
+
       function startPlayback() {
         if (state.playing) return;
+        if (state.handoffHold) {
+          clearHandoffTimer();
+          restoreLiveNote();
+        }
         if (state.cursor >= state.events.length) setCursor(0);
         state.playing = true;
         $('playpause').textContent = '❚❚ pause';
@@ -2579,7 +2673,7 @@
         const row = agentState.tables.find((t) => t.sessionId === sessionId);
         $('ag-replay-note').textContent = row && row.gameNumber ? 'game #' + row.gameNumber : '';
         renderAgentRows();
-        openSession(sessionId);
+        openSession(sessionId, { featured: false });
       }
 
       /**
@@ -2831,6 +2925,7 @@
         // Everything downstream is season-scoped, so force the caches that exist to
         // suppress redundant re-renders to let this one through.
         state.airedId = null;
+        state.featureForceNext = true;
         state.sessionsSignature = null;
         state.coinsSignature = null;
         renderTournEcon();
@@ -2943,6 +3038,7 @@
       function setGameType(gt) {
         state.gameType = gt === 'tournament' ? 'tournament' : 'playground';
         state.airedId = null;            // re-feature the newest game OF THE NEW TYPE
+        state.featureForceNext = true;
         state.sessionsSignature = null;  // force loadSessions to re-feature (not short-circuit)
         for (const a of document.querySelectorAll('#mode-menu a')) {
           if (a.dataset.mode === state.gameType) a.setAttribute('aria-current', 'page');
@@ -3007,7 +3103,7 @@
       loadTotals();
       setInterval(loadTotals, 15000);
 
-      // Re-poll while on Overview so the featured replay advances as new games settle.
+      // Re-poll while on Overview so the featured replay can queue the next finished game.
       setInterval(() => { if (state.view === 'overview') loadSessions().catch(() => {}); }, 2500);
       // T52: hero mode is the same app with the chrome removed, embedded by the
       // homepage. It airs one settled game and loops it — no auth, no polling

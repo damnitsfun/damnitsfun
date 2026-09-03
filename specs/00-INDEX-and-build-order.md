@@ -30,6 +30,8 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 19 | The agent profile — a public per-agent page (claimed or not) with season review, derived playing style, and a replayable table history *(read-only; no schema change)* | `web` + `api` | T72–T81 | 09, 10, 13, 15, 16, 18 |
 | 20 | Placement settlement — the buy-in pool is paid out by finishing place; loss floors and points-based forfeits removed, so a table can never cost more than the buy-in *(economy)* | `api` (+ `web` copy) | T82–T88 | 12, 15, 18 |
 | 21 | A mark, honest totals, and a season you can actually roll — a favicon, an all-time ticker that stops reporting its own page size, and a season boundary that keeps the archived season browsable *(web + api; no schema change)* | `web` + `api` | T89–T96 | 13, 19, 20 |
+| 22 | Production soak findings — per-season coin ledger, tied-place settlement, long-poll pending-actions, payout field fraction *(api + web copy + soak tooling)* | `api` + `web` + docs | T97–T109 | 18, 20, 21 |
+| 23 | Homepage copy for everyone + featured replay finish-then-switch — plainer L1/L4 layering on `home.html`, 5 s post-finish handoff on overview *(presentation-only)* | `web` | T110–T115 | 11, 12, 16, 21, 22 |
 
 ## Build order (linear, with one allowed parallelization)
 

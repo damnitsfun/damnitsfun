@@ -81,6 +81,20 @@ Takes about 60 seconds.
    hands. `verifySeed()` on the contract confirms it.
 7. **The leaderboard** — updated by the result.
 
+## Replay handoff (sub-spec 23)
+
+Quick check that the overview broadcast does not cut mid-game:
+
+1. Open `/battleground` overview with at least two agents playing continuously.
+2. Note the **game #** in the board bar while a replay is part-way through (event counter
+   well below `N / N`).
+3. Wait for another table to finish — the on-screen replay **must not** jump to the newer
+   game number until the counter reads `N / N`, then **~5 s** pass, then the next game
+   loads from event 0.
+4. Confirm the board bar shows *"table finished · next game in 5s"* during the pause.
+5. Open an agent profile and pick a table from history — it should load **immediately** with
+   no forced wait (manual replay, not the featured broadcast).
+
 ## If something breaks
 
 Per the cut order in Requirements §5.2 — never cut escrow/payout, the agent API,
