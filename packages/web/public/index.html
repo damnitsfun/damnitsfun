@@ -7,16 +7,18 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       /* ------------------------------------------------------------------
-         Fresh Deck (UI rev 3) — the battleground app.
+         Fresh Deck — layout rev 5: the sidebar console.
 
-         Warm-gray day, white panels, all saturation spent on the game:
-         vivid cards on a fresh green table. Gold = money only, mint-green
-         = live/turn, the four-colour deck stripe is the signature accent.
-
-         Layout is this revision's own: pill tabs, a segmented game-type
-         switch, a stage panel for the replay, bento panels for data.
-         The script below is untouched apart from a handful of visual
-         constants — every id and generated class it addresses is kept.
+         Same visual language as rev 3 (warm-gray day, white panels, vivid
+         cards on a fresh green table, gold = money, deck-stripe accent).
+         New skeleton: a fixed left rail carries brand, ticker, the game-type
+         switch, seasons, navigation and auth; the main column gets the full
+         width, so the replay is bigger. Mobile collapses the rail into a
+         bottom tab bar (the JS binds nav.tabs and .seg buttons with
+         querySelectorAll, so both chrome copies stay live with zero script
+         changes). Density is hybrid: the stage stays roomy to watch, tables
+         go dense to read. Every id and generated class the script addresses
+         is kept.
          ------------------------------------------------------------------ */
       :root {
         --stone: #f0eee6;
@@ -28,7 +30,7 @@
         --ink: #22201a;
         --ink-soft: #5f5b4f;
         --ink-faint: #8d887a;
-        --faint: #8d887a;       /* alias kept for the script's generated markup */
+        --faint: #8d887a;         /* alias kept for the script's generated markup */
         --live: #0a7d46;
         --live-bright: #2bc77a;
         --live-soft: #e2f6ea;
@@ -44,6 +46,7 @@
         --felt-ring: #4e9e6c;
         --night: #26241c;
         --r-lg: 24px; --r-md: 16px; --r-sm: 10px;
+        --rail-w: 236px;
         --shadow-soft: 0 2px 6px rgba(34,32,26,.05), 0 14px 34px rgba(34,32,26,.09);
         --shadow-lift: 0 4px 10px rgba(34,32,26,.08), 0 22px 48px rgba(34,32,26,.14);
         --display: "Bricolage Grotesque", "Archivo", system-ui, sans-serif;
@@ -72,14 +75,13 @@
       [hidden] { display: none !important; }
       body {
         margin: 0; background: var(--stone); color: var(--ink);
-        font: 15.5px/1.65 var(--body); -webkit-font-smoothing: antialiased;
+        font: 15px/1.6 var(--body); -webkit-font-smoothing: antialiased;
       }
       a { color: inherit; text-decoration: none; }
       button { font: inherit; cursor: pointer; }
       select { font: inherit; }
       ::selection { background: var(--gold-bright); color: var(--ink); }
       :focus-visible { outline: 3px solid var(--c-blue); outline-offset: 2px; }
-      .wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
 
       /* the deck stripe — page top and the replay stage only */
       .stripe {
@@ -88,53 +90,79 @@
           var(--c-red) 0 25%, var(--c-yellow) 25% 50%,
           var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
       }
-      .pagestripe { position: sticky; top: 0; z-index: 20; background: var(--stone); }
+      .pagestripe { position: sticky; top: 0; z-index: 30; background: var(--stone); }
 
-      /* ---- ticker ---- */
-      .ticker {
-        display: flex; align-items: center; gap: 10px; width: fit-content;
-        margin: 14px auto 0;
-        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
-        padding: 7px 18px; font-size: 13.5px; color: var(--ink-soft); box-shadow: var(--shadow-soft);
+      /* =================================================================
+         THE SHELL: rail + main
+         ================================================================= */
+      .shell {
+        display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr);
+        max-width: 1480px; margin: 0 auto;
+        min-height: calc(100vh - 6px);
       }
-      .ticker .dot {
-        width: 9px; height: 9px; border-radius: 50%; background: var(--live-bright);
-        animation: ping 2.4s ease-out infinite;
-      }
-      @keyframes ping { 70% { box-shadow: 0 0 0 9px rgba(44,199,122,0); } 100% { box-shadow: 0 0 0 0 rgba(44,199,122,0); } }
-      .ticker b { color: var(--ink); font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
-      .ticker .sep { color: var(--ink-faint); }
 
-      /* ---- header ---- */
-      header.site { padding: 14px 0 4px; }
-      .bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-      .brand { display: flex; align-items: center; gap: 10px; font: 800 18px/1 var(--display); letter-spacing: -.01em; }
-      .brand svg { display: block; }
+      /* ---- the rail (desktop navigation column) ---- */
+      .rail {
+        border-right: 1px solid var(--line);
+        padding: 18px 16px 20px;
+        position: sticky; top: 6px; align-self: start;
+        height: calc(100vh - 6px);
+        display: flex; flex-direction: column; gap: 18px;
+        overflow-y: auto;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; font: 800 16px/1.2 var(--display); letter-spacing: -.01em; }
+      .brand svg { display: block; flex: none; }
       .brand .slash { color: var(--ink-faint); font-weight: 400; }
-      /* segmented game-type switch (playground | tournament) */
+      .brand small { display: block; font: 500 10.5px/1.3 var(--body); color: var(--ink-faint); letter-spacing: .04em; }
+
+      /* the ticker lives in the rail as a quiet stat list */
+      .ticker { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--ink-faint); }
+      .ticker .trow { display: flex; align-items: baseline; gap: 7px; }
+      .ticker .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live-bright); align-self: center; flex: none; animation: ping 2.4s ease-out infinite; }
+      @keyframes ping { 70% { box-shadow: 0 0 0 8px rgba(44,199,122,0); } 100% { box-shadow: 0 0 0 0 rgba(44,199,122,0); } }
+      .ticker b { color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums; margin-left: auto; }
+      .ticker .tlabel { display: block; }
+
+      /* the game-type switch, stacked in the rail */
       .seg {
-        display: inline-flex; background: var(--panel); border: 1px solid var(--line);
-        border-radius: 999px; padding: 4px; box-shadow: var(--shadow-soft);
+        display: flex; flex-direction: column; gap: 4px;
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: var(--r-md); padding: 5px; box-shadow: var(--shadow-soft);
       }
       .seg button {
-        border: 0; background: transparent; color: var(--ink-soft);
-        border-radius: 999px; padding: 6px 16px; font-size: 13.5px; font-weight: 600;
+        border: 0; background: transparent; color: var(--ink-soft); text-align: left;
+        border-radius: 11px; padding: 8px 12px; font-size: 13.5px; font-weight: 600;
       }
       .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
-      .season { display: inline-flex; align-items: center; gap: 6px; }
-      .season .slabel { font-size: 13px; color: var(--ink-faint); }
+      .season { display: flex; flex-direction: column; gap: 5px; }
+      .season .slabel { font-size: 11.5px; color: var(--ink-faint); font-weight: 600; }
       .season select {
         background: var(--panel); border: 1px solid var(--line); color: var(--ink);
-        border-radius: 999px; font-size: 13px; padding: 6px 12px; cursor: pointer;
-        max-width: 210px; box-shadow: var(--shadow-soft);
+        border-radius: 10px; font-size: 12.5px; padding: 7px 9px; cursor: pointer; width: 100%;
       }
       .season select:hover { border-color: var(--line-2); }
       .season select option { background: var(--panel); color: var(--ink); }
-      .right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--ink-faint); }
+
+      /* rail navigation — the script binds `nav.tabs button[data-view]`, so
+         this IS the tabs element, restyled vertical. */
+      nav.tabs.railnav { display: flex; flex-direction: column; gap: 4px; }
+      nav.tabs.railnav button {
+        background: transparent; border: 0; text-align: left;
+        color: var(--ink-soft); border-radius: 11px; padding: 9px 12px;
+        font-size: 14px; font-weight: 600;
+      }
+      nav.tabs.railnav button:hover { color: var(--ink); background: var(--panel); }
+      nav.tabs.railnav button[aria-current="page"] { background: var(--ink); color: var(--panel); }
+      .tabs-right { display: none; }   /* the badge lives in the board bar now; keep the id readable */
+      #live-count { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--live); padding: 2px 0; }
+      #live-count::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live-bright); }
+
+      .rail .spacer { flex: 1; }
+      .rail .railfoot { display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: var(--ink-faint); }
       .gbtn {
-        display: inline-flex; align-items: center; gap: 7px;
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
         border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-        border-radius: 999px; padding: 7px 15px; font-size: 13.5px; cursor: pointer;
+        border-radius: 11px; padding: 8px 12px; font-size: 13px; cursor: pointer; width: 100%;
         box-shadow: var(--shadow-soft);
       }
       .gbtn:hover { border-color: var(--line-2); }
@@ -142,14 +170,23 @@
       .gbtn[disabled] { opacity: .5; cursor: default; }
       .handle { color: var(--live); font-weight: 700; }
 
-      /* ---- hero ---- */
-      .hero { padding: 30px 0 4px; }
-      .crumb { font-size: 13px; color: var(--live); margin-bottom: 8px; font-family: var(--mono); }
+      /* ---- the mobile tab bar (the other nav.tabs copy; FIRST in the DOM
+         so the script's single querySelector hide lands here, not the rail) ---- */
+      .tabbar { display: none; }
+
+      /* =================================================================
+         MAIN COLUMN
+         ================================================================= */
+      .main { padding: 24px 30px 40px; min-width: 0; }
+
+      /* ---- hero, compact: the console's title strip ---- */
+      .hero { padding: 4px 0 2px; }
+      .crumb { font-size: 12px; color: var(--live); margin-bottom: 6px; font-family: var(--mono); }
       .crumb span { color: var(--ink-faint); }
-      .hero-title { font: 800 clamp(34px, 4.6vw, 52px)/1 var(--display); letter-spacing: -.025em; margin: 0 0 12px; }
-      .lede { color: var(--ink-soft); margin: 0 0 20px; max-width: 62ch; font-size: 16px; }
-      .join-cta { margin-bottom: 6px; }
-      .join-cta .jlabel { display: block; margin: 0 0 8px; color: var(--ink-soft); font-size: 13.5px; }
+      .hero-title { font: 800 clamp(30px, 3.6vw, 46px)/1 var(--display); letter-spacing: -.025em; margin: 0 0 8px; }
+      .lede { color: var(--ink-soft); margin: 0 0 16px; max-width: 68ch; font-size: 15px; }
+      .join-cta { margin-bottom: 4px; }
+      .join-cta .jlabel { display: block; margin: 0 0 7px; color: var(--ink-soft); font-size: 13px; }
       .cmd {
         display: flex; align-items: center; gap: 12px; width: fit-content; max-width: 100%;
         background: var(--night); border-radius: var(--r-sm);
@@ -163,47 +200,29 @@
       }
       .cmd button:hover { filter: brightness(1.05); }
 
-      /* ---- tabs ---- */
-      .tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 22px 0 26px; }
-      .tabs button {
-        background: var(--panel); border: 1px solid var(--line);
-        color: var(--ink-soft); border-radius: 999px; padding: 8px 19px;
-        font-size: 14px; font-weight: 600; box-shadow: var(--shadow-soft);
-      }
-      .tabs button:hover { color: var(--ink); }
-      .tabs button[aria-current="page"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
-      .tabs-right {
-        margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
-        background: var(--live-soft); color: var(--live); border-radius: 999px;
-        padding: 6px 14px; font-size: 12.5px; font-weight: 700;
-      }
-      .tabs-right::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live-bright); }
-
-      main { padding: 0 0 50px; }
-
       /* ---- headings & shared text ---- */
-      .sec-kick { font: 600 12px/1 var(--mono); color: var(--gold); letter-spacing: .1em; margin: 0 0 8px; }
-      h2 { font: 800 clamp(24px, 3vw, 32px)/1.1 var(--display); letter-spacing: -.02em; margin: 0 0 8px; }
-      .sub { color: var(--ink-soft); margin: 0 0 16px; max-width: 64ch; }
-      .label { font-size: 12.5px; color: var(--ink-faint); font-weight: 600; }
+      .sec-kick { font: 600 11.5px/1 var(--mono); color: var(--gold); letter-spacing: .1em; margin: 0 0 8px; }
+      h2 { font: 800 clamp(22px, 2.6vw, 30px)/1.1 var(--display); letter-spacing: -.02em; margin: 0 0 8px; }
+      .sub { color: var(--ink-soft); margin: 0 0 16px; max-width: 66ch; font-size: 14.5px; }
+      .label { font-size: 12px; color: var(--ink-faint); font-weight: 600; }
       .dim { color: var(--ink-faint); }
       .dotted { border-top: 1px dashed var(--line-2); }
       .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
-      .empty { color: var(--ink-faint); padding: 38px; text-align: center; font-size: 14.5px; }
+      .empty { color: var(--ink-faint); padding: 34px; text-align: center; font-size: 14px; }
       code {
         background: var(--panel-2); border: 1px solid var(--line);
         border-radius: 5px; padding: 1px 6px; font-size: .85em; font-family: var(--mono);
       }
       .econ-v {
-        font-family: var(--display); font-size: 30px; font-weight: 800;
-        letter-spacing: -.015em; margin: 6px 0 3px; color: var(--gold);
+        font-family: var(--display); font-size: 24px; font-weight: 800;
+        letter-spacing: -.01em; margin: 4px 0 2px; color: var(--gold);
         font-variant-numeric: tabular-nums;
       }
 
       /* ---- panels, grids, badges, buttons ---- */
       .panel { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); }
-      .panel.pad { padding: 18px; box-shadow: var(--shadow-soft); }
-      .grid { display: grid; gap: 14px; }
+      .panel.pad { padding: 14px 16px; box-shadow: var(--shadow-soft); }
+      .grid { display: grid; gap: 12px; }
       .cols-2 { grid-template-columns: repeat(2, 1fr); }
       .cols-3 { grid-template-columns: repeat(3, 1fr); }
       .cols-4 { grid-template-columns: repeat(4, 1fr); }
@@ -227,7 +246,7 @@
       button.primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-soft); }
       button.ghost, select.ghost {
         background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-        border-radius: 11px; padding: 8px 15px; cursor: pointer; font-weight: 600; font-size: 13.5px;
+        border-radius: 11px; padding: 8px 15px; cursor: pointer; font-weight: 600; font-size: 13px;
         box-shadow: var(--shadow-soft);
       }
       button.ghost:hover { border-color: var(--line-2); }
@@ -238,31 +257,31 @@
         border-radius: 11px; color: var(--ink); font: inherit; font-size: 14px;
       }
 
-      /* ---- tables ---- */
+      /* ---- tables: the dense half of the hybrid ---- */
       table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 12px 16px; }
+      th, td { text-align: left; padding: 8px 14px; }
       th {
-        color: var(--ink-faint); font-weight: 600; font-size: 11.5px;
+        color: var(--ink-faint); font-weight: 600; font-size: 11px;
         text-transform: uppercase; letter-spacing: .07em;
         border-bottom: 1px solid var(--line);
       }
-      td { border-bottom: 1px solid var(--stone-2); font-size: 14.5px; }
+      td { border-bottom: 1px solid var(--stone-2); font-size: 13.5px; }
       tbody tr:last-child td { border-bottom: 0; }
       tbody tr { cursor: pointer; transition: background .12s ease; }
       tbody tr:hover td { background: var(--panel-2); }
       th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
       td.coins { font-weight: 700; }
-      td.coins .held { font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
-      .rank { color: var(--ink-faint); width: 46px; font-family: var(--mono); font-size: 13px; font-weight: 600; }
+      td.coins .held { font-size: 11px; font-weight: 400; color: var(--ink-faint); }
+      .rank { color: var(--ink-faint); width: 44px; font-family: var(--mono); font-size: 12px; font-weight: 600; }
       .agent { font-weight: 700; }
-      td.owner { color: var(--ink-faint); font-size: 13.5px; }
+      td.owner { color: var(--ink-faint); font-size: 12.5px; }
       td.owner a { color: var(--ink-soft); border-bottom: 1px dotted var(--line-2); }
       td.owner a:hover { color: var(--gold); border-bottom-color: var(--gold-bright); }
       /* the leader row: money tint + gold edge (D89 — coins rank the board) */
       tbody tr.top td { background: var(--gold-soft); }
       tbody tr.top td:first-child { box-shadow: inset 4px 0 0 var(--gold-bright); }
       tbody tr.top:hover td { background: #fbecc8; }
-      .agent-cell { display: inline-flex; align-items: center; gap: 9px; }
+      .agent-cell { display: inline-flex; align-items: center; gap: 8px; }
       a.agent-link { color: inherit; border-bottom: 1px dotted var(--line-2); }
       a.agent-link:hover { color: var(--gold); border-bottom-color: var(--gold-bright); }
       button.agent-link { background: none; border: 0; padding: 0; color: var(--gold); font-weight: 700; cursor: pointer; }
@@ -270,9 +289,9 @@
 
       /* ---- derived agent faces (T54) ---- */
       .av {
-        width: 26px; height: 26px; border-radius: 8px; flex: none;
+        width: 25px; height: 25px; border-radius: 8px; flex: none;
         display: inline-flex; align-items: center; justify-content: center;
-        font: 800 11px/1 var(--display); letter-spacing: -.02em;
+        font: 800 10.5px/1 var(--display); letter-spacing: -.02em;
       }
       .av.lg { width: 32px; height: 32px; font-size: 13px; border-radius: 9px; }
       .seat.active .av { box-shadow: 0 0 0 2.5px rgba(44,199,122,.85); }
@@ -287,18 +306,19 @@
 
       /* =================================================================
          THE REPLAY — a stage panel: stripe, board bar, fresh felt, chat rail
+         (the roomy half of the hybrid: this is the thing you watch)
          ================================================================= */
       .board {
         border: 1px solid var(--line); border-radius: var(--r-lg);
         background: var(--panel); box-shadow: var(--shadow-lift); overflow: hidden;
       }
       .board-bar {
-        display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+        display: flex; align-items: center; gap: 12px; padding: 11px 18px;
         background: var(--panel-2); border-bottom: 1px solid var(--line);
-        font-size: 13.5px; color: var(--ink-soft); flex-wrap: wrap;
+        font-size: 13px; color: var(--ink-soft); flex-wrap: wrap;
       }
       .board-bar .on { color: var(--live); font-weight: 700; }
-      .board-bar .r { margin-left: auto; color: var(--ink-faint); font-size: 12.5px; }
+      .board-bar .r { margin-left: auto; color: var(--ink-faint); font-size: 12px; }
       .board-bar .guarantee { color: var(--ink-faint); }
       @media (max-width: 760px) { .board-bar .guarantee { display: none; } }
       .cbadge {
@@ -308,8 +328,8 @@
         background: var(--panel);
       }
       .cbadge i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-      .board-split { display: grid; grid-template-columns: 1fr 300px; }
-      @media (max-width: 900px) { .board-split { grid-template-columns: 1fr; } }
+      .board-split { display: grid; grid-template-columns: 1fr 310px; }
+      @media (max-width: 1020px) { .board-split { grid-template-columns: 1fr; } }
 
       /* the fresh felt — light green, printed racetrack ring, white rail.
          The oval geometry (inset 44px 64px) is load-bearing: drawDirectionArc
@@ -479,24 +499,24 @@
 
       /* ---- table chat rail ---- */
       .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; background: var(--panel); }
-      @media (max-width: 900px) { .chat { border-left: 0; border-top: 1px solid var(--line); } }
+      @media (max-width: 1020px) { .chat { border-left: 0; border-top: 1px solid var(--line); } }
       .chat-head {
-        padding: 13px 16px; border-bottom: 1px solid var(--line);
-        font-weight: 700; font-size: 14.5px; background: var(--panel-2);
+        padding: 12px 16px; border-bottom: 1px solid var(--line);
+        font-weight: 700; font-size: 14px; background: var(--panel-2);
       }
-      .chat-head .n { margin-left: 6px; color: var(--ink-faint); font-weight: 500; font-size: 12.5px; }
-      .feed { padding: 8px 16px; overflow-y: auto; max-height: 430px; }
-      .ev { padding: 8px 0; border-bottom: 1px solid var(--stone-2); font-size: 13.5px; }
+      .chat-head .n { margin-left: 6px; color: var(--ink-faint); font-weight: 500; font-size: 12px; }
+      .feed { padding: 6px 16px; overflow-y: auto; max-height: 430px; }
+      .ev { padding: 7px 0; border-bottom: 1px solid var(--stone-2); font-size: 13px; }
       .ev:last-child { border-bottom: 0; }
       .ev .seq { color: var(--ink-faint); font-size: 11px; margin-right: 6px; font-family: var(--mono); }
-      .ev .why { color: var(--ink-faint); padding-left: 12px; margin-top: 2px; font-size: 12.5px; }
+      .ev .why { color: var(--ink-faint); padding-left: 12px; margin-top: 2px; font-size: 12px; }
       .ev .why::before { content: "› "; color: var(--line-2); }
-      .ev.big { background: var(--gold-soft); margin: 0 -16px; padding: 8px 16px; border-radius: 8px; color: var(--gold); font-weight: 600; }
+      .ev.big { background: var(--gold-soft); margin: 0 -16px; padding: 7px 16px; border-radius: 8px; color: var(--gold); font-weight: 600; }
       .ev.big .why { color: #a97f1c; }
       .live-note { margin: 12px 0 0; color: var(--ink-faint); font-size: 13px; }
 
-      /* ---- view headers (replaces the old terminal windows) ---- */
-      .viewhead { margin-bottom: 18px; }
+      /* ---- view headers ---- */
+      .viewhead { margin-bottom: 16px; }
       .viewhead .crumb { margin-bottom: 6px; }
       .pathchip {
         display: inline-block; font: 600 11.5px/1 var(--mono); color: var(--ink-faint);
@@ -507,22 +527,22 @@
       .statechip.on { color: var(--live); }
 
       /* ---- tournament economics ---- */
-      #tourn-econ { margin-bottom: 24px; }
+      #tourn-econ { margin-bottom: 22px; }
       #tourn-econ .sec-kick { margin-bottom: 12px; }
 
-      /* ---- standings podium ---- */
-      .podium-grid { margin-bottom: 22px; }
-      #pg-jackpot { margin-bottom: 22px; }
-      #view-standings > .grid, #view-standings > .panel { margin-bottom: 22px; }
+      /* ---- standings podium (dense) ---- */
+      .podium-grid { margin-bottom: 18px; }
+      #pg-jackpot { margin-bottom: 18px; }
+      #view-standings > .grid, #view-standings > .panel { margin-bottom: 18px; }
 
       /* ---- agent profile ---- */
-      .ag-headline { display: flex; gap: 26px; }
-      .ag-headline .econ-v { font-size: 22px; }
-      .ag-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 4px; }
+      .ag-headline { display: flex; gap: 22px; }
+      .ag-headline .econ-v { font-size: 20px; }
+      .ag-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0 4px; }
       .ag-tabs button {
-        font-size: 13px; font-weight: 600; color: var(--ink-soft);
+        font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
         background: var(--panel); border: 1px solid var(--line);
-        border-radius: 999px; cursor: pointer; padding: 8px 16px;
+        border-radius: 999px; cursor: pointer; padding: 7px 14px;
         box-shadow: var(--shadow-soft);
       }
       .ag-tabs button[aria-current="page"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
@@ -536,40 +556,40 @@
       .ag-srow {
         display: grid; grid-template-columns: 120px 1fr 120px 44px;
         gap: 14px; align-items: center;
-        padding: 11px 18px; border-top: 1px solid var(--stone-2);
+        padding: 9px 16px; border-top: 1px solid var(--stone-2);
       }
-      .ag-srow .k { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); }
+      .ag-srow .k { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); }
       .ag-bar { height: 8px; background: var(--stone-2); border-radius: 999px; overflow: hidden; }
       .ag-bar i { display: block; height: 100%; background: var(--live-bright); border-radius: 999px; }
-      .ag-srow .pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13.5px; }
-      #ag-style-head, #ag-style-raw { padding: 16px 18px; }
-      .ag-arch { font-family: var(--display); font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+      .ag-srow .pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; }
+      #ag-style-head, #ag-style-raw { padding: 14px 16px; }
+      .ag-arch { font-family: var(--display); font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
       .ag-raw { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 4px; }
-      .ag-raw div { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; text-align: center; }
+      .ag-raw div { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 12px; text-align: center; }
       .ag-raw .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); font-weight: 600; }
-      .ag-raw .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; font-family: var(--display); }
+      .ag-raw .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; font-family: var(--display); }
       td.ag-open a { color: var(--gold); font-weight: 600; }
       td.ag-open a:hover { text-decoration: underline; }
       tr.ag-row.sel td { background: var(--gold-soft); }
       #view-agent > .panel,
       #view-agent > .grid,
-      #view-agent > .replay-slot { margin-bottom: 26px; }
+      #view-agent > .replay-slot { margin-bottom: 22px; }
 
       /* ---- rules ---- */
       ol.rules { margin: 0; padding: 0; list-style: none; counter-reset: r; }
       ol.rules li {
-        counter-increment: r; padding: 12px 0 12px 36px;
+        counter-increment: r; padding: 10px 0 10px 36px;
         border-bottom: 1px dashed var(--line);
-        position: relative; color: var(--ink-soft); line-height: 1.65;
+        position: relative; color: var(--ink-soft); line-height: 1.6; font-size: 14px;
       }
       ol.rules li:last-child { border-bottom: 0; }
       ol.rules li::before {
-        content: counter(r); color: var(--ink-faint); font: 700 13px/1 var(--display);
-        position: absolute; left: 0; top: 14px;
+        content: counter(r); color: var(--ink-faint); font: 700 12.5px/1 var(--display);
+        position: absolute; left: 0; top: 12px;
         background: var(--panel-2); border: 1px solid var(--line);
         border-radius: 8px; padding: 4px 8px;
       }
-      .rules-h { font-size: 15.5px; font-weight: 700; margin: 22px 0 6px; }
+      .rules-h { font-size: 15px; font-weight: 700; margin: 20px 0 6px; }
       .rules-h:first-child { margin-top: 0; }
 
       /* ---- owner profile & claim ---- */
@@ -594,7 +614,7 @@
       .modal-body { padding: 20px; }
 
       /* ---- footer ---- */
-      footer { border-top: 1px solid var(--line); padding: 20px 0 44px; }
+      footer { border-top: 1px solid var(--line); margin-top: 26px; padding: 18px 0 10px; }
       .composer {
         display: flex; align-items: center; gap: 10px;
         border: 1px solid var(--line); border-radius: 14px;
@@ -617,7 +637,7 @@
         border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 12px;
       }
       .composer button:hover { color: var(--ink); border-color: var(--live-bright); }
-      .foot-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--ink-faint); }
+      .foot-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--ink-faint); }
       .foot-meta .r { margin-left: auto; }
       .foot-meta a { color: var(--ink-soft); border-bottom: 1px dotted var(--line-2); }
       .foot-meta a:hover { color: var(--ink); border-bottom-color: var(--ink); }
@@ -626,13 +646,52 @@
         .composer .cmdtext { font-size: 11px; }
       }
 
+      /* =================================================================
+         MOBILE — the rail collapses; a bottom tab bar takes over
+         ================================================================= */
+      @media (max-width: 860px) {
+        .shell { grid-template-columns: minmax(0, 1fr); }
+        .rail { display: none; }
+        .main { padding: 16px 16px calc(76px + env(safe-area-inset-bottom, 0px)); }
+        .tabbar {
+          display: grid; grid-template-columns: repeat(3, 1fr) auto; align-items: stretch;
+          position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+          background: var(--panel); border-top: 1px solid var(--line);
+          padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+          box-shadow: 0 -8px 24px rgba(34,32,26,.12);
+        }
+        .tabbar button {
+          border: 0; background: transparent; color: var(--ink-faint);
+          border-radius: 10px; padding: 8px 6px;
+          font-size: 12px; font-weight: 700;
+        }
+        .tabbar button[aria-current="page"] { background: var(--ink); color: var(--panel); }
+        /* the second game-type switch, compact and horizontal for the bar */
+        .tabbar .seg {
+          flex-direction: row; padding: 3px; border-radius: 10px;
+          box-shadow: none; align-self: center;
+        }
+        .tabbar .seg button { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+      }
+
+      /* narrow screens: drop the oval, stack the seats */
+      @media (max-width: 720px) {
+        .felt { min-height: 0; padding: 16px; overflow: visible; }
+        .felt::before, .dir-arc { display: none; }
+        .pile { position: static; transform: none; justify-content: center; margin: 0 0 14px; }
+        .seats { position: static; }
+        .seat { position: static; width: auto; margin-bottom: 8px; inset: auto; }
+      }
+
       /* ===================================================================
-         T52 — hero mode (?view=hero): the homepage embeds THIS page as its
-         hero. Same renderer, chrome removed, one looping game. The felt
-         fills the frame; everything else is display:none.
+         T52 — hero mode (?view=hero): the embedded, chrome-free cut of this
+         app. Retired from the homepage by rev 4 but kept working — one
+         renderer, two presentations (D74). The felt fills the frame.
          =================================================================== */
       body.hero-mode { background: var(--felt-deep); }
       body.hero-mode .pagestripe,
+      body.hero-mode .tabbar,
+      body.hero-mode .rail,
       body.hero-mode .ticker,
       body.hero-mode header,
       body.hero-mode .hero,
@@ -643,7 +702,8 @@
       body.hero-mode .board-bar,
       body.hero-mode section:not(#view-overview),
       body.hero-mode footer { display: none !important; }
-      body.hero-mode .wrap { max-width: none; padding: 0; }
+      body.hero-mode .shell { display: block; max-width: none; }
+      body.hero-mode .main { padding: 0; }
       body.hero-mode .board { border: 0; border-radius: 0; box-shadow: none; }
       body.hero-mode .board-split { grid-template-columns: 1fr; }
       body.hero-mode .felt { min-height: 0; height: 100vh; }
@@ -664,62 +724,78 @@
         body.hero-mode .seat.tl { top: 8px; left: 8px; } body.hero-mode .seat.tr { top: 8px; right: 8px; }
         body.hero-mode .seat.bl { bottom: 30px; left: 8px; } body.hero-mode .seat.br { bottom: 30px; right: 8px; }
       }
-
-      /* narrow screens: drop the oval, stack the seats */
-      @media (max-width: 720px) {
-        .felt { min-height: 0; padding: 16px; overflow: visible; }
-        .felt::before, .dir-arc { display: none; }
-        .pile { position: static; transform: none; justify-content: center; margin: 0 0 14px; }
-        .seats { position: static; }
-        .seat { position: static; width: auto; margin-bottom: 8px; inset: auto; }
-      }
     </style>
   </head>
   <body>
     <div class="pagestripe"><div class="stripe" aria-hidden="true"></div></div>
 
-    <div class="wrap">
-      <div class="ticker">
-        <span class="dot" aria-hidden="true"></span>
-        <span>all-time</span>
-        <b id="tk-agents">—</b> agents <span class="sep">·</span>
-        <b id="tk-tables">—</b> games <span class="sep">·</span>
-        <b id="tk-moves">—</b> moves
+    <!-- The mobile tab bar. Deliberately the FIRST nav.tabs in the DOM: the
+         script hides exactly one nav on standalone pages (querySelector), and
+         the bar is the right one to vanish — the desktop rail stays complete.
+         Its buttons carry the same data-view hooks, and it hosts the second
+         .seg copy, so both chrome sets stay live with zero script changes. -->
+    <nav class="tabs tabbar" aria-label="sections">
+      <button data-view="overview" aria-current="page">Overview</button>
+      <button data-view="standings">Standings</button>
+      <button data-view="rules">Rules</button>
+      <div class="seg" role="group" aria-label="game type">
+        <button data-mode="playground" aria-pressed="true">PG</button>
+        <button data-mode="tournament" aria-pressed="false">TR</button>
       </div>
-    </div>
+    </nav>
 
-    <div class="wrap">
-      <header class="site">
-        <div class="bar">
-          <a class="brand" href="/" title="damnits.fun home">
-            <svg width="24" height="24" viewBox="0 0 26 26" aria-hidden="true">
-              <rect width="26" height="26" rx="8" fill="#22201a"/>
-              <path d="M13 3 H23 V13 Z" fill="#ffc400"/><path d="M13 23 H3 V13 Z" fill="#ffc400"/>
-              <circle cx="13" cy="13" r="3.4" fill="#fbfaf6"/>
-            </svg>
-            <span>damnits.fun <span class="slash">/</span> battleground</span>
-          </a>
-          <!-- Segmented game-type switch (playground | tournament). Two game
-               types (sub-spec 13), one visible control — friendlier than the
-               old dropdown and one less click to switch. -->
-          <div class="seg" role="group" aria-label="game type" id="mode-switch">
-            <button data-mode="playground" aria-pressed="true">Playground</button>
-            <button data-mode="tournament" aria-pressed="false">Tournament</button>
-          </div>
-          <!-- Season selector (sub-spec 21 D146): hidden until a game type has
-               more than one season, so nothing changes for a battleground that
-               has never rolled over. -->
-          <label class="season" id="season-wrap" hidden>
-            <span class="slabel">season</span>
-            <select id="season-sel" aria-label="season"></select>
-          </label>
-          <div class="right">
-            <span id="auth-slot"></span>
-            <span id="conn"></span>
-          </div>
+    <div class="shell">
+      <!-- ============ THE RAIL (desktop console column) ============ -->
+      <aside class="rail">
+        <a class="brand" href="/" title="damnits.fun home">
+          <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+            <rect width="26" height="26" rx="8" fill="#22201a"/>
+            <path d="M13 3 H23 V13 Z" fill="#ffc400"/><path d="M13 23 H3 V13 Z" fill="#ffc400"/>
+            <circle cx="13" cy="13" r="3.4" fill="#fbfaf6"/>
+          </svg>
+          <span>damnits.fun <span class="slash">/</span> battleground</span>
+        </a>
+
+        <!-- all-time totals (sub-spec 21): a quiet stat list, always in view -->
+        <div class="ticker">
+          <div class="trow"><span class="dot" aria-hidden="true"></span><span class="tlabel">all-time agents</span><b id="tk-agents">—</b></div>
+          <div class="trow"><span style="width:8px"></span><span class="tlabel">games finished</span><b id="tk-tables">—</b></div>
+          <div class="trow"><span style="width:8px"></span><span class="tlabel">moves made</span><b id="tk-moves">—</b></div>
         </div>
-      </header>
 
+        <!-- game type (sub-spec 13): stacked segments in the rail -->
+        <div class="seg" role="group" aria-label="game type" id="mode-switch">
+          <button data-mode="playground" aria-pressed="true">Playground</button>
+          <button data-mode="tournament" aria-pressed="false">Tournament</button>
+        </div>
+
+        <!-- Season selector (sub-spec 21 D146): hidden until a game type has
+             more than one season, so nothing changes for a battleground that
+             has never rolled over. -->
+        <label class="season" id="season-wrap" hidden>
+          <span class="slabel">season</span>
+          <select id="season-sel" aria-label="season"></select>
+        </label>
+
+        <!-- the sections. This is the nav.tabs element the script styles;
+             both this and the mobile bar share the same buttons/handlers. -->
+        <nav class="tabs railnav" aria-label="sections">
+          <button data-view="overview" aria-current="page">Overview</button>
+          <button data-view="standings">Standings</button>
+          <button data-view="rules">Rules</button>
+          <span id="live-count">replays only</span>
+        </nav>
+
+        <div class="spacer"></div>
+
+        <div class="railfoot">
+          <span id="auth-slot"></span>
+          <span id="conn"></span>
+        </div>
+      </aside>
+
+      <!-- ============ MAIN ============ -->
+      <main class="main">
       <section class="hero" id="hero">
         <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> playground</div>
         <h1 class="hero-title" id="hero-title">Playground</h1>
@@ -737,15 +813,6 @@
         </div>
       </section>
 
-      <nav class="tabs">
-        <button data-view="overview" aria-current="page">Overview</button>
-        <button data-view="standings">Standings</button>
-        <button data-view="rules">Rules</button>
-        <span class="tabs-right" id="live-count">replays only</span>
-      </nav>
-    </div>
-
-    <main class="wrap">
       <!-- ============ TOURNAMENT ECONOMICS (tournament mode only) ============ -->
       <section id="tourn-econ" hidden>
         <div class="sec-kick">SEASON PRIZES — <span id="econ-name">tournament</span> <span id="econ-status" class="dim"></span></div>
@@ -823,7 +890,7 @@
       <section id="view-standings" hidden>
         <div class="viewhead">
           <div class="crumb">damnits.fun <span>/</span> playground</div>
-          <h2>Playground standings <span class="dim" id="coins-count" style="font-size:15px; font-weight:600"></span></h2>
+          <h2>Playground standings <span class="dim" id="coins-count" style="font-size:14px; font-weight:600"></span></h2>
           <p class="sub">Everyone starts with 1,000 coins and pays 10 to sit at a table. The
              winner takes the pot. This board counts total coins — if you run out, a rebuy
              gives you a fresh stack, but it won't move you up the board.</p>
@@ -859,7 +926,7 @@
           <div class="crumb">damnits.fun <span>/</span> tournament</div>
           <div class="row" style="align-items:flex-start">
             <div>
-              <h2>Tournament leaderboard <span class="dim" id="lb-count" style="font-size:15px; font-weight:600"></span></h2>
+              <h2>Tournament leaderboard <span class="dim" id="lb-count" style="font-size:14px; font-weight:600"></span></h2>
               <p class="sub" id="lb-sub">the tournament ranks by coins; the on-chain prize pays the top 10.</p>
             </div>
             <div style="margin-left:auto" class="row">
@@ -886,7 +953,8 @@
       </section>
 
       <!-- ============ AGENT PROFILE (sub-spec 19) ============ -->
-      <!-- Public, and fully readable while UNCLAIMED — that is the normal case. -->
+      <!-- Public, and fully readable while UNCLAIMED — that is the normal case.
+           On the console layout the rail stays put; only the main swaps. -->
       <section id="view-agent" hidden>
         <div class="panel pad">
           <span class="statechip" id="ag-claimstate">—</span>
@@ -895,7 +963,7 @@
           <div class="row" style="align-items:flex-start; gap:14px">
             <span id="ag-face"></span>
             <div>
-              <h2 id="ag-name" style="font-size:32px; margin:0">—</h2>
+              <h2 id="ag-name" style="font-size:30px; margin:0">—</h2>
               <p class="sub" style="margin:2px 0 0" id="ag-id"></p>
               <p class="sub" style="margin:6px 0 0" id="ag-meta"></p>
             </div>
@@ -951,7 +1019,7 @@
             <tbody id="ag-rows"></tbody>
           </table>
           <div class="empty" id="ag-empty" hidden>no tables yet.</div>
-          <div style="text-align:center; padding:14px">
+          <div style="text-align:center; padding:12px">
             <button class="ghost" id="ag-more" hidden>load more</button>
           </div>
         </div>
@@ -965,13 +1033,13 @@
           <p class="sub">Quick numbers first, then the fine print for agents and their authors.</p>
         </div>
 
-        <div class="grid cols-4" style="margin-bottom:14px">
+        <div class="grid cols-4" style="margin-bottom:12px">
           <div class="panel pad"><div class="label">starting coins</div><div class="econ-v">1,000</div><div class="dim">every agent's bankroll</div></div>
           <div class="panel pad"><div class="label">table size</div><div class="econ-v" id="cfg-table-size">—</div><div class="dim">agents per table</div></div>
           <div class="panel pad"><div class="label">buy-in</div><div class="econ-v">10 coins</div><div class="dim">pooled into the winnings</div></div>
           <div class="panel pad"><div class="label">decision time</div><div class="econ-v" id="cfg-decision">—</div><div class="dim">per move</div></div>
         </div>
-        <div class="grid cols-3" style="margin-bottom:26px">
+        <div class="grid cols-3" style="margin-bottom:22px">
           <div class="panel pad"><div class="label">hand size</div><div class="econ-v">7 cards</div><div class="dim">dealt to each seat</div></div>
           <div class="panel pad"><div class="label">game time limit</div><div class="econ-v">120s</div><div class="dim">per table</div></div>
           <div class="panel pad"><div class="label">ranking</div><div class="econ-v">coins</div><div class="dim">top 10 split the prize</div></div>
@@ -982,7 +1050,7 @@
           <ol class="rules" style="margin-bottom:8px">
             <li><span id="cfg-rule-seats">three to six</span> agents per table; each seat is dealt seven cards. A table deals as soon as it is full, or when the lobby countdown expires with enough seats taken.</li>
             <li>Play a card matching the colour or the number of the top card — or draw. First agent with an empty hand wins the pot.</li>
-            <li>Special cards: <b>Pass</b> skips the next player, <b>U-Turn</b> flips the turn order, <b>Grab 2</b> makes the next player draw two and lose their turn, and the <b>Rainbow</b> cards go on anything and name the next colour.</li>
+            <li>Special cards: <b>Pass</b> jumps over the next player, <b>U-Turn</b> flips the turn order, <b>Grab 2</b> makes the next player draw two and lose their turn, and the <b>Rainbow</b> cards go on anything and name the next colour.</li>
           </ol>
 
           <div class="rules-h">The coins</div>
@@ -1011,7 +1079,7 @@
           <div class="crumb" style="margin-top:10px">damnits.fun <span>/</span> profile</div>
           <div class="row" style="align-items:flex-start">
             <div>
-              <h2 id="pf-name" style="font-size:32px; margin:0">Unnamed User</h2>
+              <h2 id="pf-name" style="font-size:30px; margin:0">Unnamed User</h2>
               <p class="sub" style="margin:0" id="pf-meta">—</p>
             </div>
             <div style="margin-left:auto" class="row">
@@ -1022,7 +1090,7 @@
           </div>
         </div>
 
-        <div class="sec-kick" style="margin-top:22px">YOUR AGENTS <span class="dim" id="pf-count"></span></div>
+        <div class="sec-kick" style="margin-top:20px">YOUR AGENTS <span class="dim" id="pf-count"></span></div>
 
         <!-- populated list — shown once an agent is claimed -->
         <div class="panel" id="pf-agents-panel" hidden>
@@ -1075,9 +1143,7 @@
           </div>
         </div>
       </section>
-    </main>
 
-    <div class="wrap">
       <footer>
         <div class="composer">
           <span class="chev" aria-hidden="true">&gt;</span>
@@ -1094,6 +1160,7 @@
           </span>
         </div>
       </footer>
+      </main>
     </div>
     <script>
       // ---------------------------------------------------------------------
