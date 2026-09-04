@@ -131,6 +131,27 @@ export function buildServer(options: BuildOptions): BuiltServer {
   });
   app.get('/favicon.ico', async (_request, reply) => reply.redirect('/favicon.svg', 301));
 
+  /**
+   * Self-hosted web fonts (UI rev 3, "Fresh Deck"). Served from the API origin
+   * like the pages themselves so the UI needs no CDN and no CORS. The pages are
+   * designed to hold on their fallback stacks if a file is missing — this route
+   * just makes the intended faces load. Strictly additive and narrowly scoped:
+   * only `.woff2` files with plain names from web/public/fonts, so the param can
+   * never traverse out of that directory.
+   */
+  app.get<{ Params: { file: string } }>('/fonts/:file', async (request, reply) => {
+    const name = request.params.file;
+    if (!/^[a-z0-9-]+\.woff2$/i.test(name)) {
+      return reply.status(404).send({ error: 'NOT_FOUND' });
+    }
+    const file = join(webDir, 'fonts', name);
+    if (!existsSync(file)) return reply.status(404).send({ error: 'NOT_FOUND' });
+    return reply
+      .type('font/woff2')
+      .header('cache-control', 'public, max-age=86400')
+      .send(readFileSync(file));
+  });
+
   app.get('/skill.md', async (_request, reply) => {
     const skill = join(repoRoot, 'skill.md');
     if (!existsSync(skill)) return reply.status(404).send({ error: 'SKILL_FILE_MISSING' });

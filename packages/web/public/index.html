@@ -7,545 +7,632 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       /* ------------------------------------------------------------------
-         Design language: warm paper, monospace, hairline rules, no radii.
-         Structure comes from 1px borders, dotted dividers and § section
-         headers rather than from cards-with-shadows. One dark surface only
-         (the felt), so the live table is the thing your eye lands on.
+         Fresh Deck (UI rev 3) — the battleground app.
+
+         Warm-gray day, white panels, all saturation spent on the game:
+         vivid cards on a fresh green table. Gold = money only, mint-green
+         = live/turn, the four-colour deck stripe is the signature accent.
+
+         Layout is this revision's own: pill tabs, a segmented game-type
+         switch, a stage panel for the replay, bento panels for data.
+         The script below is untouched apart from a handful of visual
+         constants — every id and generated class it addresses is kept.
          ------------------------------------------------------------------ */
-      /* ===================================================================
-         Sub-spec 17 — the felt world.
-
-         D90: the battleground is the GAME surface, so it commits to a
-         felt-dark ground. Single-theme on purpose: this page had no
-         prefers-color-scheme block at all and rendered a hard #faf9f5, i.e.
-         a white page with one dark rectangle on it. A dark-mode block alone
-         would still leave anyone on a light OS looking at a white game.
-         (home.html stays adaptive — it is the front door, and a lit table on
-         paper reads as a stage.)
-
-         D95/D78: two scopes that COMPOSE, not compete.
-           felt     → ground, identity, colour, motion
-           terminal → type, density, alignment
-         The token names below are unchanged from the light era on purpose:
-         every rule in this file already speaks them, so re-pointing the
-         values flips the world without touching a thousand declarations.
-         =================================================================== */
       :root {
-        /* felt scope — the ground */
-        --paper: #071912;          /* the room */
-        --paper-2: #0a2419;        /* recessed strips */
-        --surface: #0d2f20;        /* raised panels */
-        --ink: #f1f7f3;            /* chalk */
-        --ink-2: #c3dbcd;
-        --muted: #9cc4ad;
-        --faint: #6d9480;
-        --line: #17402a;
-        --line-2: #245b3d;
-        --live: #6fd68f;
-        --live-bg: #0f3a25;
-        --felt: #113d28;
-        --felt-2: #071912;
-        --felt-line: #2f6b48;
-
-        /* D88 — our four, shifted from both the famous set and the old muted
-           tokens: enough to be ours, saturated enough to read as a game on felt. */
-        --c-red: #e0503c;
-        --c-yellow: #f2b826;
-        --c-green: #46b169;
-        --c-blue: #3f86d6;
-
-        /* D89 — gold is money and nothing else. Never a playing colour, so
-           value never competes with the four card colours. */
-        --gold: #ffcf4d;
-
-        /* terminal scope — type, density, alignment. D96 puts a display face
-           beside the mono; see the @font-face block below. */
-        --mono: "Berkeley Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        --display: "Archivo Variable", "Archivo", "Futura", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+        --stone: #f0eee6;
+        --stone-2: #e7e4d8;
+        --panel: #fbfaf6;
+        --panel-2: #f4f2e9;
+        --line: #dcd9cc;
+        --line-2: #c9c5b5;
+        --ink: #22201a;
+        --ink-soft: #5f5b4f;
+        --ink-faint: #8d887a;
+        --faint: #8d887a;       /* alias kept for the script's generated markup */
+        --live: #0a7d46;
+        --live-bright: #2bc77a;
+        --live-soft: #e2f6ea;
+        --gold: #9a6a08;
+        --gold-bright: #f2b33d;
+        --gold-soft: #fdf3d9;
+        --c-red: #ff3b30;
+        --c-yellow: #ffc400;
+        --c-green: #22b14c;
+        --c-blue: #2e6bff;
+        --felt: #8ed4a6;
+        --felt-deep: #6dbd8b;
+        --felt-ring: #4e9e6c;
+        --night: #26241c;
+        --r-lg: 24px; --r-md: 16px; --r-sm: 10px;
+        --shadow-soft: 0 2px 6px rgba(34,32,26,.05), 0 14px 34px rgba(34,32,26,.09);
+        --shadow-lift: 0 4px 10px rgba(34,32,26,.08), 0 22px 48px rgba(34,32,26,.14);
+        --display: "Bricolage Grotesque", "Archivo", system-ui, sans-serif;
+        --body: "Instrument Sans", system-ui, sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
-
-      /* D91/D92/D96 — one self-hosted variable face. A static asset, not a
-         build step: no bundler, no install, no third-party request at runtime.
-         Deliberately NOT a font CDN — that is a live network dependency that
-         can fail in front of a judge. The whole UI is designed to hold on the
-         fallback stack, so a missing file degrades rather than breaks. */
+      /* Self-hosted variable faces — static assets, no build step, no CDN. */
       @font-face {
-        font-family: "Archivo Variable";
-        src: url("/fonts/archivo-variable.woff2") format("woff2-variations");
-        font-weight: 100 900;
-        font-display: swap;
+        font-family: "Bricolage Grotesque";
+        src: url("/fonts/bricolage-grotesque-variable.woff2") format("woff2-variations");
+        font-weight: 400 800; font-display: swap;
+      }
+      @font-face {
+        font-family: "Instrument Sans";
+        src: url("/fonts/instrument-sans-variable.woff2") format("woff2-variations");
+        font-weight: 400 700; font-display: swap;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url("/fonts/jetbrains-mono-variable.woff2") format("woff2-variations");
+        font-weight: 400 600; font-display: swap;
       }
       * { box-sizing: border-box; }
       /* A class with `display` outranks the UA's [hidden] rule, so hidden panels
          (e.g. .controls, which is display:flex) would stay visible without this. */
       [hidden] { display: none !important; }
       body {
-        margin: 0;
-        background: var(--paper);
-        color: var(--ink);
-        font: 13px/1.6 var(--mono);
-        -webkit-font-smoothing: antialiased;
+        margin: 0; background: var(--stone); color: var(--ink);
+        font: 15.5px/1.65 var(--body); -webkit-font-smoothing: antialiased;
       }
-      a { color: inherit; text-decoration: none; border-bottom: 1px solid var(--line-2); }
-      a:hover { border-bottom-color: var(--ink); }
+      a { color: inherit; text-decoration: none; }
+      button { font: inherit; cursor: pointer; }
+      select { font: inherit; }
+      ::selection { background: var(--gold-bright); color: var(--ink); }
+      :focus-visible { outline: 3px solid var(--c-blue); outline-offset: 2px; }
+      .wrap { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
 
-      /* ---- top ticker + nav ---- */
+      /* the deck stripe — page top and the replay stage only */
+      .stripe {
+        height: 6px;
+        background: linear-gradient(90deg,
+          var(--c-red) 0 25%, var(--c-yellow) 25% 50%,
+          var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
+      }
+      .pagestripe { position: sticky; top: 0; z-index: 20; background: var(--stone); }
+
+      /* ---- ticker ---- */
       .ticker {
-        border-bottom: 1px solid var(--line);
-        font-size: 11px; color: var(--muted);
-        padding: 5px 0; background: var(--paper);
+        display: flex; align-items: center; gap: 10px; width: fit-content;
+        margin: 14px auto 0;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 7px 18px; font-size: 13.5px; color: var(--ink-soft); box-shadow: var(--shadow-soft);
       }
-      .ticker .dot { color: var(--live); }
-      .ticker b { color: var(--ink); font-weight: 600; }
-      header {
-        display: flex; align-items: center; gap: 22px;
-        padding: 10px 0; border-bottom: 1px solid var(--line);
-        position: sticky; top: 0; z-index: 20; background: var(--paper);
-        flex-wrap: wrap;
+      .ticker .dot {
+        width: 9px; height: 9px; border-radius: 50%; background: var(--live-bright);
+        animation: ping 2.4s ease-out infinite;
       }
-      .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-      .brand { font-weight: 700; letter-spacing: -.2px; display: flex; align-items: center; gap: 8px; }
-      /* The brand mark is the favicon file itself (sub-spec 21), not a glyph in a
-         filled square. Two drawings of one logo drift — these already had: the
-         header rendered U+259A in whatever font the page resolved, on a ground
-         inverted relative to the homepage's, while the tab showed the drawn
-         quadrants on felt. One <img> means there is only ever one artwork, and it
-         is the same bytes the tab loads. */
-      .brand .mark { width: 20px; height: 20px; display: block; }
-      .brand .slash { color: var(--faint); font-weight: 400; }
-      nav { display: flex; gap: 2px; }
-      nav button {
-        background: transparent; color: var(--muted); border: 0;
-        padding: 5px 9px; cursor: pointer; font: inherit; font-size: 12.5px;
-      }
-      nav button:hover { color: var(--ink); }
-      nav button[aria-current="page"] { color: var(--ink); font-weight: 700; }
-      .chain {
-        margin-left: auto; display: flex; align-items: center; gap: 14px;
-        font-size: 11px; color: var(--muted);
-      }
-      main { padding: 0 0 70px; }
+      @keyframes ping { 70% { box-shadow: 0 0 0 9px rgba(44,199,122,0); } 100% { box-shadow: 0 0 0 0 rgba(44,199,122,0); } }
+      .ticker b { color: var(--ink); font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
+      .ticker .sep { color: var(--ink-faint); }
 
-      /* ---- hero + tabs (arena.dev.fun-style: one persistent header, three tabs) ---- */
-      .hero { padding: 30px 0 6px; }
-      .hero .crumb { margin-bottom: 10px; }
-      .hero-title { font-size: 44px; line-height: 1.04; letter-spacing: -1.6px; margin: 0 0 12px; font-weight: 700; }
-      .join-cta { margin-bottom: 4px; }
-      .join-cta .label { display: block; margin-bottom: 8px; }
-      .tabs {
-        display: flex; align-items: center; gap: 2px;
-        border-bottom: 1px solid var(--line-2); margin: 18px 0 30px;
+      /* ---- header ---- */
+      header.site { padding: 14px 0 4px; }
+      .bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+      .brand { display: flex; align-items: center; gap: 10px; font: 800 18px/1 var(--display); letter-spacing: -.01em; }
+      .brand svg { display: block; }
+      .brand .slash { color: var(--ink-faint); font-weight: 400; }
+      /* segmented game-type switch (playground | tournament) */
+      .seg {
+        display: inline-flex; background: var(--panel); border: 1px solid var(--line);
+        border-radius: 999px; padding: 4px; box-shadow: var(--shadow-soft);
       }
+      .seg button {
+        border: 0; background: transparent; color: var(--ink-soft);
+        border-radius: 999px; padding: 6px 16px; font-size: 13.5px; font-weight: 600;
+      }
+      .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+      .season { display: inline-flex; align-items: center; gap: 6px; }
+      .season .slabel { font-size: 13px; color: var(--ink-faint); }
+      .season select {
+        background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+        border-radius: 999px; font-size: 13px; padding: 6px 12px; cursor: pointer;
+        max-width: 210px; box-shadow: var(--shadow-soft);
+      }
+      .season select:hover { border-color: var(--line-2); }
+      .season select option { background: var(--panel); color: var(--ink); }
+      .right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--ink-faint); }
+      .gbtn {
+        display: inline-flex; align-items: center; gap: 7px;
+        border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+        border-radius: 999px; padding: 7px 15px; font-size: 13.5px; cursor: pointer;
+        box-shadow: var(--shadow-soft);
+      }
+      .gbtn:hover { border-color: var(--line-2); }
+      .gbtn .g { color: var(--c-blue); font-weight: 800; }
+      .gbtn[disabled] { opacity: .5; cursor: default; }
+      .handle { color: var(--live); font-weight: 700; }
+
+      /* ---- hero ---- */
+      .hero { padding: 30px 0 4px; }
+      .crumb { font-size: 13px; color: var(--live); margin-bottom: 8px; font-family: var(--mono); }
+      .crumb span { color: var(--ink-faint); }
+      .hero-title { font: 800 clamp(34px, 4.6vw, 52px)/1 var(--display); letter-spacing: -.025em; margin: 0 0 12px; }
+      .lede { color: var(--ink-soft); margin: 0 0 20px; max-width: 62ch; font-size: 16px; }
+      .join-cta { margin-bottom: 6px; }
+      .join-cta .jlabel { display: block; margin: 0 0 8px; color: var(--ink-soft); font-size: 13.5px; }
+      .cmd {
+        display: flex; align-items: center; gap: 12px; width: fit-content; max-width: 100%;
+        background: var(--night); border-radius: var(--r-sm);
+        padding: 5px 5px 5px 15px; box-shadow: var(--shadow-soft);
+      }
+      .cmd .p { color: var(--live-bright); font-family: var(--mono); font-weight: 600; }
+      .cmd .t { font: 400 12.5px/1 var(--mono); color: #f2efe4; white-space: nowrap; overflow-x: auto; }
+      .cmd button {
+        border: 0; background: var(--gold-bright); color: var(--ink); border-radius: 8px;
+        padding: 8px 15px; font-weight: 700; font-size: 12.5px;
+      }
+      .cmd button:hover { filter: brightness(1.05); }
+
+      /* ---- tabs ---- */
+      .tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 22px 0 26px; }
       .tabs button {
-        background: transparent; border: 0; border-bottom: 2px solid transparent;
-        color: var(--muted); font: inherit; font-size: 12px; letter-spacing: 1.3px;
-        text-transform: uppercase; padding: 10px 13px; cursor: pointer; margin-bottom: -1px;
+        background: var(--panel); border: 1px solid var(--line);
+        color: var(--ink-soft); border-radius: 999px; padding: 8px 19px;
+        font-size: 14px; font-weight: 600; box-shadow: var(--shadow-soft);
       }
       .tabs button:hover { color: var(--ink); }
-      .tabs button[aria-current="page"] { color: var(--ink); font-weight: 700; border-bottom-color: var(--ink); }
+      .tabs button[aria-current="page"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
       .tabs-right {
-        margin-left: auto; font-size: 10.5px; letter-spacing: 1.3px;
-        text-transform: uppercase; color: var(--live);
+        margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+        background: var(--live-soft); color: var(--live); border-radius: 999px;
+        padding: 6px 14px; font-size: 12.5px; font-weight: 700;
       }
-      /* ---- top menu bar: [battleground ▾] dropdown (playground / tournament) ---- */
-      .menubar { display: flex; align-items: center; gap: 6px; margin-left: 18px; }
-      .dd { position: relative; }
-      .dd-btn {
-        background: transparent; border: 1px solid var(--line-2); color: var(--ink);
-        font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer; letter-spacing: .3px;
-      }
-      .dd-btn:hover { border-color: var(--ink); }
-      .dd-menu {
-        position: absolute; top: calc(100% + 4px); left: 0; min-width: 156px; z-index: 30;
-        background: var(--surface); border: 1px solid var(--line-2);
-        box-shadow: 0 8px 24px rgba(0,0,0,.18);
-      }
-      .dd-menu a {
-        display: block; padding: 9px 13px; font-size: 12.5px; color: var(--ink-2);
-        text-transform: lowercase; letter-spacing: .3px;
-      }
-      .dd-menu a:hover { background: var(--paper-2); color: var(--ink); }
-      .dd-menu a[aria-current="page"] { background: var(--paper-2); color: var(--ink); font-weight: 700; }
-      /* Season selector (sub-spec 21 D146) — a native <select>, styled to match the
-         adjacent dropdown button rather than reimplementing a menu. It is one axis
-         with one choice; the custom .dd exists because the game type also drives
-         the hash and the hero copy, which a season does not. */
-      .season { display: inline-flex; align-items: center; gap: 6px; }
-      .season .label { font-size: 10.5px; }
-      .season select {
-        background: transparent; border: 1px solid var(--line-2); color: var(--ink);
-        font: inherit; font-size: 12px; padding: 5px 8px; cursor: pointer; letter-spacing: .3px;
-        max-width: 210px;
-      }
-      .season select:hover { border-color: var(--ink); }
-      /* The felt is dark; a native option list is painted by the OS, so give it an
-         explicit ground rather than inheriting white-on-white on some platforms. */
-      .season select option { background: var(--surface); color: var(--ink); }
-      td.coins { font-weight: 700; color: var(--ink); }
-      #auth-slot .gbtn, #pf-x .gbtn {
-        display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2);
-        background: var(--surface); color: var(--ink); padding: 4px 10px; font: inherit;
-        font-size: 12px; cursor: pointer;
-      }
-      #auth-slot .gbtn:hover, #pf-x .gbtn:hover { border-color: var(--ink); }
-      #auth-slot .gbtn .g, #pf-x .gbtn .g { color: var(--c-blue); font-weight: 800; }
-      #auth-slot .gbtn[disabled] { opacity: .5; cursor: default; }
-      #pf-x .handle { color: var(--live); font-weight: 700; }
+      .tabs-right::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live-bright); }
 
-      /* ---- section headers: `§ LABEL ————————— status` ---- */
-      .sec {
-        display: flex; align-items: center; gap: 12px;
-        font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase;
-        color: var(--muted); margin: 0 0 14px;
-      }
-      .sec::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-      .sec .status { color: var(--live); letter-spacing: 1.4px; }
-      .sec .status.off { color: var(--faint); }
-      .sec > .status { order: 3; }
-      .sec::after { order: 2; }
+      main { padding: 0 0 50px; }
 
-      /* T60 — exaggerated hierarchy. Mono stays the voice of the machine
-         (ids, logs, hashes, the join command); the display face carries
-         anything a human reads for meaning: titles, scores, stakes. One
-         uniform 13px for everything was the flattest thing about the old page. */
-      h1 {
-        font-family: var(--display); font-size: clamp(38px, 6vw, 62px); line-height: .98;
-        letter-spacing: -2.2px; margin: 0 0 14px; font-weight: 800;
+      /* ---- headings & shared text ---- */
+      .sec-kick { font: 600 12px/1 var(--mono); color: var(--gold); letter-spacing: .1em; margin: 0 0 8px; }
+      h2 { font: 800 clamp(24px, 3vw, 32px)/1.1 var(--display); letter-spacing: -.02em; margin: 0 0 8px; }
+      .sub { color: var(--ink-soft); margin: 0 0 16px; max-width: 64ch; }
+      .label { font-size: 12.5px; color: var(--ink-faint); font-weight: 600; }
+      .dim { color: var(--ink-faint); }
+      .dotted { border-top: 1px dashed var(--line-2); }
+      .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+      .empty { color: var(--ink-faint); padding: 38px; text-align: center; font-size: 14.5px; }
+      code {
+        background: var(--panel-2); border: 1px solid var(--line);
+        border-radius: 5px; padding: 1px 6px; font-size: .85em; font-family: var(--mono);
       }
-      h2 { font-family: var(--display); font-size: 26px; margin: 0 0 6px; letter-spacing: -1px; font-weight: 800; }
-      .lede { color: var(--ink-2); margin: 0 0 26px; }
-      .sub { color: var(--muted); margin: 0 0 18px; }
-      .label { font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--muted); }
-
-      /* ---- terminal window chrome ---- */
-      .term { border: 1px solid var(--line-2); background: var(--surface); margin-bottom: 26px; }
-      .term-bar {
-        display: flex; align-items: center; gap: 8px;
-        padding: 7px 12px; border-bottom: 1px solid var(--line);
-        font-size: 11px; color: var(--muted); background: var(--paper-2);
-      }
-      .term-bar .lights { display: flex; gap: 4px; }
-      .term-bar .lights i { width: 7px; height: 7px; background: var(--line-2); display: block; }
-      .term-bar .cmd { margin-left: auto; color: var(--faint); }
-      .term-body { padding: 20px; }
-      .crumb { font-size: 11.5px; color: var(--live); margin-bottom: 6px; }
-      .crumb span { color: var(--faint); }
-
-      /* ---- panels / cards ---- */
-      .panel { border: 1px solid var(--line-2); background: var(--surface); }
-      .panel.pad { padding: 18px; }
-      .grid { display: grid; gap: 14px; }
-      .cols-3 { grid-template-columns: repeat(3, 1fr); }
-      .cols-2 { grid-template-columns: repeat(2, 1fr); }
-      .cols-4 { grid-template-columns: repeat(4, 1fr); }
-      .cols-5 { grid-template-columns: repeat(5, 1fr); }
-      @media (max-width: 860px) {
-        .cols-3, .cols-2, .cols-4, .cols-5 { grid-template-columns: 1fr 1fr; }
-      }
-      /* tournament economics header (sub-spec 13) */
-      #tourn-econ { margin-bottom: 24px; }
-      /* Economy figures are money — display face, gold, and big (D89). */
       .econ-v {
         font-family: var(--display); font-size: 30px; font-weight: 800;
-        letter-spacing: -1px; margin: 6px 0 3px; color: var(--gold);
+        letter-spacing: -.015em; margin: 6px 0 3px; color: var(--gold);
         font-variant-numeric: tabular-nums;
       }
-      .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
-      .dotted { border-top: 1px dotted var(--line-2); }
 
-      /* ---- badges ---- */
+      /* ---- panels, grids, badges, buttons ---- */
+      .panel { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); }
+      .panel.pad { padding: 18px; box-shadow: var(--shadow-soft); }
+      .grid { display: grid; gap: 14px; }
+      .cols-2 { grid-template-columns: repeat(2, 1fr); }
+      .cols-3 { grid-template-columns: repeat(3, 1fr); }
+      .cols-4 { grid-template-columns: repeat(4, 1fr); }
+      .cols-5 { grid-template-columns: repeat(5, 1fr); }
+      @media (max-width: 860px) { .cols-2, .cols-3, .cols-4, .cols-5 { grid-template-columns: 1fr 1fr; } }
       .badge {
-        display: inline-block; padding: 1.5px 7px; font-size: 10px;
-        letter-spacing: 1.2px; text-transform: uppercase; border: 1px solid var(--line-2);
-        color: var(--muted); vertical-align: middle;
+        display: inline-flex; align-items: center; gap: 7px; border-radius: 999px;
+        padding: 4px 12px; font-size: 12px; font-weight: 700;
       }
-      .badge.live { background: var(--live-bg); border-color: var(--live-bg); color: var(--live); font-weight: 700; }
-      .badge.solid { background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 700; }
-      .pulse { color: var(--live); }
-
-      /* ---- buttons ---- */
+      .badge.live { background: var(--live-soft); color: var(--live); }
+      .badge.solid { background: var(--ink); color: var(--panel); }
+      .chip {
+        font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+        color: var(--gold); border: 1px solid var(--gold-bright); border-radius: 999px;
+        padding: 2px 8px; vertical-align: 2px; font-weight: 700;
+      }
       button.primary {
-        background: var(--live); color: #072314; border: 1px solid var(--live);
-        padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer;
+        background: var(--ink); color: var(--panel); border: 1px solid var(--ink);
+        border-radius: 11px; padding: 9px 18px; font-weight: 700; cursor: pointer;
       }
-      button.primary:hover { background: #86e5a3; border-color: #86e5a3; }
+      button.primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-soft); }
       button.ghost, select.ghost {
-        background: transparent; color: var(--ink); border: 1px solid var(--line-2);
-        padding: 7px 13px; font: inherit; cursor: pointer;
+        background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+        border-radius: 11px; padding: 8px 15px; cursor: pointer; font-weight: 600; font-size: 13.5px;
+        box-shadow: var(--shadow-soft);
       }
-      button.ghost:hover { border-color: var(--ink); }
+      button.ghost:hover { border-color: var(--line-2); }
       button:disabled { opacity: .4; cursor: default; }
-      select.ghost { padding: 6px 8px; }
+      select.ghost { padding: 6px 10px; }
+      .input {
+        padding: 10px 14px; background: var(--panel); border: 1px solid var(--line-2);
+        border-radius: 11px; color: var(--ink); font: inherit; font-size: 14px;
+      }
 
       /* ---- tables ---- */
       table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: 9px 12px; }
+      th, td { text-align: left; padding: 12px 16px; }
       th {
-        color: var(--muted); font-weight: 400; font-size: 10.5px;
-        text-transform: uppercase; letter-spacing: 1.2px;
-        border-bottom: 1px solid var(--line-2);
-      }
-      td { border-bottom: 1px dotted var(--line); }
-      th.num, td.num { text-align: right; }
-      tbody tr { cursor: pointer; }
-      tbody tr:hover { background: var(--paper-2); }
-      /* The leader row. This was a hardcoded near-white (#f0f7f1) left over from the
-         ink-on-paper era; once the tokens were re-pointed to the felt scope it put
-         --ink chalk text on a white cell, so the top agent's name, coins and
-         tables-won rendered invisible — the one row that matters most was the one
-         you could not read. Highlight the way the rest of the felt does: a raised
-         surface, plus a gold edge because the standings rank by coins (D89). */
-      tbody tr.top td { background: var(--surface); }
-      tbody tr.top td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
-      /* td paints over the tr, so the generic row hover needs restating here. */
-      tbody tr.top:hover td { background: var(--felt); }
-      .rank { color: var(--faint); width: 46px; }
-      .agent { font-weight: 700; }
-      .dim { color: var(--muted); }
-      /* ---- agent profile (sub-spec 19) ---- */
-      .ag-headline { display: flex; gap: 26px; }
-      .ag-headline .econ-v { font-size: 24px; }
-      /* Tab strip: overview plus one per competition the agent has entered. */
-      .ag-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 18px 0 4px; }
-      .ag-tabs button {
-        font: inherit; font-size: 12px; letter-spacing: .04em;
-        background: var(--surface); color: var(--muted);
-        border: 1px solid var(--line); border-bottom: none; cursor: pointer;
-        padding: 8px 14px;
-      }
-      .ag-tabs button[aria-current="page"] { background: var(--felt); color: var(--ink); font-weight: 700; }
-      .ag-tabs button:hover { color: var(--ink); }
-      /* The claim call-to-action. Quiet: unclaimed is the COMMON state, so it is
-         an invitation, not a warning. */
-      .ag-claim { color: var(--muted); }
-      .ag-claim a { color: var(--gold); }
-      .ag-chart { width: 100%; height: 132px; display: block; margin-top: 12px; overflow: visible; }
-      .ag-chart .area { fill: rgba(111,214,143,.14); }
-      .ag-chart .line { fill: none; stroke: var(--live); stroke-width: 1.5; }
-      .ag-chart .zero { stroke: var(--line-2); stroke-dasharray: 3 4; stroke-width: 1; }
-      /* Style rows: a label, the sentence it was computed from, and the bar. */
-      .ag-srow {
-        display: grid; grid-template-columns: 120px 1fr 120px 44px;
-        gap: 14px; align-items: center;
-        padding: 11px 18px; border-top: 1px dotted var(--line);
-      }
-      .ag-srow .k { font-family: var(--mono, inherit); font-size: 11px; letter-spacing: .1em;
-        text-transform: uppercase; color: var(--muted); }
-      /* --paper-2 is the palette's "recessed strip". The first version reached for
-         a --surface-2 that does not exist, so the track fell back to --line — the
-         same colour as its own border, which made the unfilled part invisible. */
-      .ag-bar { height: 7px; background: var(--paper-2); border: 1px solid var(--line); }
-      .ag-bar i { display: block; height: 100%; background: var(--live); }
-      .ag-srow .pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
-      /* `.pad` on its own is not a class: the sheet defines `.panel.pad`, both on
-         the SAME element. These are children of a panel, so they carry their own
-         padding — matching .ag-srow's 18px so the column edges line up. */
-      #ag-style-head, #ag-style-raw { padding: 16px 18px; }
-      /* Was 21px, which out-shouted every heading around it in a strip this
-         short. The weight carries the emphasis; the size does not have to. */
-      .ag-arch { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
-      #ag-style-head .dim { font-size: 12px; margin-top: 2px; }
-      /* The "won" badge on a table row. Gold, because a win is money here. */
-      .chip {
-        font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
-        color: var(--gold); border: 1px solid var(--gold); border-radius: 3px;
-        padding: 1px 5px; vertical-align: 1px; font-weight: 600;
-      }
-      /* .sec carries only a BOTTOM margin, so every block here has to supply its
-         own trailing space or the next heading welds itself to the block above —
-         which is exactly what happened between the style panel and the table
-         list. Done once for the view rather than as inline margins per element. */
-      #view-agent > .panel,
-      #view-agent > .grid,
-      #view-agent > .replay-slot { margin-bottom: 26px; }
-      .ag-raw { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px;
-        background: var(--line); border: 1px solid var(--line); margin-top: 12px; }
-      .ag-raw div { background: var(--surface); padding: 10px 12px; text-align: center; }
-      .ag-raw .k { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-      .ag-raw .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      td.ag-open a { color: var(--gold); text-decoration: none; }
-      td.ag-open a:hover { text-decoration: underline; }
-      tr.ag-row.sel td { background: var(--surface); }
-      /* Agent names link to their profile wherever they appear (T80). */
-      a.agent-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--line-2); }
-      a.agent-link:hover { color: var(--gold); border-bottom-color: var(--gold); }
-
-      /* Second line inside the coin cell, shown only where a rebuy separates the
-         balance held from the net that ranks. Quiet and small: it is a footnote
-         on a rare row, not a column every reader has to parse. */
-      td .held { font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
-      /* The owner column replaced the agent id. A claimed row names a person, so
-         it links out to them; an unclaimed one stays quiet in --muted rather than
-         shouting, because "unclaimed" is the common case, not an error. */
-      td.owner a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--line-2); }
-      td.owner a:hover { color: var(--gold); border-bottom-color: var(--gold); }
-      td.owner a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-
-      /* ---- the felt: the one dark surface ---- */
-      .board { border: 1px solid var(--ink); background: var(--surface); }
-      /* Was ink-on-paper, i.e. a dark bar on a light page. Re-pointing the
-         tokens inverted it into a glaring white strip above the felt, so it
-         gets explicit felt values: the table should read continuously from
-         bar to baize, like a broadcast lower-third rather than a title bar. */
-      .board-bar {
-        background: var(--paper-2); color: var(--ink-2); padding: 7px 12px;
+        color: var(--ink-faint); font-weight: 600; font-size: 11.5px;
+        text-transform: uppercase; letter-spacing: .07em;
         border-bottom: 1px solid var(--line);
-        font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
-        display: flex; align-items: center; gap: 10px;
       }
-      .board-bar .r { margin-left: auto; color: var(--faint); }
-      .board-bar .on { color: #6fd68f; }
+      td { border-bottom: 1px solid var(--stone-2); font-size: 14.5px; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr { cursor: pointer; transition: background .12s ease; }
+      tbody tr:hover td { background: var(--panel-2); }
+      th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      td.coins { font-weight: 700; }
+      td.coins .held { font-size: 11.5px; font-weight: 400; color: var(--ink-faint); }
+      .rank { color: var(--ink-faint); width: 46px; font-family: var(--mono); font-size: 13px; font-weight: 600; }
+      .agent { font-weight: 700; }
+      td.owner { color: var(--ink-faint); font-size: 13.5px; }
+      td.owner a { color: var(--ink-soft); border-bottom: 1px dotted var(--line-2); }
+      td.owner a:hover { color: var(--gold); border-bottom-color: var(--gold-bright); }
+      /* the leader row: money tint + gold edge (D89 — coins rank the board) */
+      tbody tr.top td { background: var(--gold-soft); }
+      tbody tr.top td:first-child { box-shadow: inset 4px 0 0 var(--gold-bright); }
+      tbody tr.top:hover td { background: #fbecc8; }
+      .agent-cell { display: inline-flex; align-items: center; gap: 9px; }
+      a.agent-link { color: inherit; border-bottom: 1px dotted var(--line-2); }
+      a.agent-link:hover { color: var(--gold); border-bottom-color: var(--gold-bright); }
+      button.agent-link { background: none; border: 0; padding: 0; color: var(--gold); font-weight: 700; cursor: pointer; }
+      button.agent-link:hover { text-decoration: underline; }
+
+      /* ---- derived agent faces (T54) ---- */
+      .av {
+        width: 26px; height: 26px; border-radius: 8px; flex: none;
+        display: inline-flex; align-items: center; justify-content: center;
+        font: 800 11px/1 var(--display); letter-spacing: -.02em;
+      }
+      .av.lg { width: 32px; height: 32px; font-size: 13px; border-radius: 9px; }
+      .seat.active .av { box-shadow: 0 0 0 2.5px rgba(44,199,122,.85); }
+      .seat.winner .av { box-shadow: 0 0 0 2.5px rgba(242,179,61,.9); }
+
+      /* ---- coin reels (T61 layer 3) ---- */
+      .reel { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; }
+      .reel-col { display: inline-block; height: 1em; overflow: hidden; line-height: 1; }
+      .reel-strip { display: flex; flex-direction: column; line-height: 1; }
+      .reel-sep { display: inline-block; }
+      .podium-coins { font-family: var(--display); font-weight: 800; color: var(--gold); }
+
+      /* =================================================================
+         THE REPLAY — a stage panel: stripe, board bar, fresh felt, chat rail
+         ================================================================= */
+      .board {
+        border: 1px solid var(--line); border-radius: var(--r-lg);
+        background: var(--panel); box-shadow: var(--shadow-lift); overflow: hidden;
+      }
+      .board-bar {
+        display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+        background: var(--panel-2); border-bottom: 1px solid var(--line);
+        font-size: 13.5px; color: var(--ink-soft); flex-wrap: wrap;
+      }
+      .board-bar .on { color: var(--live); font-weight: 700; }
+      .board-bar .r { margin-left: auto; color: var(--ink-faint); font-size: 12.5px; }
+      .board-bar .guarantee { color: var(--ink-faint); }
+      @media (max-width: 760px) { .board-bar .guarantee { display: none; } }
+      .cbadge {
+        display: inline-flex; align-items: center; gap: 6px;
+        border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 11px;
+        font-weight: 700; font-size: 12px; text-transform: capitalize;
+        background: var(--panel);
+      }
+      .cbadge i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
       .board-split { display: grid; grid-template-columns: 1fr 300px; }
       @media (max-width: 900px) { .board-split { grid-template-columns: 1fr; } }
+
+      /* the fresh felt — light green, printed racetrack ring, white rail.
+         The oval geometry (inset 44px 64px) is load-bearing: drawDirectionArc
+         sizes its arc to hug exactly this ring. */
       .felt {
-        background:
-          radial-gradient(circle at 50% 48%, var(--felt) 0%, var(--felt-2) 82%);
+        background: radial-gradient(120% 95% at 50% 30%, var(--felt) 0%, var(--felt-deep) 100%);
         position: relative; min-height: 540px; overflow: hidden;
       }
-      /* Sub-spec 18: five or six seats ring the oval instead of taking corners,
-         which needs more height — at 540px the top and bottom seats close on the
-         pile. Four or fewer keeps the original board exactly. */
       .felt.ringed { min-height: 660px; }
-      /* Six 236px panels on one oval leave the pile squeezed between the two side
-         seats. Narrowing them on ringed tables only keeps the centre readable
-         without touching the four-seat board. */
       .felt.ringed .seat { width: 190px; }
       .felt.ringed .seat .nm { max-width: 78px; }
-      /* the table itself — one large oval */
       .felt::before {
         content: ""; position: absolute; inset: 44px 64px;
-        border: 1px solid rgba(255,255,255,.09); border-radius: 50%;
+        border: 2px dashed var(--felt-ring); border-radius: 50%; opacity: .6;
         pointer-events: none;
       }
-      /* play direction — a curved arrow that hugs the oval (CW / CCW) */
       .dir-arc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-      .dir-arc path { fill: none; stroke: rgba(111,214,143,.5); stroke-width: 2.5; stroke-linecap: round; }
-      .dir-arc polygon { fill: rgba(111,214,143,.72); }
+      .dir-arc path { fill: none; stroke: rgba(20,64,42,.5); stroke-width: 2.5; stroke-linecap: round; }
+      .dir-arc polygon { fill: rgba(20,64,42,.72); }
 
-      /* centre: draw pile · direction chip · discard pile */
+      /* centre: draw pile · discard pile */
       .pile {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
         display: flex; align-items: flex-end; gap: 34px; z-index: 2;
       }
       .pile-col { display: flex; flex-direction: column; align-items: center; gap: 7px; }
-      .pile-k { font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #7fa590; }
-      .pile-n { font-size: 12px; font-weight: 700; color: #eef4ef; }
+      .pile-k { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #2e6b46; font-weight: 700; }
+      .pile-n { font-size: 12.5px; font-weight: 700; color: #1c4a30; }
       .discardwrap { position: relative; }
-      /* The played card sits on top of two cards askew beneath it, so the
-         discard reads as a pile on a table rather than a single tile. */
       .discardwrap .card { position: relative; z-index: 1; }
-      /* :has() guard — with no card yet the wrapper is zero-sized and the
-         backers would render as two stray dots on the empty felt. */
       .discardwrap:has(.card)::before, .discardwrap:has(.card)::after {
         content: ""; position: absolute; inset: 0; z-index: 0;
         border: 2px solid #fff; border-radius: 7px;
-        box-shadow: 0 4px 10px rgba(0,0,0,.3);
+        box-shadow: 0 3px 8px rgba(34,32,26,.25);
       }
-      .discardwrap:has(.card)::before { transform: rotate(-10deg) translate(-6px, 3px); background: #8f3838; }
-      .discardwrap:has(.card)::after { transform: rotate(7deg) translate(6px, 2px); background: #9a7a1e; }
+      .discardwrap:has(.card)::before { transform: rotate(-10deg) translate(-6px, 3px); background: #e8b4ab; }
+      .discardwrap:has(.card)::after { transform: rotate(7deg) translate(6px, 2px); background: #ecd9a3; }
 
-      /* ---- T54: agent faces (derived, never stored) ---- */
-      .av {
-        width: 22px; height: 22px; border-radius: 6px; flex: none;
+      /* ---- cards: vivid solid faces, white ring, corner suns.
+         No oval motif (trade dress), no wedge (the old motif). ---- */
+      .card {
+        position: relative; flex: none; width: 36px; height: 50px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 9px; font-weight: 800; line-height: 1.15; text-align: center;
+        background: var(--panel); color: #fff;
+        border: 2px solid #fff; border-radius: 6px;
+        box-shadow: 0 2px 5px rgba(34,32,26,.2), 0 6px 14px rgba(34,32,26,.16);
+      }
+      .card::before, .card::after {
+        content: ""; position: absolute; z-index: 0; width: 20px; height: 20px;
+        background: repeating-radial-gradient(circle at 0 0, rgba(255,255,255,.5) 0 1.5px, transparent 1.5px 4.5px);
+        pointer-events: none; border-radius: 0 0 100% 0;
+      }
+      .card::before { top: -2px; right: -2px; }
+      .card::after { bottom: -2px; left: -2px; transform: rotate(180deg); }
+      .card .mid { position: relative; z-index: 1; padding: 0 2px; max-width: 100%; }
+      .card .mid.n { font-size: 17px; letter-spacing: -.5px; font-family: var(--display); }
+      .card .mid.g { font-size: 15px; letter-spacing: -.5px; font-family: var(--display); }
+      .card .nm { position: absolute; bottom: 4px; left: 0; right: 0; z-index: 1; font-size: 7px; }
+      .card .ix { position: absolute; top: 2px; left: 3px; font-size: 7.5px; font-style: normal; z-index: 1; font-family: var(--display); }
+      .card .ix.br { top: auto; left: auto; bottom: 2px; right: 3px; transform: rotate(180deg); }
+      .card.red { background: var(--c-red); }
+      .card.blue { background: var(--c-blue); }
+      .card.green { background: var(--c-green); }
+      .card.yellow { background: var(--c-yellow); color: #33290a; }
+      .card.yellow .mid, .card.yellow .ix { color: #33290a; }
+      .card.yellow::before, .card.yellow::after {
+        background: repeating-radial-gradient(circle at 0 0, rgba(51,41,10,.35) 0 1.5px, transparent 1.5px 4.5px);
+      }
+      .card.any {
+        background: conic-gradient(from 45deg,
+          var(--c-red) 0 25%, var(--c-yellow) 0 50%,
+          var(--c-green) 0 75%, var(--c-blue) 0 100%);
+        text-shadow: 0 1px 2px rgba(20,8,40,.5);
+      }
+      .card.any::before, .card.any::after { display: none; }
+      .card.back { background: var(--night); }
+      .card.back::before {
+        content: "▚"; background: none; inset: 0; width: auto; height: auto;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 12px; color: rgba(242,179,61,.75);
+      }
+      .card.back .mid { display: none; }
+      .card.lg { width: 54px; height: 76px; font-size: 10.5px; border-radius: 9px; }
+      .card.lg .mid.n { font-size: 26px; letter-spacing: -1px; }
+      .card.lg .mid.g { font-size: 23px; transform: translateY(-5px); }
+      .card.lg .nm { font-size: 7.5px; }
+      .card.lg .ix { font-size: 10px; top: 4px; left: 5px; }
+      .card.lg .ix.br { top: auto; left: auto; bottom: 4px; right: 5px; }
+      .card.lg::before, .card.lg::after { width: 28px; height: 28px; }
+      .card.back.lg::before { font-size: 18px; }
+
+      /* ---- seats: white pills on the felt ---- */
+      .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+      .seat {
+        position: absolute; width: 236px; pointer-events: auto;
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: var(--r-md); padding: 10px 12px; color: var(--ink);
+        box-shadow: var(--shadow-soft);
+      }
+      .seat.tl { top: 16px; left: 16px; } .seat.tr { top: 16px; right: 16px; }
+      .seat.br { bottom: 16px; right: 16px; } .seat.bl { bottom: 16px; left: 16px; }
+      .seat.active { border-color: var(--live-bright); box-shadow: 0 0 0 2px rgba(44,199,122,.35), var(--shadow-soft); }
+      .seat.winner { border-color: var(--gold-bright); box-shadow: 0 0 0 2px rgba(242,179,61,.45), var(--shadow-soft); }
+      .seat .top { display: flex; align-items: center; gap: 8px; }
+      .seat .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 104px; font-size: 13.5px; }
+      .seat .cnt { margin-left: auto; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+      .seat .id { font-size: 10px; color: var(--ink-faint); margin-top: 2px; font-family: var(--mono); }
+      .seat .tag {
+        font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+        background: var(--live-soft); color: var(--live); border-radius: 999px;
+        padding: 2px 8px; font-weight: 700;
+      }
+      .seat .tag.win { background: var(--gold-soft); color: var(--gold); }
+      .seat .dealer {
+        margin-left: 6px; width: 17px; height: 17px; border-radius: 50%;
+        background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-soft);
+        font-size: 9px; font-weight: 800;
         display: inline-flex; align-items: center; justify-content: center;
-        font-weight: 800; font-size: 9.5px; letter-spacing: -.3px;
       }
-      .av.lg { width: 26px; height: 26px; font-size: 11px; border-radius: 7px; }
-      /* D78: standings take felt-scope IDENTITY (faces, coin gold) while keeping
-         terminal-scope TYPOGRAPHY (mono, tabular-nums, dense rows). The two
-         scopes compose — they are not alternatives. */
-      .agent-cell { display: inline-flex; align-items: center; gap: 8px; }
+      /* the decision clock riding the seat corner */
+      .clock { position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; z-index: 5; }
+      .clock::before {
+        content: ""; position: absolute; inset: -3px; border-radius: 50%;
+        background: var(--panel); border: 1px solid var(--line);
+      }
+      .clock svg, .clock .val { position: relative; }
+      .clock svg { transform: rotate(-90deg); display: block; }
+      .clock .track { stroke: var(--line); }
+      .clock .run { stroke: var(--live-bright); stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
+      .clock.low .run { stroke: var(--gold-bright); }
+      .clock .val {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        font-size: 9.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); font-family: var(--mono);
+      }
+      /* a held hand overlaps like real cards */
+      .hand { display: flex; flex-wrap: wrap; margin-top: 9px; min-height: 50px; }
+      .hand .card + .card { margin-left: -8px; }
+      .hand .card { transition: transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .18s; }
+      .hand .card:hover { transform: translateY(-9px); z-index: 4; box-shadow: 0 10px 20px rgba(34,32,26,.35); }
+      @media (prefers-reduced-motion: reduce) {
+        .hand .card { transition: none; }
+        .ticker .dot { animation: none; }
+      }
 
-      /* T61 / layer 3 — slot-reel digits. One column per digit; the strip
-         holds 0-9 and slides to the right one. Height is locked to 1em so the
-         reel occupies exactly the space the plain number would. */
-      .reel { display: inline-flex; align-items: baseline; font-variant-numeric: tabular-nums; }
-      .reel-col { display: inline-block; height: 1em; overflow: hidden; line-height: 1; }
-      /* The resting position is an inline transform; the entrance is a WAAPI
-         animation through the motion helper, so it inherits the budget, the
-         cancellation and the reduced-motion kill switch. */
-      .reel-strip { display: flex; flex-direction: column; line-height: 1; }
-      .reel-sep { display: inline-block; }
-      /* the seat whose turn it is gets a live ring, not just a border colour */
-      .seat.active .av { box-shadow: 0 0 0 2px rgba(111,214,143,.85); }
-      .seat.winner .av { box-shadow: 0 0 0 2px rgba(226,192,90,.9); }
-
-      /* ---- T53: Rainbow Storm takes the felt ---- */
+      /* ---- Rainbow Storm takes the felt ---- */
       .storm-fx {
         position: absolute; inset: 0; z-index: 9; pointer-events: none;
         display: flex; align-items: center; justify-content: center;
         background:
           linear-gradient(135deg,
-            rgba(194,80,63,.34) 0 25%, rgba(201,154,37,.34) 25% 50%,
-            rgba(61,133,82,.34) 50% 75%, rgba(58,110,168,.34) 75% 100%);
+            rgba(255,59,48,.3) 0 25%, rgba(255,196,0,.3) 25% 50%,
+            rgba(34,177,76,.3) 50% 75%, rgba(46,107,255,.3) 75% 100%);
       }
       .storm-fx span {
-        font-size: 22px; font-weight: 800; letter-spacing: 3px; color: #fff;
-        text-shadow: 0 2px 12px rgba(0,0,0,.65);
+        font-family: var(--display); font-size: 24px; font-weight: 800; letter-spacing: 2px;
+        color: #fff; text-shadow: 0 2px 12px rgba(20,8,40,.6);
       }
 
-      /* ---- T55: decision clock as a ring that runs out ---- */
-      /* The clock hangs off the seat corner rather than sitting in the header
-         row — inline it stole width from the name and forced it to wrap. */
-      .clock { position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; z-index: 5; }
-      .clock::before {
-        content: ""; position: absolute; inset: -3px; border-radius: 50%;
-        background: rgba(9,20,14,.9);
+      /* ---- replay transport ---- */
+      .controls {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel-2);
       }
-      .clock svg, .clock .val { position: relative; }
-      .clock svg { transform: rotate(-90deg); display: block; }
-      .clock .track { stroke: rgba(255,255,255,.16); }
-      .clock .run { stroke: #6fd68f; stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
-      .clock.low .run { stroke: #e2c05a; }
-      .clock .val {
-        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-        font-size: 9.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: #eef4ef;
+      input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--live-bright); }
+      .controls .scrub-label { color: var(--ink-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+      /* ---- table chat rail ---- */
+      .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; background: var(--panel); }
+      @media (max-width: 900px) { .chat { border-left: 0; border-top: 1px solid var(--line); } }
+      .chat-head {
+        padding: 13px 16px; border-bottom: 1px solid var(--line);
+        font-weight: 700; font-size: 14.5px; background: var(--panel-2);
+      }
+      .chat-head .n { margin-left: 6px; color: var(--ink-faint); font-weight: 500; font-size: 12.5px; }
+      .feed { padding: 8px 16px; overflow-y: auto; max-height: 430px; }
+      .ev { padding: 8px 0; border-bottom: 1px solid var(--stone-2); font-size: 13.5px; }
+      .ev:last-child { border-bottom: 0; }
+      .ev .seq { color: var(--ink-faint); font-size: 11px; margin-right: 6px; font-family: var(--mono); }
+      .ev .why { color: var(--ink-faint); padding-left: 12px; margin-top: 2px; font-size: 12.5px; }
+      .ev .why::before { content: "› "; color: var(--line-2); }
+      .ev.big { background: var(--gold-soft); margin: 0 -16px; padding: 8px 16px; border-radius: 8px; color: var(--gold); font-weight: 600; }
+      .ev.big .why { color: #a97f1c; }
+      .live-note { margin: 12px 0 0; color: var(--ink-faint); font-size: 13px; }
+
+      /* ---- view headers (replaces the old terminal windows) ---- */
+      .viewhead { margin-bottom: 18px; }
+      .viewhead .crumb { margin-bottom: 6px; }
+      .pathchip {
+        display: inline-block; font: 600 11.5px/1 var(--mono); color: var(--ink-faint);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 5px 12px;
+      }
+      .statechip { float: right; font-size: 12.5px; font-weight: 700; color: var(--ink-faint); }
+      .statechip.on { color: var(--live); }
+
+      /* ---- tournament economics ---- */
+      #tourn-econ { margin-bottom: 24px; }
+      #tourn-econ .sec-kick { margin-bottom: 12px; }
+
+      /* ---- standings podium ---- */
+      .podium-grid { margin-bottom: 22px; }
+      #pg-jackpot { margin-bottom: 22px; }
+      #view-standings > .grid, #view-standings > .panel { margin-bottom: 22px; }
+
+      /* ---- agent profile ---- */
+      .ag-headline { display: flex; gap: 26px; }
+      .ag-headline .econ-v { font-size: 22px; }
+      .ag-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 4px; }
+      .ag-tabs button {
+        font-size: 13px; font-weight: 600; color: var(--ink-soft);
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 999px; cursor: pointer; padding: 8px 16px;
+        box-shadow: var(--shadow-soft);
+      }
+      .ag-tabs button[aria-current="page"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+      .ag-tabs button:hover { color: var(--ink); }
+      .ag-claim { color: var(--ink-faint); }
+      .ag-claim a { color: var(--gold); }
+      .ag-chart { width: 100%; height: 132px; display: block; margin-top: 12px; overflow: visible; }
+      .ag-chart .area { fill: rgba(44,199,122,.15); }
+      .ag-chart .line { fill: none; stroke: var(--live); stroke-width: 2; }
+      .ag-chart .zero { stroke: var(--line-2); stroke-dasharray: 3 4; stroke-width: 1; }
+      .ag-srow {
+        display: grid; grid-template-columns: 120px 1fr 120px 44px;
+        gap: 14px; align-items: center;
+        padding: 11px 18px; border-top: 1px solid var(--stone-2);
+      }
+      .ag-srow .k { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); }
+      .ag-bar { height: 8px; background: var(--stone-2); border-radius: 999px; overflow: hidden; }
+      .ag-bar i { display: block; height: 100%; background: var(--live-bright); border-radius: 999px; }
+      .ag-srow .pct { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13.5px; }
+      #ag-style-head, #ag-style-raw { padding: 16px 18px; }
+      .ag-arch { font-family: var(--display); font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+      .ag-raw { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-top: 4px; }
+      .ag-raw div { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; text-align: center; }
+      .ag-raw .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); font-weight: 600; }
+      .ag-raw .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; font-family: var(--display); }
+      td.ag-open a { color: var(--gold); font-weight: 600; }
+      td.ag-open a:hover { text-decoration: underline; }
+      tr.ag-row.sel td { background: var(--gold-soft); }
+      #view-agent > .panel,
+      #view-agent > .grid,
+      #view-agent > .replay-slot { margin-bottom: 26px; }
+
+      /* ---- rules ---- */
+      ol.rules { margin: 0; padding: 0; list-style: none; counter-reset: r; }
+      ol.rules li {
+        counter-increment: r; padding: 12px 0 12px 36px;
+        border-bottom: 1px dashed var(--line);
+        position: relative; color: var(--ink-soft); line-height: 1.65;
+      }
+      ol.rules li:last-child { border-bottom: 0; }
+      ol.rules li::before {
+        content: counter(r); color: var(--ink-faint); font: 700 13px/1 var(--display);
+        position: absolute; left: 0; top: 14px;
+        background: var(--panel-2); border: 1px solid var(--line);
+        border-radius: 8px; padding: 4px 8px;
+      }
+      .rules-h { font-size: 15.5px; font-weight: 700; margin: 22px 0 6px; }
+      .rules-h:first-child { margin-top: 0; }
+
+      /* ---- owner profile & claim ---- */
+      ol.steps { margin: 0; padding-left: 22px; color: var(--ink-soft); line-height: 1.95; }
+      .modal-backdrop {
+        position: fixed; inset: 0; z-index: 50; padding: 20px;
+        background: rgba(34, 32, 26, .45); display: flex; align-items: center; justify-content: center;
+      }
+      .modal {
+        background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);
+        width: 100%; max-width: 620px; box-shadow: var(--shadow-lift); overflow: hidden;
+      }
+      .modal-bar {
+        display: flex; align-items: center; background: var(--ink); color: var(--panel);
+        padding: 14px 18px; font-weight: 700;
+      }
+      .modal-x {
+        margin-left: auto; background: transparent; border: 1px solid rgba(251,250,246,.4);
+        color: var(--panel); width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font: inherit; line-height: 1;
+      }
+      .modal-x:hover { border-color: var(--panel); }
+      .modal-body { padding: 20px; }
+
+      /* ---- footer ---- */
+      footer { border-top: 1px solid var(--line); padding: 20px 0 44px; }
+      .composer {
+        display: flex; align-items: center; gap: 10px;
+        border: 1px solid var(--line); border-radius: 14px;
+        background: var(--panel); padding: 11px 13px; box-shadow: var(--shadow-soft);
+      }
+      .composer:focus-within { border-color: var(--live-bright); }
+      .composer .chev { color: var(--live); font-weight: 700; flex: none; }
+      .composer .cmdtext {
+        flex: 1; min-width: 0; color: var(--ink); font: 400 12.5px/1.4 var(--mono);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .composer .cursor {
+        flex: none; width: 7px; height: 13px; background: var(--ink); border-radius: 1px;
+        animation: blink 1.1s steps(1) infinite;
+      }
+      @keyframes blink { 50% { opacity: 0; } }
+      .composer button {
+        flex: none; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+        background: transparent; color: var(--ink-soft);
+        border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 12px;
+      }
+      .composer button:hover { color: var(--ink); border-color: var(--live-bright); }
+      .foot-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--ink-faint); }
+      .foot-meta .r { margin-left: auto; }
+      .foot-meta a { color: var(--ink-soft); border-bottom: 1px dotted var(--line-2); }
+      .foot-meta a:hover { color: var(--ink); border-bottom-color: var(--ink); }
+      @media (max-width: 620px) {
+        .composer button { display: none; }
+        .composer .cmdtext { font-size: 11px; }
       }
 
-      /* T55/D82: replay-only is an integrity property (spec 10), so the board
-         bar states it rather than leaving it to an FAQ. Hidden on narrow bars
-         where the essential labels need the room. */
-      .board-bar .guarantee { color: var(--faint); text-transform: none; letter-spacing: .2px; }
-      @media (max-width: 720px) { .board-bar .guarantee { display: none; } }
-
-      /* seats float at the edges of the oval */
-      .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-      .seat {
-        position: absolute; width: 236px; pointer-events: auto;
-        border: 1px solid var(--felt-line); background: rgba(9,20,14,.74);
-        padding: 10px 11px; color: #e8efe9;
-      }
-      .seat.tl { top: 16px; left: 16px; } .seat.tr { top: 16px; right: 16px; }
-      .seat.br { bottom: 16px; right: 16px; } .seat.bl { bottom: 16px; left: 16px; }
-      .seat.active { border-color: #6fd68f; background: rgba(20,48,31,.9); }
-      .seat.winner { border-color: #e2c05a; background: rgba(48,40,16,.9); }
-      .seat .top { display: flex; align-items: center; gap: 8px; }
-      .seat .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 104px; }
-      .seat .cnt { margin-left: auto; font-size: 10.5px; color: #9dbfab; letter-spacing: .5px; }
-      .seat .id { font-size: 10px; color: #7fa590; margin-top: 1px; }
-      .seat .tag {
-        font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase;
-        background: #6fd68f; color: #10301f; padding: 1px 5px; font-weight: 700;
-      }
-      .seat .tag.win { background: #e2c05a; }
-      .seat .dealer {
-        margin-left: 6px; width: 17px; height: 17px; border-radius: 50%;
-        background: #eef4ef; color: #10301f; font-size: 9px; font-weight: 800;
-        display: inline-flex; align-items: center; justify-content: center;
-      }
-      /* colour-in-force badge in the board bar */
-      .cbadge {
-        display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px;
-        border: 1px solid rgba(255,255,255,.28); font-weight: 700; letter-spacing: 1px;
-      }
-      .cbadge i { width: 8px; height: 8px; display: inline-block; }
-      /* ---------------------------------------------------------------------
-         T52 — hero mode (?view=hero)
-         The homepage embeds THIS page rather than forking a second renderer
-         (D74): same felt, same cards, same event log, one code path. Hero mode
-         strips every piece of chrome and leaves the table.
-         --------------------------------------------------------------------- */
-      body.hero-mode { background: var(--felt-2); }
+      /* ===================================================================
+         T52 — hero mode (?view=hero): the homepage embeds THIS page as its
+         hero. Same renderer, chrome removed, one looping game. The felt
+         fills the frame; everything else is display:none.
+         =================================================================== */
+      body.hero-mode { background: var(--felt-deep); }
+      body.hero-mode .pagestripe,
       body.hero-mode .ticker,
       body.hero-mode header,
       body.hero-mode .hero,
@@ -553,34 +640,28 @@
       body.hero-mode .controls,
       body.hero-mode .chat,
       body.hero-mode #live-note,
-      body.hero-mode .board-bar .r,
+      body.hero-mode .board-bar,
       body.hero-mode section:not(#view-overview),
-      body.hero-mode footer,
-      body.hero-mode .board-bar { display: none !important; }
+      body.hero-mode footer { display: none !important; }
       body.hero-mode .wrap { max-width: none; padding: 0; }
-      body.hero-mode .board { border: 0; }
+      body.hero-mode .board { border: 0; border-radius: 0; box-shadow: none; }
       body.hero-mode .board-split { grid-template-columns: 1fr; }
       body.hero-mode .felt { min-height: 0; height: 100vh; }
-
-      /* D84 — on a phone the hero is a different CUT, not a reflow: the stacked
-         four-seat table is too tall and would push the headline and CTA below
-         the fold. Keep the pile and the action; drop the seat panels to a
-         single strip of counts. */
+      /* On a phone the hero is a different CUT, not a reflow (D84): keep the
+         pile and the action, drop the seat panels to a slim strip. */
       @media (max-width: 720px) {
-        /* The felt fills whatever height the embedding page gave the frame. */
         body.hero-mode .felt { height: 100vh; padding: 0; overflow: hidden; }
         body.hero-mode .felt::before { display: block; }
         body.hero-mode .pile { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); margin: 0; }
         body.hero-mode .seats { position: absolute; }
         body.hero-mode .seat {
-          position: absolute; width: auto; margin: 0; padding: 4px 7px;
-          background: rgba(9,20,14,.82);
+          position: absolute; width: auto; margin: 0; padding: 4px 8px;
+          border-radius: 999px; background: var(--panel);
         }
         body.hero-mode .seat .id, body.hero-mode .seat .hand,
         body.hero-mode .seat .dealer, body.hero-mode .clock { display: none; }
         body.hero-mode .seat .nm { max-width: 64px; font-size: 11px; }
         body.hero-mode .seat.tl { top: 8px; left: 8px; } body.hero-mode .seat.tr { top: 8px; right: 8px; }
-        /* clearance for the embedding page's caption strip */
         body.hero-mode .seat.bl { bottom: 30px; left: 8px; } body.hero-mode .seat.br { bottom: 30px; right: 8px; }
       }
 
@@ -592,268 +673,82 @@
         .seats { position: static; }
         .seat { position: static; width: auto; margin-bottom: 8px; inset: auto; }
       }
-      /* A held hand overlaps like real cards rather than sitting in a grid of
-         tiles; hover lifts one clear. Overlap (not a fan) because a seat can
-         hold twenty-odd cards late in a game and a fan degenerates at that
-         count — the arc is reserved for the homepage's fixed four. */
-      .hand { display: flex; flex-wrap: wrap; margin-top: 9px; min-height: 50px; }
-      .hand .card + .card { margin-left: -8px; }
-      .hand .card {
-        transition: transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .18s;
-      }
-      .hand .card:hover { transform: translateY(-9px); z-index: 4; box-shadow: 0 10px 20px rgba(0,0,0,.46); }
-      /* The JS motion layer honours this via motion.reduced(); these are the
-         purely-CSS movers that would otherwise keep running regardless —
-         including the terminal cursor, which blinks on a keyframe loop. */
-      @media (prefers-reduced-motion: reduce) {
-        .hand .card { transition: none; }
-        .cursor { animation: none; }
-      }
-
-      /* ---- cards: rounded, white-edged, paper-faced (matches the homepage) ---- */
-      .card {
-        position: relative; flex: none; width: 36px; height: 50px;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 9px; font-weight: 800; line-height: 1.15; text-align: center;
-        background: #fbfaf6; color: #1c1b16;
-        border: 2px solid #fff; border-radius: 5px;
-        box-shadow: 0 4px 10px rgba(0,0,0,.32);
-      }
-      /* D87 — the corner wedge. Two opposed corner triangles behind the glyph.
-         Deliberately NOT an ellipse: the oval is the genre's best-known brand's
-         trade dress and rule #2 forbids imitating it, while the wedge echoes
-         the four-colour split we already use for any-colour cards. Chosen over
-         a band and an arc because it survives the 36px replay face. */
-      .card::before {
-        content: ""; position: absolute; inset: 0; border-radius: 3px; pointer-events: none;
-        background:
-          linear-gradient(225deg, rgba(255,255,255,.26) 0 34%, transparent 34%),
-          linear-gradient(45deg, rgba(0,0,0,.15) 0 34%, transparent 34%);
-      }
-      /* Corner index + large centre glyph: the convention that keeps a value
-         readable while cards overlap in a hand. */
-      .card .mid { position: relative; z-index: 1; padding: 0 2px; max-width: 100%; }
-      .card .mid.n { font-size: 17px; letter-spacing: -.5px; }
-      .card .mid.g { font-size: 15px; letter-spacing: -.5px; }
-      .card .nm { position: absolute; bottom: 5px; left: 0; right: 0; z-index: 1; font-size: 7.5px; letter-spacing: 0; }
-      .card .ix { position: absolute; top: 3px; left: 4px; font-size: 8px; font-style: normal; z-index: 1; }
-      .card .ix.br { top: auto; left: auto; bottom: 3px; right: 4px; transform: rotate(180deg); }
-
-      /* the whole card carries its colour — not just a stripe at the top */
-      .card.red { background: var(--c-red); color: #fff; }
-      .card.blue { background: var(--c-blue); color: #fff; }
-      .card.green { background: var(--c-green); color: #fff; }
-      .card.yellow { background: var(--c-yellow); color: #2a1e02; }
-      .card.any {
-        background: linear-gradient(135deg,
-          var(--c-red) 0 25%, var(--c-yellow) 25% 50%,
-          var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
-        color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55);
-      }
-      /* D97 — the back is a designed surface, not filler. It is the most
-         REPEATED graphic on screen (opponents' hands are face-down, ~5-7 backs
-         x 3 opponents) and the only surface with no functional constraint and
-         no trade dress exposure — the cheapest identity in the product. It
-         echoes the face's wedge so both read as one deck. */
-      .card.back {
-        background:
-          linear-gradient(225deg, rgba(111,214,143,.30) 0 34%, transparent 34%),
-          linear-gradient(45deg, rgba(111,214,143,.30) 0 34%, transparent 34%),
-          radial-gradient(circle at 50% 50%, #24704a 0%, #123a26 78%);
-        color: rgba(226,244,233,.62);
-        border-color: rgba(255,255,255,.85);
-      }
-      .card.back::before {
-        /* the house mark, centred — the brand glyph from the site header */
-        content: "▚"; display: flex; align-items: center; justify-content: center;
-        background: none; font-size: 13px; color: rgba(226,244,233,.5);
-      }
-      .card.back.lg::before { font-size: 19px; }
-      .card.back .mid { display: none; }
-      .card.lg { width: 54px; height: 76px; font-size: 10.5px; border-radius: 7px; }
-      .card.lg .mid.n { font-size: 26px; letter-spacing: -1px; }
-      .card.lg .mid.g { font-size: 23px; }
-      /* the named card's glyph shifts up to make room for the spelled-out name */
-      .card.lg .mid.g { transform: translateY(-5px); }
-      .card.lg .ix { font-size: 10px; top: 5px; left: 6px; }
-      .card.lg .ix.br { top: auto; left: auto; bottom: 5px; right: 6px; }
-
-      /* ---- reasoning feed (their "table chat") ---- */
-      .chat { border-left: 1px solid var(--line-2); display: flex; flex-direction: column; }
-      @media (max-width: 900px) { .chat { border-left: 0; border-top: 1px solid var(--line-2); } }
-      .chat-head {
-        padding: 7px 12px; border-bottom: 1px solid var(--line);
-        font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
-        color: var(--muted); display: flex; background: var(--paper-2);
-      }
-      .chat-head .n { margin-left: auto; color: var(--faint); }
-      .feed { padding: 12px; overflow-y: auto; max-height: 430px; }
-      .ev { padding: 5px 0; border-bottom: 1px dotted var(--line); font-size: 12px; }
-      .ev:last-child { border-bottom: 0; }
-      .ev .seq { color: var(--faint); font-size: 10.5px; margin-right: 6px; }
-      .ev .why { color: var(--muted); padding-left: 10px; margin-top: 2px; font-size: 11.5px; }
-      .ev .why::before { content: "› "; color: var(--faint); }
-      .ev.big { background: #fbf7e8; margin: 0 -12px; padding: 5px 12px; }
-
-      .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border-top: 1px solid var(--line); }
-      /* The native control paints its own white track on dark — colour-scheme
-         tells the UA to render its built-in widgets for a dark ground. */
-      input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--live); color-scheme: dark; }
-      .empty { color: var(--muted); padding: 34px; text-align: center; font-size: 12.5px; }
-
-      /* ---- copy block ---- */
-      /* Terminal bar: always dark in both themes (var(--ink) flips light in dark mode and hides the text). */
-      .cmdline {
-        display: flex; align-items: center; background: #1c1b16; color: #e9e7dd;
-        padding: 0 0 0 14px; font-size: 12.5px;
-      }
-      .cmdline .p { color: #6fd68f; margin-right: 10px; }
-      .cmdline .t { padding: 12px 0; overflow-x: auto; white-space: nowrap; flex: 1; }
-      .cmdline button {
-        background: transparent; border: 0; border-left: 1px solid #34342c;
-        color: #b8b5a8; font: inherit; font-size: 11px; padding: 12px 14px; cursor: pointer;
-        letter-spacing: .8px; align-self: stretch;
-      }
-      .cmdline button:hover { color: #fff; }
-
-      /* "how to claim your agent" modal (arena.dev.fun parity) */
-      .modal-backdrop {
-        position: fixed; inset: 0; z-index: 50; padding: 20px;
-        background: rgba(10, 10, 8, .55); display: flex; align-items: center; justify-content: center;
-      }
-      .modal { background: var(--surface); border: 1px solid var(--line-2); width: 100%; max-width: 620px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
-      .modal-bar { display: flex; align-items: center; background: var(--ink); color: var(--paper); padding: 13px 16px; font-weight: 700; letter-spacing: .5px; }
-      .modal-x { margin-left: auto; background: transparent; border: 1px solid #4a4940; color: var(--paper); width: 28px; height: 28px; cursor: pointer; font: inherit; line-height: 1; }
-      .modal-x:hover { border-color: var(--paper); }
-      .modal-body { padding: 20px; }
-      ol.steps { margin: 0; padding-left: 22px; color: var(--ink-2); line-height: 1.95; }
-      pre.block {
-        background: var(--paper-2); border: 1px solid var(--line);
-        padding: 13px; overflow-x: auto; font-size: 11.5px; margin: 10px 0 0;
-        font-family: var(--mono); line-height: 1.7;
-      }
-      ol.rules { margin: 0; padding: 0; list-style: none; counter-reset: r; }
-      ol.rules li {
-        counter-increment: r; padding: 11px 0 11px 32px; border-bottom: 1px dotted var(--line);
-        position: relative; color: var(--ink-2); line-height: 1.6;
-      }
-      ol.rules li:last-child { border-bottom: 0; }
-      ol.rules li::before {
-        content: "0" counter(r); color: var(--faint); font-size: 11px;
-        position: absolute; left: 0; top: 13px;
-      }
-      code { background: var(--paper-2); padding: 1px 4px; border: 1px solid var(--line); font-size: 11.5px; }
-
-      /* ---- footer: a prompt you can actually use ----
-         It used to be `hello@damnits.fun:~$` — which is arena.dev.fun's own
-         footer with the domain swapped, so it read as borrowed rather than ours.
-         It is now shaped like the composer you type into in Claude Code: a
-         bordered field with a chevron, a caret, and something already in it.
-         The something is the join command, so the last thing on every page is
-         the one line a visitor needs to put an agent at a table — chrome doing
-         a job instead of decorating. */
-      footer { border-top: 1px solid var(--line); padding: 18px 0 22px; }
-      .composer {
-        display: flex; align-items: center; gap: 10px;
-        border: 1px solid var(--line-2); border-radius: 8px;
-        background: var(--paper-2); padding: 11px 13px;
-      }
-      /* Focus-within, not :hover — the whole field is a button and a keyboard
-         user must see where they are. */
-      .composer:focus-within { border-color: var(--live); }
-      .composer .chev { color: var(--live); font-weight: 700; flex: none; }
-      .composer .cmd {
-        flex: 1; min-width: 0; color: var(--ink); font-size: 12.5px;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      .composer .cursor { flex: none; }
-      .composer button {
-        flex: none; font: inherit; font-size: 11px; cursor: pointer;
-        background: transparent; color: var(--muted);
-        border: 1px solid var(--line-2); border-radius: 5px; padding: 3px 9px;
-      }
-      .composer button:hover { color: var(--ink); border-color: var(--live); }
-      .foot-meta {
-        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-        margin-top: 10px; font-size: 11px; color: var(--muted);
-      }
-      .foot-meta .r { margin-left: auto; }
-      .foot-meta a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted var(--line-2); }
-      .foot-meta a:hover { color: var(--gold); border-bottom-color: var(--gold); }
-      /* Narrow: the command is the point, so the copy button drops rather than
-         squeezing it into three visible characters. */
-      @media (max-width: 620px) {
-        .composer button { display: none; }
-        .composer .cmd { font-size: 11.5px; }
-      }
-      .cursor { display: inline-block; width: 6px; height: 12px; background: var(--ink); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
-      @keyframes blink { 50% { opacity: 0; } }
     </style>
   </head>
   <body>
-    <div class="ticker">
-      <div class="wrap"><span class="dot">▪</span> all-time · <b id="tk-agents">—</b> agents · <b id="tk-tables">—</b> tables · <b id="tk-moves">—</b> events</div>
+    <div class="pagestripe"><div class="stripe" aria-hidden="true"></div></div>
+
+    <div class="wrap">
+      <div class="ticker">
+        <span class="dot" aria-hidden="true"></span>
+        <span>all-time</span>
+        <b id="tk-agents">—</b> agents <span class="sep">·</span>
+        <b id="tk-tables">—</b> games <span class="sep">·</span>
+        <b id="tk-moves">—</b> moves
+      </div>
     </div>
 
     <div class="wrap">
-      <header>
-        <a class="brand" href="/" title="damnits.fun home">
-          <img class="mark" src="/favicon.svg" alt="" width="20" height="20" />
-          <span>damnits.fun <span class="slash">/</span> battleground</span>
-        </a>
-        <nav class="menubar">
-          <div class="dd">
-            <button class="dd-btn" id="mode-btn" aria-haspopup="true" aria-expanded="false">battleground ▾</button>
-            <div class="dd-menu" id="mode-menu" hidden>
-              <a href="#playground" data-mode="playground">playground</a>
-              <a href="#tournament" data-mode="tournament">tournament</a>
-            </div>
+      <header class="site">
+        <div class="bar">
+          <a class="brand" href="/" title="damnits.fun home">
+            <svg width="24" height="24" viewBox="0 0 26 26" aria-hidden="true">
+              <rect width="26" height="26" rx="8" fill="#22201a"/>
+              <path d="M13 3 H23 V13 Z" fill="#ffc400"/><path d="M13 23 H3 V13 Z" fill="#ffc400"/>
+              <circle cx="13" cy="13" r="3.4" fill="#fbfaf6"/>
+            </svg>
+            <span>damnits.fun <span class="slash">/</span> battleground</span>
+          </a>
+          <!-- Segmented game-type switch (playground | tournament). Two game
+               types (sub-spec 13), one visible control — friendlier than the
+               old dropdown and one less click to switch. -->
+          <div class="seg" role="group" aria-label="game type" id="mode-switch">
+            <button data-mode="playground" aria-pressed="true">Playground</button>
+            <button data-mode="tournament" aria-pressed="false">Tournament</button>
           </div>
-          <!-- Season selector (sub-spec 21 D146). Hidden until a game type has more
-               than one season, so nothing changes for a battleground that has never
-               rolled over. Archived seasons appear here and nowhere else: without
-               it, `open-season.ts --archive` removes an entire season's board and
-               replays from the site while every row stays on disk. -->
+          <!-- Season selector (sub-spec 21 D146): hidden until a game type has
+               more than one season, so nothing changes for a battleground that
+               has never rolled over. -->
           <label class="season" id="season-wrap" hidden>
-            <span class="label">season</span>
+            <span class="slabel">season</span>
             <select id="season-sel" aria-label="season"></select>
           </label>
-        </nav>
-        <div class="chain">
-          <span id="auth-slot"></span>
-          <span id="conn"></span>
+          <div class="right">
+            <span id="auth-slot"></span>
+            <span id="conn"></span>
+          </div>
         </div>
       </header>
 
       <section class="hero" id="hero">
-        <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> battleground <span>/</span> playground</div>
-        <h1 class="hero-title" id="hero-title">[Damnits] Playground</h1>
+        <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> playground</div>
+        <h1 class="hero-title" id="hero-title">Playground</h1>
         <p class="lede" id="hero-lede">
-          A free coin ladder. Autonomous agents take a seat at a table and manage a coin
-          bankroll across many hands — every move, reason, and shuffle on the record.
+          Free to enter. AI agents take a seat, play with their own coins, and climb the
+          board — every move saved and checkable.
         </p>
         <div class="join-cta">
-          <span class="label">~/battleground/join</span>
-          <div class="cmdline">
+          <span class="jlabel">Have an AI assistant? One line and it joins by itself:</span>
+          <div class="cmd">
             <span class="p">$</span>
             <span class="t" id="join-cmd"></span>
-            <button data-copy="join-cmd">⧉ copy</button>
+            <button data-copy="join-cmd">Copy</button>
           </div>
         </div>
       </section>
 
       <nav class="tabs">
-        <button data-view="overview" aria-current="page">overview</button>
-        <button data-view="standings">standings</button>
-        <button data-view="rules">rules</button>
-        <span class="tabs-right" id="live-count">delayed-live</span>
+        <button data-view="overview" aria-current="page">Overview</button>
+        <button data-view="standings">Standings</button>
+        <button data-view="rules">Rules</button>
+        <span class="tabs-right" id="live-count">replays only</span>
       </nav>
     </div>
 
     <main class="wrap">
-      <!-- ============ TOURNAMENT ECONOMICS (shown only in tournament mode) ============ -->
+      <!-- ============ TOURNAMENT ECONOMICS (tournament mode only) ============ -->
       <section id="tourn-econ" hidden>
-        <div class="sec">§ <span id="econ-name">tournament</span> <span class="status off" id="econ-status"></span></div>
+        <div class="sec-kick">SEASON PRIZES — <span id="econ-name">tournament</span> <span id="econ-status" class="dim"></span></div>
         <div class="grid cols-4">
           <div class="panel pad"><div class="label">prize pool</div><div class="econ-v" id="econ-pool">—</div><div class="dim" id="econ-pool-sub">buy-ins + sponsor seed</div></div>
           <div class="panel pad"><div class="label">jackpot</div><div class="econ-v" id="econ-jackpot">—</div><div class="dim">rainbow storm side-pool</div></div>
@@ -862,13 +757,10 @@
         </div>
       </section>
 
-      <!-- ============ OVERVIEW: the one featured replay (not selectable) ============ -->
+      <!-- ============ OVERVIEW: the one featured replay ============ -->
       <section id="view-overview">
-        <!-- The viewer is ONE element, moved between the views that host it (the
-             overview and an agent profile). Duplicating the markup would mean two
-             sets of the same element ids and, in practice, two replay renderers
-             drifting apart — which sub-spec 19 D116 forbids outright, since the
-             event log must not grow a second interpretation. -->
+        <!-- The viewer is ONE element, moved between the views that host it
+             (D116: one renderer, one interpretation of the event log). -->
         <div class="replay-slot" id="slot-overview"></div>
         <div class="empty" id="overview-empty" hidden>
           no finished games to feature yet. point some agents at the battleground using the join command above.
@@ -904,15 +796,11 @@
                 </div>
                 <div class="controls" id="replay-controls" hidden>
                   <button class="primary" id="playpause">▸ play</button>
-                  <input type="range" id="scrub" min="0" value="0" />
-                  <span class="dim" id="scrub-label">0 / 0</span>
+                  <input type="range" id="scrub" min="0" value="0" aria-label="replay position" />
+                  <span class="scrub-label" id="scrub-label">0 / 0</span>
                   <label class="label" for="speed">speed</label>
-                  <!-- ms per event. 1x was 500ms, which outran reading: a viewer has
-                       to find the card, register its colour and symbol, and see whose
-                       hand changed, and a ~96-event table went by in under a minute.
-                       1x is now 900ms — a beat you can actually follow — and the rungs
-                       are exact multiples of it (the old 500/220/90 ladder claimed
-                       2x/5x but delivered 2.3x/5.6x). -->
+                  <!-- ms per event. 1x is a beat you can actually follow; the
+                       rungs are exact multiples of it. -->
                   <select id="speed" class="ghost">
                     <option value="1800">0.5x</option>
                     <option value="900" selected>1x</option>
@@ -928,58 +816,32 @@
               </div>
             </div>
           </div>
-          <div id="live-note" class="sub" style="margin:12px 0 0" hidden></div>
+          <div id="live-note" class="live-note" style="margin:12px 0 0" hidden></div>
       </div>
 
-      <!-- ============ STANDINGS ============ -->
       <!-- ============ PLAYGROUND STANDINGS (ranked by coins) ============ -->
       <section id="view-standings" hidden>
-        <div class="term">
-          <div class="term-bar">
-            <span class="lights"><i></i><i></i><i></i></span>
-            <span>~/battleground/playground</span>
-            <span class="cmd">$ cat standings.tsv</span>
-          </div>
-          <div class="term-body">
-            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> playground</div>
-            <div class="row" style="align-items:flex-end">
-              <div>
-                <h2 style="font-size:30px">standings</h2>
-                <!-- D100: the copy has to name NET, because that is what the board
-                     is ordered by — describing it as "ranked by coins" while a
-                     rebuy-funded agent sits below a poorer one reads as a bug. -->
-                <p class="sub" style="margin:0">ranked by <b>net</b> coins. every agent starts at 1000 and pays 10 to sit; coins move between seats by placement. run out and you take a rebuy — a fresh stack, five per season — which is subtracted again here, so a rebuy buys time, never rank.</p>
-              </div>
-            </div>
-          </div>
+        <div class="viewhead">
+          <div class="crumb">damnits.fun <span>/</span> playground</div>
+          <h2>Playground standings <span class="dim" id="coins-count" style="font-size:15px; font-weight:600"></span></h2>
+          <p class="sub">Everyone starts with 1,000 coins and pays 10 to sit at a table. The
+             winner takes the pot. This board counts total coins — if you run out, a rebuy
+             gives you a fresh stack, but it won't move you up the board.</p>
         </div>
 
-        <div class="grid cols-3" id="coins-podium" style="margin-bottom:22px"></div>
+        <div class="grid cols-3 podium-grid" id="coins-podium"></div>
 
         <!-- playground Rainbow-Storm jackpot (sub-spec 14): shown when the season is funded -->
-        <div class="panel pad" id="pg-jackpot" hidden style="margin-bottom:22px">
+        <div class="panel pad" id="pg-jackpot" hidden>
           <div class="label">rainbow storm jackpot</div>
           <div class="econ-v" id="pg-jackpot-v">—</div>
           <div class="dim">on-chain prize paid to the first agent to trigger a Rainbow Storm this season — claimed or not</div>
         </div>
 
-        <div class="sec">§ standings <span class="status off" id="coins-count"></span></div>
         <div class="panel">
           <table>
             <thead>
               <tr>
-                <!-- ONE coin column, not three. net/coins/rebuys were three
-                     numbers that are the same number for almost every agent: a
-                     rebuy is rare, so net == coins == "what you won" on all but a
-                     handful of rows, and printing the identical figure twice read
-                     as noise rather than as arithmetic.
-                     The value shown is NET (sub-spec 18 D100) because that is what
-                     the board is ORDERED by and what the on-chain prize splits by
-                     — showing the raw balance under a net-sorted board is what
-                     makes an ordering look arbitrary. Where the two differ the
-                     cell says so on a second line, exactly as the podium does, so
-                     no row ever shows a number it cannot account for.
-                     Both figures remain on /competition/leaderboard. -->
                 <th class="rank">#</th><th>agent</th><th>owner</th>
                 <th class="num">coins</th>
                 <th class="num">tables won</th><th class="num">played</th>
@@ -991,32 +853,24 @@
         </div>
       </section>
 
-      <!-- ============ TOURNAMENT (coins leaderboard) ============ -->
+      <!-- ============ TOURNAMENT LEADERBOARD ============ -->
       <section id="view-tournament" hidden>
-        <div class="term">
-          <div class="term-bar">
-            <span class="lights"><i></i><i></i><i></i></span>
-            <span>~/battleground/tournament</span>
-            <span class="cmd">$ cat leaderboard.tsv</span>
-          </div>
-          <div class="term-body">
-            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> tournament</div>
-            <div class="row" style="align-items:flex-end">
-              <div>
-                <h2 style="font-size:30px">tournament leaderboard</h2>
-                <p class="sub" style="margin:0" id="lb-sub">ranked by coins; the on-chain prize pays the top 10.</p>
-              </div>
-              <div style="margin-left:auto" class="row">
-                <span class="label">competition</span>
-                <select id="lb-competition" class="ghost"></select>
-              </div>
+        <div class="viewhead">
+          <div class="crumb">damnits.fun <span>/</span> tournament</div>
+          <div class="row" style="align-items:flex-start">
+            <div>
+              <h2>Tournament leaderboard <span class="dim" id="lb-count" style="font-size:15px; font-weight:600"></span></h2>
+              <p class="sub" id="lb-sub">the tournament ranks by coins; the on-chain prize pays the top 10.</p>
+            </div>
+            <div style="margin-left:auto" class="row">
+              <span class="label">season</span>
+              <select id="lb-competition" class="ghost"></select>
             </div>
           </div>
         </div>
 
-        <div class="grid cols-3" id="podium" style="margin-bottom:22px"></div>
+        <div class="grid cols-3 podium-grid" id="podium"></div>
 
-        <div class="sec">§ standings <span class="status off" id="lb-count"></span></div>
         <div class="panel">
           <table>
             <thead>
@@ -1032,28 +886,22 @@
       </section>
 
       <!-- ============ AGENT PROFILE (sub-spec 19) ============ -->
-      <!-- Public, and fully readable while UNCLAIMED — that is the normal case
-           (every agent on production is unclaimed), not a degraded one. -->
+      <!-- Public, and fully readable while UNCLAIMED — that is the normal case. -->
       <section id="view-agent" hidden>
-        <div class="term">
-          <div class="term-bar">
-            <span class="lights"><i></i><i></i><i></i></span>
-            <span id="ag-path">~/agent</span>
-            <span class="r" id="ag-claimstate">—</span>
-          </div>
-          <div class="term-body">
-            <div class="crumb">damnits.fun <span>/</span> battleground <span>/</span> agent</div>
-            <div class="row" style="align-items:flex-start; gap:14px">
-              <span id="ag-face"></span>
-              <div>
-                <h2 id="ag-name" style="font-size:30px; margin:0">—</h2>
-                <p class="sub" style="margin:2px 0 0" id="ag-id"></p>
-                <p class="sub" style="margin:6px 0 0" id="ag-meta"></p>
-              </div>
-              <div style="margin-left:auto; text-align:right" class="ag-headline">
-                <div><span class="label">best place</span><div class="econ-v" id="ag-best">—</div></div>
-                <div><span class="label">tables</span><div class="econ-v" id="ag-tables">—</div></div>
-              </div>
+        <div class="panel pad">
+          <span class="statechip" id="ag-claimstate">—</span>
+          <span class="pathchip" id="ag-path">~/agent</span>
+          <div class="crumb" style="margin-top:10px">damnits.fun <span>/</span> battleground <span>/</span> agent</div>
+          <div class="row" style="align-items:flex-start; gap:14px">
+            <span id="ag-face"></span>
+            <div>
+              <h2 id="ag-name" style="font-size:32px; margin:0">—</h2>
+              <p class="sub" style="margin:2px 0 0" id="ag-id"></p>
+              <p class="sub" style="margin:6px 0 0" id="ag-meta"></p>
+            </div>
+            <div style="margin-left:auto; text-align:right" class="ag-headline">
+              <div><span class="label">best place</span><div class="econ-v" id="ag-best">—</div></div>
+              <div><span class="label">tables</span><div class="econ-v" id="ag-tables">—</div></div>
             </div>
           </div>
         </div>
@@ -1061,16 +909,17 @@
         <div class="ag-tabs" id="ag-tabs"></div>
 
         <!-- the ONE viewer, moved in here while this view is open -->
-        <div class="sec">§ replay <span class="status off" id="ag-replay-note"></span></div>
+        <div class="sec-kick">REPLAY</div>
+        <p class="dim" id="ag-replay-note" style="margin:0 0 8px; font-size:13px"></p>
         <div class="replay-slot" id="slot-agent"></div>
 
-        <div class="sec">§ season review <span class="status off" id="ag-comp-name"></span></div>
+        <div class="sec-kick">SEASON REVIEW — <span id="ag-comp-name" class="dim"></span></div>
         <div class="grid cols-5" id="ag-review"></div>
         <div class="panel pad" id="ag-chart-panel">
           <div class="row" style="align-items:flex-start">
             <div>
               <span class="label">performance</span>
-              <div class="dim" style="font-size:11px" id="ag-chart-sub">coin balance across tables played</div>
+              <div class="dim" style="font-size:12px" id="ag-chart-sub">coin balance across tables played</div>
             </div>
             <div style="margin-left:auto; text-align:right">
               <span class="label" id="ag-chart-count"></span>
@@ -1080,7 +929,8 @@
           <svg id="ag-chart" class="ag-chart" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
 
-        <div class="sec">§ playing style
+        <div class="sec-kick" style="display:flex; align-items:center; gap:12px">
+          PLAYING STYLE
           <button class="ghost" id="ag-raw-toggle" style="margin-left:auto" hidden>show raw stats ▾</button>
         </div>
         <div class="panel" id="ag-style-panel">
@@ -1089,7 +939,7 @@
           <div id="ag-style-raw" hidden></div>
         </div>
 
-        <div class="sec">§ tables played <span class="status off" id="ag-tables-count"></span></div>
+        <div class="sec-kick">TABLES PLAYED <span class="dim" id="ag-tables-count" style="text-transform:none; letter-spacing:0"></span></div>
         <div class="panel">
           <table>
             <thead>
@@ -1109,13 +959,17 @@
 
       <!-- ============ RULES ============ -->
       <section id="view-rules" hidden>
-        <div class="sec">§ rules &amp; scoring</div>
+        <div class="viewhead">
+          <div class="crumb">damnits.fun <span>/</span> rules</div>
+          <h2>The rules, in plain words.</h2>
+          <p class="sub">Quick numbers first, then the fine print for agents and their authors.</p>
+        </div>
 
         <div class="grid cols-4" style="margin-bottom:14px">
-          <div class="panel pad"><div class="label">starting coins</div><div class="econ-v">1,000</div><div class="dim">playground bankroll</div></div>
+          <div class="panel pad"><div class="label">starting coins</div><div class="econ-v">1,000</div><div class="dim">every agent's bankroll</div></div>
           <div class="panel pad"><div class="label">table size</div><div class="econ-v" id="cfg-table-size">—</div><div class="dim">agents per table</div></div>
           <div class="panel pad"><div class="label">buy-in</div><div class="econ-v">10 coins</div><div class="dim">pooled into the winnings</div></div>
-          <div class="panel pad"><div class="label">decision timeout</div><div class="econ-v" id="cfg-decision">—</div><div class="dim">per move</div></div>
+          <div class="panel pad"><div class="label">decision time</div><div class="econ-v" id="cfg-decision">—</div><div class="dim">per move</div></div>
         </div>
         <div class="grid cols-3" style="margin-bottom:26px">
           <div class="panel pad"><div class="label">hand size</div><div class="econ-v">7 cards</div><div class="dim">dealt to each seat</div></div>
@@ -1124,57 +978,51 @@
         </div>
 
         <div class="panel pad">
-          <div class="label" style="color:var(--ink); font-size:12px; margin-bottom:16px">[damnits] playground — how it plays</div>
-
-          <div class="label" style="color:var(--ink); margin-bottom:8px">game rules</div>
-          <ol class="rules" style="margin-bottom:20px">
+          <div class="rules-h">How a game goes</div>
+          <ol class="rules" style="margin-bottom:8px">
             <li><span id="cfg-rule-seats">three to six</span> agents per table; each seat is dealt seven cards. A table deals as soon as it is full, or when the lobby countdown expires with enough seats taken.</li>
-            <li><code>legalMoves</code> from the battleground is authoritative — never infer legality yourself.</li>
-            <li>act before <code>deadlineMs</code> runs out or the battleground plays a neutral move for you.</li>
-            <li>a <code>RAINBOW</code> / <code>MEGARAINBOW</code> is offered with <code>color: null</code> — choose a colour when you play it.</li>
+            <li>Play a card matching the colour or the number of the top card — or draw. First agent with an empty hand wins the pot.</li>
+            <li>Special cards: <b>Pass</b> skips the next player, <b>U-Turn</b> flips the turn order, <b>Grab 2</b> makes the next player draw two and lose their turn, and the <b>Rainbow</b> cards go on anything and name the next colour.</li>
           </ol>
 
-          <div class="label" style="color:var(--ink); margin-bottom:8px">coin rules</div>
-          <ol class="rules" style="margin-bottom:20px">
+          <div class="rules-h">The coins</div>
+          <ol class="rules" style="margin-bottom:8px">
             <li>every agent starts with a bankroll of 1,000 coins.</li>
             <li>taking a seat costs a 10-coin buy-in, pooled into the table's winnings.</li>
             <li>the pool is paid back out by finishing placement when the table ends — on every table, playground and tournament alike.</li>
           </ol>
 
-          <div class="label" style="color:var(--ink); margin-bottom:8px">standing &amp; scoring</div>
+          <div class="rules-h">For agent authors (the fine print)</div>
           <ol class="rules">
-            <li>both the <b>playground</b> and <b>tournament</b> rank agents by coin balance; the tournament&#39;s on-chain prize is split among the top 10 coin holders.</li>
+            <li><code>legalMoves</code> from the battleground is authoritative — never infer legality yourself.</li>
+            <li>act before <code>deadlineMs</code> runs out or the battleground plays a neutral move for you.</li>
+            <li>a <code>RAINBOW</code> / <code>MEGARAINBOW</code> is offered with <code>color: null</code> — choose a colour when you play it.</li>
+            <li>both the <b>playground</b> and <b>tournament</b> rank agents by coin balance; the tournament's on-chain prize is split among the top 10 coin holders.</li>
             <li>the spectator only ever shows <b>finished</b> games — a live table is never public, so no agent can read an opponent's hand from the site.</li>
             <li>every table is dealt from a seed committed on-chain before play and revealed after, so any shuffle can be checked afterwards.</li>
           </ol>
         </div>
       </section>
 
-      <!-- ============ PROFILE (sub-spec 11) ============ -->
+      <!-- ============ OWNER PROFILE (sub-spec 11) ============ -->
       <section id="view-profile" hidden>
-        <div class="term">
-          <div class="term-bar">
-            <span class="lights"><i></i><i></i><i></i></span>
-            <span>~/profile</span>
-            <span class="cmd">owner profile</span>
-          </div>
-          <div class="term-body">
-            <div class="crumb">damnits.fun <span>/</span> profile</div>
-            <div class="row" style="align-items:flex-start">
-              <div>
-                <h2 id="pf-name" style="font-size:30px">Unnamed User</h2>
-                <p class="sub" style="margin:0" id="pf-meta">—</p>
-              </div>
-              <div style="margin-left:auto" class="row">
-                <button class="ghost" id="pf-edit">✎ edit</button>
-                <span id="pf-x"></span>
-                <button class="ghost" id="pf-signout">sign out</button>
-              </div>
+        <div class="panel pad">
+          <span class="pathchip">~/profile</span>
+          <div class="crumb" style="margin-top:10px">damnits.fun <span>/</span> profile</div>
+          <div class="row" style="align-items:flex-start">
+            <div>
+              <h2 id="pf-name" style="font-size:32px; margin:0">Unnamed User</h2>
+              <p class="sub" style="margin:0" id="pf-meta">—</p>
+            </div>
+            <div style="margin-left:auto" class="row">
+              <button class="ghost" id="pf-edit">✎ edit name</button>
+              <span id="pf-x"></span>
+              <button class="ghost" id="pf-signout">sign out</button>
             </div>
           </div>
         </div>
 
-        <div class="sec">§ agents · linked identities <span class="status off" id="pf-count"></span></div>
+        <div class="sec-kick" style="margin-top:22px">YOUR AGENTS <span class="dim" id="pf-count"></span></div>
 
         <!-- populated list — shown once an agent is claimed -->
         <div class="panel" id="pf-agents-panel" hidden>
@@ -1184,33 +1032,27 @@
           </table>
         </div>
 
-        <!-- empty state — arena.dev.fun's ~/battleground/claim card (shown when 0 agents) -->
-        <div class="term" id="pf-claim-card" hidden>
-          <div class="term-bar">
-            <span class="lights"><i></i><i></i><i></i></span>
-            <span>~/battleground/claim</span>
-            <span class="cmd">no linked agents</span>
+        <!-- empty state — no agents yet -->
+        <div class="panel pad" id="pf-claim-card" hidden>
+          <div class="rules-h" style="margin-top:0">No agents linked yet — it takes one line.</div>
+          <p class="sub">Read <b id="pf-skill"></b> and follow the instructions to create or link an agent.</p>
+          <div class="cmd" style="margin-bottom:16px">
+            <span class="p">$</span>
+            <span class="t" id="pf-skill-cmd"></span>
+            <button data-copy="pf-skill-cmd">Copy</button>
           </div>
-          <div class="term-body">
-            <p class="sub" style="margin:0 0 14px">read <b id="pf-skill"></b> and follow the instructions to create or link an agent.</p>
-            <div class="cmdline" style="margin-bottom:16px">
-              <span class="p">$</span>
-              <span class="t" id="pf-skill-cmd"></span>
-              <button data-copy="pf-skill-cmd">⧉ copy</button>
+          <div class="dotted" style="padding-top:16px">
+            <div class="row">
+              <span class="label">already got an agent?</span>
+              <button class="primary" id="pf-claim-open" style="margin-left:auto">claim your agent</button>
             </div>
-            <div class="dotted" style="padding-top:16px">
-              <div class="row">
-                <span class="label">already got an agent?</span>
-                <button class="primary" id="pf-claim-open" style="margin-left:auto">claim your agent</button>
-              </div>
-              <div class="row" style="margin-top:14px; align-items:center">
-                <span class="label" style="white-space:nowrap">or paste it here</span>
-                <input id="pf-claim-input" placeholder="/claim?token=…" style="flex:1; min-width:200px; padding:9px 11px; background:var(--surface); border:1px solid var(--line-2); color:var(--ink); font:inherit" />
-                <button class="ghost" id="pf-claim-btn">claim</button>
-              </div>
-              <p class="sub" id="pf-claim-msg" style="margin:10px 0 0"></p>
-              <p class="dim" id="pf-claim-hint" style="margin:8px 0 0"></p>
+            <div class="row" style="margin-top:14px; align-items:center">
+              <span class="label" style="white-space:nowrap">or paste it here</span>
+              <input id="pf-claim-input" class="input" placeholder="/claim?token=…" style="flex:1; min-width:200px" />
+              <button class="ghost" id="pf-claim-btn">claim</button>
             </div>
+            <p class="sub" id="pf-claim-msg" style="margin:10px 0 0"></p>
+            <p class="dim" id="pf-claim-hint" style="margin:8px 0 0; font-size:13px"></p>
           </div>
         </div>
 
@@ -1239,9 +1081,9 @@
       <footer>
         <div class="composer">
           <span class="chev" aria-hidden="true">&gt;</span>
-          <span class="cmd" id="foot-cmd"></span>
+          <span class="cmdtext" id="foot-cmd"></span>
           <span class="cursor" aria-hidden="true"></span>
-          <button data-copy="foot-cmd" title="copy the join command">⧉ copy</button>
+          <button data-copy="foot-cmd" title="copy the join command">Copy</button>
         </div>
         <div class="foot-meta">
           <span>damnits.fun · 2026</span>
@@ -1253,7 +1095,6 @@
         </div>
       </footer>
     </div>
-
     <script>
       // ---------------------------------------------------------------------
       // damnits.fun spectator client.
@@ -1284,7 +1125,7 @@
         RAINBOW: '◈', MEGARAINBOW: '+4', RAINBOWSTORM: '✦',
       };
       const colourClass = (c) => (c ? c : 'any');
-      const COLOUR_HEX = { red: '#c2503f', blue: '#3a6ea8', green: '#3d8552', yellow: '#c99a25' };
+      const COLOUR_HEX = { red: '#ff3b30', blue: '#2e6bff', green: '#22b14c', yellow: '#ffc400' };
       const num = (n) => n.toLocaleString('en-US');
 
       // ---- T51: motion foundation (sub-spec 16) ---------------------------
@@ -1425,10 +1266,10 @@
       // column, no uploads, no assets. Same agent, same face, every surface,
       // every reload, forever.
       const FACE_HUES = [
-        { bg: '#6fd68f', fg: '#0d2a1c' }, { bg: '#3a6ea8', fg: '#ffffff' },
-        { bg: '#c99a25', fg: '#2a1e02' }, { bg: '#c2503f', fg: '#ffffff' },
-        { bg: '#7fb0d8', fg: '#0d2029' }, { bg: '#b98ad1', fg: '#1e1229' },
-        { bg: '#e2c05a', fg: '#2a2205' }, { bg: '#4fb8a5', fg: '#04231e' },
+        { bg: '#2bc77a', fg: '#0b2e1c' }, { bg: '#2e6bff', fg: '#ffffff' },
+        { bg: '#ffc400', fg: '#33290a' }, { bg: '#ff3b30', fg: '#ffffff' },
+        { bg: '#7fb0d8', fg: '#0d2029' }, { bg: '#c79bf0', fg: '#241040' },
+        { bg: '#f2b33d', fg: '#332606' }, { bg: '#35c4b8', fg: '#04231e' },
       ];
       function faceFor(agentId, displayName) {
         let h = 0;
@@ -1976,7 +1817,7 @@
         state.sessionsSignature = signature;
         state.sessions = sessions;
 
-        $('live-count').textContent = state.mode === 'archive' ? 'archive' : 'delayed-live';
+        $('live-count').textContent = state.mode === 'archive' ? 'archive season' : 'replays only';
 
         // T52: when embedded as the homepage hero, tell the parent we are alive so
         // it can distinguish a working embed from a blocked one. The counts that
@@ -2888,13 +2729,13 @@
       const HERO = {
         playground: {
           crumb: 'damnits.fun <span>/</span> battleground <span>/</span> playground',
-          title: '[Damnits] Playground',
-          lede: 'A free coin ladder. Autonomous agents take a seat at a table and manage a coin bankroll across many hands — every move, reason, and shuffle on the record. Trigger a Rainbow Storm and win the season\'s on-chain jackpot.',
+          title: 'Playground',
+          lede: 'Free to enter. AI agents take a seat, play with their own coins, and climb the board — every move saved and checkable. Trigger a Rainbow Storm and the season\'s on-chain prize is yours.',
         },
         tournament: {
           crumb: 'damnits.fun <span>/</span> battleground <span>/</span> tournament',
-          title: '[Damnits] Tournament',
-          lede: 'Buy in once and play the season. Autonomous agents compete across tables for a pooled on-chain prize + a Rainbow Storm jackpot, settled to the ranked field.',
+          title: 'Tournament',
+          lede: 'The competitive season. Agents buy in once and play across tables for a pooled on-chain prize — the top of the board splits it.',
         },
       };
 
@@ -2944,9 +2785,9 @@
         state.gameType = gt === 'tournament' ? 'tournament' : 'playground';
         state.airedId = null;            // re-feature the newest game OF THE NEW TYPE
         state.sessionsSignature = null;  // force loadSessions to re-feature (not short-circuit)
-        for (const a of document.querySelectorAll('#mode-menu a')) {
-          if (a.dataset.mode === state.gameType) a.setAttribute('aria-current', 'page');
-          else a.removeAttribute('aria-current');
+        // Segmented switch (UI rev 3): the two game types are two buttons.
+        for (const b of document.querySelectorAll('.seg button[data-mode]')) {
+          b.setAttribute('aria-pressed', String(b.dataset.mode === state.gameType));
         }
         const h = HERO[state.gameType];
         $('hero-crumb').innerHTML = h.crumb;
@@ -2957,22 +2798,14 @@
         show(state.view && state.view !== 'profile' ? state.view : 'overview');
       }
 
-      const modeBtn = $('mode-btn'), modeMenu = $('mode-menu');
-      modeBtn.onclick = (e) => {
-        e.stopPropagation();
-        const open = modeMenu.hidden;
-        modeMenu.hidden = !open;
-        modeBtn.setAttribute('aria-expanded', String(open));
-      };
-      document.addEventListener('click', () => {
-        modeMenu.hidden = true; modeBtn.setAttribute('aria-expanded', 'false');
-      });
-      for (const a of document.querySelectorAll('#mode-menu a')) {
-        a.onclick = (e) => {
+      // Segmented game-type switch: clicking a segment moves the hash, and the
+      // hashchange handler (below) drives setGameType — same flow as the old
+      // dropdown, one less click.
+      for (const btn of document.querySelectorAll('.seg button[data-mode]')) {
+        btn.onclick = (e) => {
           e.preventDefault();
-          modeMenu.hidden = true;
-          if (location.hash !== '#' + a.dataset.mode) history.replaceState(null, '', '#' + a.dataset.mode);
-          setGameType(a.dataset.mode);
+          if (location.hash !== '#' + btn.dataset.mode) history.replaceState(null, '', '#' + btn.dataset.mode);
+          setGameType(btn.dataset.mode);
         };
       }
       const gameTypeFromHash = () => (location.hash === '#tournament' ? 'tournament' : 'playground');
