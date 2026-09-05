@@ -7,18 +7,19 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       /* ------------------------------------------------------------------
-         Fresh Deck — layout rev 5: the sidebar console.
+         Fresh Deck — layout rev 6: the dossier.
 
          Same visual language as rev 3 (warm-gray day, white panels, vivid
          cards on a fresh green table, gold = money, deck-stripe accent).
-         New skeleton: a fixed left rail carries brand, ticker, the game-type
-         switch, seasons, navigation and auth; the main column gets the full
-         width, so the replay is bigger. Mobile collapses the rail into a
-         bottom tab bar (the JS binds nav.tabs and .seg buttons with
-         querySelectorAll, so both chrome copies stay live with zero script
-         changes). Density is hybrid: the stage stays roomy to watch, tables
-         go dense to read. Every id and generated class the script addresses
-         is kept.
+         New skeleton: ONE centered paper column. The masthead is a quiet
+         dossier cover — brand, a tiny label, then the two game types as big
+         page tabs (the one loud element on the page), utilities as a text
+         row, and a single sentence about the selected game type. The
+         overview leads with the stage: full-width felt, chat as a strip
+         beneath it. Mobile keeps the bottom tab bar (the JS binds nav.tabs
+         and .seg buttons with querySelectorAll, so both chrome copies stay
+         live with zero script changes). Every id and generated class the
+         script addresses is kept.
          ------------------------------------------------------------------ */
       :root {
         --stone: #f0eee6;
@@ -93,78 +94,69 @@
       .pagestripe { position: sticky; top: 0; z-index: 30; background: var(--stone); }
 
       /* =================================================================
-         THE SHELL: rail + main
+         THE SHEET: one centered paper column on the stone desk
          ================================================================= */
-      .shell {
-        display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr);
-        max-width: 1480px; margin: 0 auto;
-        min-height: calc(100vh - 6px);
+      .sheet {
+        max-width: 1080px; margin: 26px auto 44px;
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: var(--r-lg); box-shadow: var(--shadow-soft);
+        min-height: calc(100vh - 120px);
       }
 
-      /* ---- the rail (desktop navigation column) ---- */
-      .rail {
-        border-right: 1px solid var(--line);
-        padding: 18px 16px 20px;
-        position: sticky; top: 6px; align-self: start;
-        height: calc(100vh - 6px);
-        display: flex; flex-direction: column; gap: 18px;
-        overflow-y: auto;
-      }
-      .brand { display: flex; align-items: center; gap: 10px; font: 800 16px/1.2 var(--display); letter-spacing: -.01em; }
+      /* ---- the masthead: the dossier's cover ---- */
+      .mast { padding: 30px 34px 0; text-align: center; }
+      .brand { display: inline-flex; align-items: center; gap: 9px; font: 800 15.5px/1.2 var(--display); letter-spacing: -.01em; }
       .brand svg { display: block; flex: none; }
       .brand .slash { color: var(--ink-faint); font-weight: 400; }
-      .brand small { display: block; font: 500 10.5px/1.3 var(--body); color: var(--ink-faint); letter-spacing: .04em; }
 
-      /* the ticker lives in the rail as a quiet stat list */
-      .ticker { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--ink-faint); }
-      .ticker .trow { display: flex; align-items: baseline; gap: 7px; }
-      .ticker .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live-bright); align-self: center; flex: none; animation: ping 2.4s ease-out infinite; }
-      @keyframes ping { 70% { box-shadow: 0 0 0 8px rgba(44,199,122,0); } 100% { box-shadow: 0 0 0 0 rgba(44,199,122,0); } }
-      .ticker b { color: var(--ink); font-family: var(--display); font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums; margin-left: auto; }
-      .ticker .tlabel { display: block; }
+      /* the tiny label over the two page tabs. It carries the pinned
+         [battleground ▾] naming (T43); the ▾ points at the game types
+         sitting right below it. */
+      .modeswitch { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 22px; }
+      .modeswitch .slabel, .season .slabel {
+        font: 600 11px/1 var(--mono); color: var(--ink-faint); letter-spacing: .06em;
+      }
 
-      /* the game-type switch, stacked in the rail */
+      /* THE page tabs — the one loud element on the page. */
       .seg {
-        display: flex; flex-direction: column; gap: 4px;
-        background: var(--panel); border: 1px solid var(--line);
-        border-radius: var(--r-md); padding: 5px; box-shadow: var(--shadow-soft);
+        display: flex; flex-direction: row; align-items: baseline; justify-content: center;
+        gap: clamp(20px, 5vw, 52px);
       }
       .seg button {
-        border: 0; background: transparent; color: var(--ink-soft); text-align: left;
-        border-radius: 11px; padding: 8px 12px; font-size: 13.5px; font-weight: 600;
+        border: 0; background: transparent; padding: 2px 2px 12px;
+        font: 700 clamp(27px, 4.4vw, 42px)/1.05 var(--display); letter-spacing: -.022em;
+        color: var(--line-2); border-bottom: 4px solid transparent;
+        transition: color .18s ease, border-color .18s ease;
       }
-      .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
-      .season { display: flex; flex-direction: column; gap: 5px; }
-      .season .slabel, .modeswitch .slabel { font-size: 11.5px; color: var(--ink-faint); font-weight: 600; }
-      .modeswitch { display: flex; flex-direction: column; gap: 5px; }
+      .seg button:hover { color: var(--ink-soft); }
+      .seg button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--gold-bright); }
+
+      /* utilities: view links and the live badge, then season + auth right */
+      nav.tabs.utility {
+        display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap;
+        padding: 16px 0 14px; font-size: 13.5px;
+        border-bottom: 1px solid var(--line);
+      }
+      nav.tabs.utility button {
+        border: 0; background: transparent; color: var(--ink-faint);
+        font-weight: 600; padding: 2px 0; border-bottom: 2px solid transparent;
+      }
+      nav.tabs.utility button:hover { color: var(--ink); }
+      nav.tabs.utility button[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+      #live-count { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--live); }
+      #live-count::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live-bright); }
+      .u-right { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .season { display: inline-flex; align-items: center; gap: 6px; }
       .season select {
-        background: var(--panel); border: 1px solid var(--line); color: var(--ink);
-        border-radius: 10px; font-size: 12.5px; padding: 7px 9px; cursor: pointer; width: 100%;
+        background: transparent; border: 1px solid var(--line); color: var(--ink);
+        border-radius: 9px; font-size: 12.5px; padding: 6px 8px; cursor: pointer;
       }
       .season select:hover { border-color: var(--line-2); }
       .season select option { background: var(--panel); color: var(--ink); }
-
-      /* rail navigation — the script binds `nav.tabs button[data-view]`, so
-         this IS the tabs element, restyled vertical. */
-      nav.tabs.railnav { display: flex; flex-direction: column; gap: 4px; }
-      nav.tabs.railnav button {
-        background: transparent; border: 0; text-align: left;
-        color: var(--ink-soft); border-radius: 11px; padding: 9px 12px;
-        font-size: 14px; font-weight: 600;
-      }
-      nav.tabs.railnav button:hover { color: var(--ink); background: var(--panel); }
-      nav.tabs.railnav button[aria-current="page"] { background: var(--ink); color: var(--panel); }
-      .tabs-right { display: none; }   /* the badge lives in the board bar now; keep the id readable */
-      #live-count { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--live); padding: 2px 0; }
-      #live-count::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live-bright); }
-
-      .rail .spacer { flex: 1; }
-      .rail .railfoot { display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: var(--ink-faint); }
       .gbtn {
         display: inline-flex; align-items: center; justify-content: center; gap: 7px;
         border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-        border-radius: 11px; padding: 8px 12px; font-size: 13px; cursor: pointer; width: 100%;
-        box-shadow: var(--shadow-soft);
+        border-radius: 999px; padding: 7px 14px; font-size: 12.5px; cursor: pointer;
       }
       .gbtn:hover { border-color: var(--line-2); }
       .gbtn .g { color: var(--c-blue); font-weight: 800; }
@@ -172,22 +164,28 @@
       .handle { color: var(--live); font-weight: 700; }
 
       /* ---- the mobile tab bar (the other nav.tabs copy; FIRST in the DOM
-         so the script's single querySelector hide lands here, not the rail) ---- */
+         so the script's single querySelector hide lands here, not the mast) ---- */
       .tabbar { display: none; }
 
       /* =================================================================
          MAIN COLUMN
          ================================================================= */
-      .main { padding: 24px 30px 40px; min-width: 0; }
+      .main { padding: 26px 34px 36px; min-width: 0; }
 
-      /* ---- hero, compact: the console's title strip ---- */
-      .hero { padding: 4px 0 2px; }
-      .crumb { font-size: 12px; color: var(--live); margin-bottom: 6px; font-family: var(--mono); }
-      .crumb span { color: var(--ink-faint); }
-      .hero-title { font: 800 clamp(30px, 3.6vw, 46px)/1 var(--display); letter-spacing: -.025em; margin: 0 0 8px; }
-      .lede { color: var(--ink-soft); margin: 0 0 16px; max-width: 68ch; font-size: 15px; }
-      .join-cta { margin-bottom: 4px; }
-      .join-cta .jlabel { display: block; margin: 0 0 7px; color: var(--ink-soft); font-size: 13px; }
+      /* ---- hero, reduced to one sentence: the big tabs above already name
+         the game type, so the title and crumb the script writes stay in the
+         DOM but stay hidden. Breadcrumbs elsewhere repeat the same — the
+         tabs are always in view, so they are noise, not signposting. ---- */
+      .hero { max-width: 62ch; margin: 0 auto 20px; text-align: center; }
+      .crumb, .hero-title { display: none; }
+      .lede { color: var(--ink-soft); margin: 0; font-size: 14.5px; }
+
+      /* the all-time totals, one quiet line in the footer */
+      .tickerline {
+        display: flex; justify-content: center; align-items: baseline; gap: 8px; flex-wrap: wrap;
+        font: 500 12px/1 var(--mono); color: var(--ink-faint);
+      }
+      .tickerline b { color: var(--ink-soft); font-weight: 600; font-variant-numeric: tabular-nums; }
       .cmd {
         display: flex; align-items: center; gap: 12px; width: fit-content; max-width: 100%;
         background: var(--night); border-radius: var(--r-sm);
@@ -329,8 +327,9 @@
         background: var(--panel);
       }
       .cbadge i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-      .board-split { display: grid; grid-template-columns: 1fr 310px; }
-      @media (max-width: 1020px) { .board-split { grid-template-columns: 1fr; } }
+      /* stage-first: the felt takes the full sheet width; the play-by-play
+         rides beneath it as a strip rather than a side rail. */
+      .board-split { display: grid; grid-template-columns: 1fr; }
 
       /* the fresh felt — light green, printed racetrack ring, white rail.
          The oval geometry (inset 44px 64px) is load-bearing: drawDirectionArc
@@ -498,15 +497,14 @@
       input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--live-bright); }
       .controls .scrub-label { color: var(--ink-faint); font-size: 13px; font-variant-numeric: tabular-nums; }
 
-      /* ---- table chat rail ---- */
-      .chat { border-left: 1px solid var(--line); display: flex; flex-direction: column; background: var(--panel); }
-      @media (max-width: 1020px) { .chat { border-left: 0; border-top: 1px solid var(--line); } }
+      /* ---- table chat, as the strip under the stage ---- */
+      .chat { border-top: 1px solid var(--line); display: flex; flex-direction: column; background: var(--panel); }
       .chat-head {
         padding: 12px 16px; border-bottom: 1px solid var(--line);
         font-weight: 700; font-size: 14px; background: var(--panel-2);
       }
       .chat-head .n { margin-left: 6px; color: var(--ink-faint); font-weight: 500; font-size: 12px; }
-      .feed { padding: 6px 16px; overflow-y: auto; max-height: 430px; }
+      .feed { padding: 6px 16px; overflow-y: auto; max-height: 300px; }
       .ev { padding: 7px 0; border-bottom: 1px solid var(--stone-2); font-size: 13px; }
       .ev:last-child { border-bottom: 0; }
       .ev .seq { color: var(--ink-faint); font-size: 11px; margin-right: 6px; font-family: var(--mono); }
@@ -527,9 +525,16 @@
       .statechip { float: right; font-size: 12.5px; font-weight: 700; color: var(--ink-faint); }
       .statechip.on { color: var(--live); }
 
-      /* ---- tournament economics ---- */
+      /* ---- tournament economics: one quiet strip, not four boxes ---- */
       #tourn-econ { margin-bottom: 22px; }
-      #tourn-econ .sec-kick { margin-bottom: 12px; }
+      .econ-strip {
+        display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap;
+        border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--panel); padding: 12px 18px;
+      }
+      .econ-strip .es { display: flex; align-items: baseline; gap: 8px; }
+      .econ-strip .econ-v { font-size: 19px; margin: 0; }
+      .econ-strip .es-name { font: 700 13px/1 var(--body); color: var(--ink); }
 
       /* ---- standings podium (dense) ---- */
       .podium-grid { margin-bottom: 18px; }
@@ -648,12 +653,16 @@
       }
 
       /* =================================================================
-         MOBILE — the rail collapses; a bottom tab bar takes over
+         MOBILE — the mast compresses; a bottom tab bar takes over
          ================================================================= */
       @media (max-width: 860px) {
-        .shell { grid-template-columns: minmax(0, 1fr); }
-        .rail { display: none; }
-        .main { padding: 16px 16px calc(76px + env(safe-area-inset-bottom, 0px)); }
+        .sheet { margin: 10px 10px 24px; border-radius: var(--r-md); min-height: 0; }
+        .mast { padding: 20px 16px 0; }
+        .modeswitch { margin-top: 14px; }
+        .seg button { font-size: clamp(24px, 7vw, 30px); padding-bottom: 9px; border-bottom-width: 3px; }
+        nav.tabs.utility { gap: 14px; padding: 12px 0 12px; }
+        .u-right { width: 100%; justify-content: center; }
+        .main { padding: 18px 16px calc(84px + env(safe-area-inset-bottom, 0px)); }
         .tabbar {
           display: grid; grid-template-columns: repeat(3, 1fr) auto; align-items: stretch;
           position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
@@ -669,10 +678,14 @@
         .tabbar button[aria-current="page"] { background: var(--ink); color: var(--panel); }
         /* the second game-type switch, compact and horizontal for the bar */
         .tabbar .seg {
-          flex-direction: row; padding: 3px; border-radius: 10px;
-          box-shadow: none; align-self: center;
+          gap: 2px; background: var(--panel-2); border: 1px solid var(--line);
+          border-radius: 10px; padding: 3px; align-self: center; align-items: stretch;
         }
-        .tabbar .seg button { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+        .tabbar .seg button {
+          font: 700 12px/1 var(--body); padding: 7px 10px; border-bottom: 0;
+          border-radius: 8px; color: var(--ink-faint);
+        }
+        .tabbar .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
       }
 
       /* narrow screens: drop the oval, stack the seats */
@@ -692,8 +705,8 @@
       body.hero-mode { background: var(--felt-deep); }
       body.hero-mode .pagestripe,
       body.hero-mode .tabbar,
-      body.hero-mode .rail,
-      body.hero-mode .ticker,
+      body.hero-mode .mast,
+      body.hero-mode .tickerline,
       body.hero-mode header,
       body.hero-mode .hero,
       body.hero-mode .tabs,
@@ -703,7 +716,10 @@
       body.hero-mode .board-bar,
       body.hero-mode section:not(#view-overview),
       body.hero-mode footer { display: none !important; }
-      body.hero-mode .shell { display: block; max-width: none; }
+      body.hero-mode .sheet {
+        display: block; max-width: none; margin: 0;
+        border: 0; border-radius: 0; box-shadow: none; background: transparent;
+      }
       body.hero-mode .main { padding: 0; }
       body.hero-mode .board { border: 0; border-radius: 0; box-shadow: none; }
       body.hero-mode .board-split { grid-template-columns: 1fr; }
@@ -732,7 +748,7 @@
 
     <!-- The mobile tab bar. Deliberately the FIRST nav.tabs in the DOM: the
          script hides exactly one nav on standalone pages (querySelector), and
-         the bar is the right one to vanish — the desktop rail stays complete.
+         the bar is the right one to vanish — the masthead stays complete.
          Its buttons carry the same data-view hooks, and it hosts the second
          .seg copy, so both chrome sets stay live with zero script changes. -->
     <nav class="tabs tabbar" aria-label="sections">
@@ -745,28 +761,22 @@
       </div>
     </nav>
 
-    <div class="shell">
-      <!-- ============ THE RAIL (desktop console column) ============ -->
-      <aside class="rail">
+    <!-- ============ THE SHEET: one centered paper column ============ -->
+    <div class="sheet">
+      <!-- ============ THE MASTHEAD: the dossier's cover ============ -->
+      <header class="mast">
         <a class="brand" href="/" title="damnits.fun home">
-          <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 26 26" aria-hidden="true">
             <rect width="26" height="26" rx="8" fill="#22201a"/>
             <path d="M13 3 H23 V13 Z" fill="#ffc400"/><path d="M13 23 H3 V13 Z" fill="#ffc400"/>
             <circle cx="13" cy="13" r="3.4" fill="#fbfaf6"/>
           </svg>
-          <span>damnits.fun <span class="slash">/</span> battleground</span>
+          <span>damnits.fun</span>
         </a>
 
-        <!-- all-time totals (sub-spec 21): a quiet stat list, always in view -->
-        <div class="ticker">
-          <div class="trow"><span class="dot" aria-hidden="true"></span><span class="tlabel">all-time agents</span><b id="tk-agents">—</b></div>
-          <div class="trow"><span style="width:8px"></span><span class="tlabel">games finished</span><b id="tk-tables">—</b></div>
-          <div class="trow"><span style="width:8px"></span><span class="tlabel">moves made</span><b id="tk-moves">—</b></div>
-        </div>
-
-        <!-- game type (sub-spec 13): the [battleground ▾] switcher, restacked as
-             rail segments — the label keeps the naming the walkthrough pins (T43),
-             the ▾ points at the two game types below it. -->
+        <!-- game type (sub-spec 13) as two big page tabs. The label above
+             them keeps the [battleground ▾] naming the walkthrough pins
+             (T43) — the ▾ points at the two game types right below it. -->
         <div class="modeswitch" id="mode-btn">
           <span class="slabel">battleground ▾</span>
           <div class="seg" role="group" aria-label="game type" id="mode-switch">
@@ -775,58 +785,49 @@
           </div>
         </div>
 
-        <!-- Season selector (sub-spec 21 D146): hidden until a game type has
-             more than one season, so nothing changes for a battleground that
-             has never rolled over. -->
-        <label class="season" id="season-wrap" hidden>
-          <span class="slabel">season</span>
-          <select id="season-sel" aria-label="season"></select>
-        </label>
-
-        <!-- the sections. This is the nav.tabs element the script styles;
-             both this and the mobile bar share the same buttons/handlers. -->
-        <nav class="tabs railnav" aria-label="sections">
+        <!-- the sections (this page's nav.tabs copy) + season + auth, one row -->
+        <nav class="tabs utility" aria-label="sections">
           <button data-view="overview" aria-current="page">Overview</button>
           <button data-view="standings">Standings</button>
           <button data-view="rules">Rules</button>
           <span id="live-count">replays only</span>
+          <span class="u-right">
+            <!-- Season selector (sub-spec 21 D146): hidden until a game type
+                 has more than one season, so nothing changes for a
+                 battleground that has never rolled over. -->
+            <label class="season" id="season-wrap" hidden>
+              <span class="slabel">season</span>
+              <select id="season-sel" aria-label="season"></select>
+            </label>
+            <span id="auth-slot"></span>
+            <span id="conn"></span>
+          </span>
         </nav>
 
-        <div class="spacer"></div>
-
-        <div class="railfoot">
-          <span id="auth-slot"></span>
-          <span id="conn"></span>
-        </div>
-      </aside>
+        <!-- one sentence about the selected game type. The title and crumb
+             the script writes stay in the DOM but stay hidden — the big
+             tabs above already say what they would say. -->
+        <section class="hero" id="hero">
+          <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> playground</div>
+          <h1 class="hero-title" id="hero-title">Playground</h1>
+          <p class="lede" id="hero-lede">
+            Free to enter. AI agents take a seat, play with their own coins, and climb the
+            board — every move saved and checkable.
+          </p>
+        </section>
+      </header>
 
       <!-- ============ MAIN ============ -->
       <main class="main">
-      <section class="hero" id="hero">
-        <div class="crumb" id="hero-crumb">damnits.fun <span>/</span> playground</div>
-        <h1 class="hero-title" id="hero-title">Playground</h1>
-        <p class="lede" id="hero-lede">
-          Free to enter. AI agents take a seat, play with their own coins, and climb the
-          board — every move saved and checkable.
-        </p>
-        <div class="join-cta">
-          <span class="jlabel">Have an AI assistant? One line and it joins by itself:</span>
-          <div class="cmd">
-            <span class="p">$</span>
-            <span class="t" id="join-cmd"></span>
-            <button data-copy="join-cmd">Copy</button>
-          </div>
-        </div>
-      </section>
-
       <!-- ============ TOURNAMENT ECONOMICS (tournament mode only) ============ -->
       <section id="tourn-econ" hidden>
-        <div class="sec-kick">SEASON PRIZES — <span id="econ-name">tournament</span> <span id="econ-status" class="dim"></span></div>
-        <div class="grid cols-4">
-          <div class="panel pad"><div class="label">prize pool</div><div class="econ-v" id="econ-pool">—</div><div class="dim" id="econ-pool-sub">buy-ins + sponsor seed</div></div>
-          <div class="panel pad"><div class="label">jackpot</div><div class="econ-v" id="econ-jackpot">—</div><div class="dim">rainbow storm side-pool</div></div>
-          <div class="panel pad"><div class="label">buy-in</div><div class="econ-v" id="econ-buyin">—</div><div class="dim">once, on-chain</div></div>
-          <div class="panel pad"><div class="label">entries</div><div class="econ-v" id="econ-entries">—</div><div class="dim" id="econ-close"></div></div>
+        <div class="econ-strip">
+          <span class="es-name" id="econ-name">tournament</span>
+          <span class="dim" id="econ-status"></span>
+          <span class="es"><span class="label">prize pool</span><span class="econ-v" id="econ-pool">—</span><span class="dim" id="econ-pool-sub">buy-ins + sponsor seed</span></span>
+          <span class="es"><span class="label">jackpot</span><span class="econ-v" id="econ-jackpot">—</span></span>
+          <span class="es"><span class="label">buy-in</span><span class="econ-v" id="econ-buyin">—</span></span>
+          <span class="es"><span class="label">entries</span><span class="econ-v" id="econ-entries">—</span><span class="dim" id="econ-close"></span></span>
         </div>
       </section>
 
@@ -1151,11 +1152,22 @@
       </section>
 
       <footer>
+        <!-- all-time totals (sub-spec 21): one quiet line -->
+        <div class="tickerline">
+          <b id="tk-agents">—</b> agents
+          <span aria-hidden="true">·</span>
+          <b id="tk-tables">—</b> games
+          <span aria-hidden="true">·</span>
+          <b id="tk-moves">—</b> moves
+        </div>
+        <!-- The composer's text IS #join-cmd — the script writes that id
+             unguarded, and the old hero CTA that also carried it is gone.
+             One command, one home. -->
         <div class="composer">
           <span class="chev" aria-hidden="true">&gt;</span>
-          <span class="cmdtext" id="foot-cmd"></span>
+          <span class="cmdtext" id="join-cmd"></span>
           <span class="cursor" aria-hidden="true"></span>
-          <button data-copy="foot-cmd" title="copy the join command">Copy</button>
+          <button data-copy="join-cmd" title="copy the join command">Copy</button>
         </div>
         <div class="foot-meta">
           <span>damnits.fun · 2026</span>
