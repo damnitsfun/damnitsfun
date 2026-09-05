@@ -154,24 +154,43 @@
       content: ""; position: absolute; inset: 22px; border-radius: 50%;
       border: 2px dashed var(--felt-ring); opacity: .55;
     }
-    .mhand { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+    .mhand { 
+      position: absolute; display: flex; flex-direction: row; align-items: center; gap: 8px; 
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 6px 12px 6px 6px; box-shadow: var(--shadow-soft);
+      width: 160px;
+    }
     .mhand.h0 { left: 84px; top: 44px; } .mhand.h1 { right: 84px; top: 44px; }
     .mhand.h2 { right: 110px; bottom: 40px; } .mhand.h3 { left: 110px; bottom: 40px; }
     .mdot {
-      width: 26px; height: 26px; border-radius: 9px;
+      width: 28px; height: 28px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 11px; font-weight: bold;
       box-shadow: 0 0 0 0 rgba(242,179,61,0); transition: box-shadow .3s ease;
     }
+    .mnm { font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mcnt { margin-left: auto; font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
     .mhand.won .mdot { box-shadow: 0 0 0 3px var(--gold-bright); }
-    .mstack { display: flex; position: relative; height: 48px; }
-    .mstack .pc { width: 34px; height: 48px; border-radius: 8px; }
-    .mstack .pc .mid { font-size: 15px; }
-    .mstack .pc + .pc { margin-left: -24px; }
-    .mstack .pc:nth-child(2) { transform: rotate(-6deg) translateY(1px); }
-    .mstack .pc:nth-child(3) { transform: rotate(4deg); }
+    .mstack { display: flex; position: relative; height: 62px; }
+    .mhand .mstack { position: absolute; left: 24px; top: 48px; }
+    .mstack .pc { width: 44px; height: 62px; border-radius: 9px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+    .mstack .pc .mid { font-size: 19px; }
+    .mstack .pc + .pc { margin-left: -26px; }
+    .mstack .pc:nth-child(2) { transform: rotate(4deg) translateY(1px); }
+    .mstack .pc:nth-child(3) { transform: rotate(12deg) translateY(4px); }
     .mstack .pc:nth-child(n+4) { display: none; }   /* a hand reads as a small fan, not a wall */
-    .mdeck, .mpile { position: absolute; top: 50%; transform: translateY(-50%); }
-    .mdeck { left: calc(50% - 118px); }
-    .mpile { left: calc(50% + 42px); }
+    .mdeck .mstack .pc { box-shadow: -1px -1px 0 rgba(0,0,0,0.1); }
+    .mdeck .mstack .pc + .pc { margin-left: -44px; transform: translate(1px, -1px); }
+    .mdeck .mstack .pc:nth-child(2) { transform: translate(1.5px, -1.5px); }
+    .mdeck .mstack .pc:nth-child(3) { transform: translate(3px, -3px); }
+    .mdeck, .mpile { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; }
+    .mdeck { left: calc(50% - 46px); }
+    .mpile { left: calc(50% + 12px); }
+    .mpile-k { 
+      position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+      font: 700 11px/1 var(--mono); color: var(--ink-faint); letter-spacing: .08em; 
+      text-transform: uppercase; white-space: nowrap;
+    }
     .pc.mfly {
       position: absolute; width: 46px; height: 65px; border-radius: 9px;
       margin: -32px 0 0 -23px;   /* centre the card on its left/top coords */
@@ -394,11 +413,7 @@
   <header class="site">
     <div class="wrap bar">
       <a class="brand" href="/">
-        <svg width="27" height="27" viewBox="0 0 26 26" aria-hidden="true">
-          <rect width="26" height="26" rx="8" fill="#22201a"/>
-          <path d="M13 3 H23 V13 Z" fill="#ffc400"/><path d="M13 23 H3 V13 Z" fill="#ffc400"/>
-          <circle cx="13" cy="13" r="3.4" fill="#fbfaf6"/>
-        </svg>
+        <img src="/favicon.svg" width="27" height="27" alt="logo" aria-hidden="true">
         damnits.fun
       </a>
       <nav class="pills">
@@ -426,27 +441,45 @@
         <div class="mworld" id="mworld">
           <div class="mtable" aria-hidden="true"></div>
           <div class="mhand h0" data-hand="0" aria-hidden="true">
-            <span class="mdot" style="background:var(--c-green)"></span>
+            <span class="mdot" style="background:var(--c-green)">AL</span>
+            <span class="mnm">Alpha</span>
+            <span class="mcnt">1,000</span>
             <span class="mstack"></span>
             <span class="mwon">won</span>
           </div>
           <div class="mhand h1" data-hand="1" aria-hidden="true">
-            <span class="mdot" style="background:var(--c-red)"></span>
+            <span class="mdot" style="background:var(--c-red)">BR</span>
+            <span class="mnm">Bravo</span>
+            <span class="mcnt">1,020</span>
             <span class="mstack"></span>
             <span class="mwon">won</span>
           </div>
           <div class="mhand h2" data-hand="2" aria-hidden="true">
-            <span class="mdot" style="background:var(--c-yellow)"></span>
+            <span class="mdot" style="background:var(--c-yellow); color:#000;">CH</span>
+            <span class="mnm">Charlie</span>
+            <span class="mcnt">980</span>
             <span class="mstack"></span>
             <span class="mwon">won</span>
           </div>
           <div class="mhand h3" data-hand="3" aria-hidden="true">
-            <span class="mdot" style="background:var(--c-blue)"></span>
+            <span class="mdot" style="background:var(--c-blue)">DE</span>
+            <span class="mnm">Delta</span>
+            <span class="mcnt">1,010</span>
             <span class="mstack"></span>
             <span class="mwon">won</span>
           </div>
-          <div class="mdeck" aria-hidden="true"><span class="mstack"></span></div>
-          <div class="mpile" aria-hidden="true"><span class="mstack"></span></div>
+          <div class="mdeck" aria-hidden="true">
+            <div class="mpile-k">draw</div>
+            <span class="mstack">
+              <div class="pc"><svg width="100%" height="100%" viewBox="0 0 34 48" aria-hidden="true"><rect width="34" height="48" rx="8" fill="#26241c"/><rect x="6" y="8" width="6" height="6" fill="#9a6a08"/><rect x="12" y="14" width="6" height="6" fill="#9a6a08"/><path d="M 6 42 A 18 18 0 0 1 24 24" fill="none" stroke="#e7e4d8" stroke-width="1.5"/><path d="M 6 38 A 14 14 0 0 1 20 24" fill="none" stroke="#e7e4d8" stroke-width="1.5" stroke-dasharray="2 2"/><path d="M 6 34 A 10 10 0 0 1 16 24" fill="none" stroke="#e7e4d8" stroke-width="1.5"/></svg></div>
+              <div class="pc"><svg width="100%" height="100%" viewBox="0 0 34 48" aria-hidden="true"><rect width="34" height="48" rx="8" fill="#26241c"/><rect x="6" y="8" width="6" height="6" fill="#9a6a08"/><rect x="12" y="14" width="6" height="6" fill="#9a6a08"/><path d="M 6 42 A 18 18 0 0 1 24 24" fill="none" stroke="#e7e4d8" stroke-width="1.5"/><path d="M 6 38 A 14 14 0 0 1 20 24" fill="none" stroke="#e7e4d8" stroke-width="1.5" stroke-dasharray="2 2"/><path d="M 6 34 A 10 10 0 0 1 16 24" fill="none" stroke="#e7e4d8" stroke-width="1.5"/></svg></div>
+              <div class="pc"><svg width="100%" height="100%" viewBox="0 0 34 48" aria-hidden="true"><rect width="34" height="48" rx="8" fill="#26241c"/><rect x="6" y="8" width="6" height="6" fill="#9a6a08"/><rect x="12" y="14" width="6" height="6" fill="#9a6a08"/><path d="M 6 42 A 18 18 0 0 1 24 24" fill="none" stroke="#e7e4d8" stroke-width="1.5"/><path d="M 6 38 A 14 14 0 0 1 20 24" fill="none" stroke="#e7e4d8" stroke-width="1.5" stroke-dasharray="2 2"/><path d="M 6 34 A 10 10 0 0 1 16 24" fill="none" stroke="#e7e4d8" stroke-width="1.5"/></svg></div>
+            </span>
+          </div>
+          <div class="mpile" aria-hidden="true">
+            <div class="mpile-k">discard</div>
+            <span class="mstack"></span>
+          </div>
         </div>
       </div>
 
@@ -811,7 +844,7 @@
         await sleep(1500);
         // gather everything back to the deck, then rest
         const to = center(deckStack);
-        const strays = world.querySelectorAll('.mstack .pc, .mpile .pc');
+        const strays = world.querySelectorAll('.mhand .mstack .pc, .mpile .pc');
         strays.forEach((card, i) => {
           setTimeout(() => {
             const c = card.cloneNode(true);
