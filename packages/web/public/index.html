@@ -2605,7 +2605,12 @@
           <div class="panel pad pf-head">
             <span class="pf-face" aria-hidden="true"></span>
             <div style="min-width:0">
-              <h2 id="pf-name" style="font-size:28px; margin:0">Unnamed User</h2>
+              <!-- Empty on purpose: "Unnamed User" is a REAL stored value (an
+                   account whose Google profile carried no name), so priming the
+                   heading with it means a page that never reached renderProfile
+                   shows a signed-in user someone else's fallback name. That is
+                   exactly how this read as broken on staging. -->
+              <h2 id="pf-name" style="font-size:28px; margin:0"></h2>
               <p class="sub" style="margin:2px 0 0" id="pf-meta">—</p>
             </div>
             <div style="margin-left:auto" class="row">

@@ -115,6 +115,37 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith('.svg'))) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Unguarded `$('some-id')` writes against ids the markup no longer carries.
+//
+// Added after `renderHero()` reached staging writing to `#join-cmd` while the
+// element that carried it sat inside an HTML comment. A null dereference at
+// boot is not a silent failure like the ones above — it is louder and worse: it
+// aborts the whole script, so `loadAuth()` never ran, the account chip never
+// rendered, and a signed-in profile showed the "Unnamed User" placeholder that
+// was sitting in the markup. Every symptom pointed at login; nothing was wrong
+// with login.
+//
+// Only DEREFERENCES count — `$('x').foo` or `$('x')(...)`. Assigning `$('x')` to
+// a variable is how the guarded cases are already written (`const foot =
+// $('foot-cmd'); if (foot) ...`), so those are correctly ignored.
+for (const file of readdirSync(DIR).filter((f) => f.endsWith('.html'))) {
+  const html = readFileSync(join(DIR, file), 'utf8');
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
+  if (!scripts) continue;
+  // Ids the markup actually defines, ignoring anything inside an HTML comment —
+  // a commented-out element is exactly the case that bit us.
+  const live = html.replaceAll(/<!--[\s\S]*?-->/g, '');
+  const ids = new Set([...live.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  // …plus ids the script itself creates (innerHTML templates and setAttribute).
+  for (const m of scripts.matchAll(/id="([^"]+)"/g)) ids.add(m[1]);
+  for (const [, id] of scripts.matchAll(/\$\('([a-zA-Z0-9_-]+)'\)\s*[.(]/g)) {
+    if (ids.has(id)) continue;
+    failed = true;
+    console.error(`[lint:web-css] ${file} — script dereferences $('${id}'), but no element has that id.`);
+  }
+}
+
 if (failed) {
   console.error('');
   console.error('An undefined class or token does not error — it silently renders unstyled.');
