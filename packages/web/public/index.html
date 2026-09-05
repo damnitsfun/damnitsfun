@@ -2258,6 +2258,11 @@
       body.hero-mode .seat {
         position: absolute;
         width: auto;
+        /* Two pills share a row (the two top corners, the two bottom ones, or
+           the two flex columns a ringed table falls into), so neither may
+           exceed half the felt. Left at `auto` they ran to ~160px and
+           overlapped each other by 35px on a 248px felt. */
+        max-width: calc(50% - 12px);
         margin: 0;
         padding: 4px 9px;
         border-radius: 999px;
@@ -2280,9 +2285,37 @@
         font-size: 11px;
       }
 
+      /* With the pill capped at half the felt (~112px at 320px), a face, a name
+         AND "6 cards" do not fit — capping alone left "FE  6 cards" with the
+         name gone, which is a seat pill that has stopped identifying its seat.
+         The count goes instead: the hero is a taster, the real board shows it,
+         and WHO is playing is the thing a name pill is for. */
+      body.hero-mode .seat .cnt { display: none; }
+      body.hero-mode .seat .top { min-width: 0; }
+      body.hero-mode .seat .nm { max-width: 100%; }
+
       /* The stacked cut re-aligns the corner offsets; hero mode wants them back. */
       body.hero-mode .seat.tl, body.hero-mode .seat.tr,
       body.hero-mode .seat.bl, body.hero-mode .seat.br { top: auto; right: auto; bottom: auto; left: auto; }
+
+      /* A 5-6 seat table has no corner classes — the renderer writes its ring
+         as inline `left`/`top`/`transform`, and a ring sized for a 1100px felt
+         does not fit a 316px one: the pills overlapped by 34px. The ring is
+         dropped here and the pills flow into two columns hugging the edges,
+         which leaves the pile the middle. Same idea as the four-corner cut
+         above (D84: the hero on a phone is a different CUT, not a reflow).
+         `!important` because the coordinates it undoes are inline. */
+      body.hero-mode .felt.ringed .seats {
+        position: absolute; inset: 8px;
+        display: flex; flex-direction: column; flex-wrap: wrap;
+        align-content: space-between; justify-content: space-between;
+      }
+
+      body.hero-mode .felt.ringed .seat {
+        position: static !important;
+        transform: none !important;
+        margin: 0;
+      }
 
       body.hero-mode .seat.tl {
         top: 8px;
