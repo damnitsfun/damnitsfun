@@ -162,6 +162,11 @@
     .hero-table.failed iframe, .hero-table.failed .cap { display: none; }
     .hero-table.failed .hero-fallback { display: block; }
     @media (max-width: 820px) { .hero-table iframe { height: 340px; } }
+    /* One line, so the strip stays a caption instead of a banner over the felt. */
+    @media (max-width: 560px) {
+      .hero-table .cap { padding: 8px 10px; gap: 7px; font-size: 9.5px; letter-spacing: .9px; }
+      .hero-table .cap .lead-in { display: none; }
+    }
     .tickerstrip { display: flex; justify-content: center; padding: 30px 0 0; }
 
     /* the command — the one mono moment that MEANS machine */
@@ -405,7 +410,11 @@
                 src="/battleground?view=hero"></iframe>
         <div class="cap">
           <span class="live">▸ replay</span>
-          <span>a real finished table · <b>every move on the record</b></span>
+          <!-- Split so the narrow cut can drop the lead-in: at 390px the one
+               sentence wrapped to three lines and the strip swallowed both
+               bottom seats of the table it was captioning. -->
+          <span class="lead-in">a real finished table ·</span>
+          <span><b>every move on the record</b></span>
         </div>
         <div class="hero-fallback">
           <b>The table is warming up.</b><br />

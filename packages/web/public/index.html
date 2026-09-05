@@ -1142,12 +1142,87 @@
     }
 
     /* narrow screens: drop the oval, stack the seats */
+    /* narrow screens: drop the oval, stack the seats.
+       Measured on a 390px viewport, where the desktop stage came to ~1200px
+       tall: the pile, then four 123px seat cards, and only THEN the transport —
+       so you could not pause or scrub the thing you were watching without
+       scrolling it off screen. The stack itself is kept (it is the one layout
+       that handles 3 to 6 seats identically); it is the height that was the
+       problem, plus three outright bugs. */
     @media (max-width: 720px) {
-      .felt { min-height: 0; padding: 16px; overflow: visible; }
+      .felt { min-height: 0; padding: 12px; overflow: visible; }
+      /* The 5-6 seat table (sub-spec 18) rings the oval on desktop, which needs
+         both a taller felt and narrower seats. Neither survives the stack: at
+         390px it left 190px seats floating in a 660px box. The stack does not
+         care how many seats there are, so drop both. */
+      .felt.ringed { min-height: 0; }
+      .felt.ringed .seat { width: auto; }
+      .felt.ringed .seat .nm { max-width: none; }
       .felt::before, .dir-arc { display: none; }
-      .pile { position: static; transform: none; justify-content: center; margin: 0 0 14px; }
+      .pile { position: static; transform: none; justify-content: center; margin: 0 0 12px; }
       .seats { position: static; }
-      .seat { position: static; width: auto; margin-bottom: 8px; inset: auto; }
+      /* `position: relative` is load-bearing, not tidiness: the seat was static
+         here, so the absolutely-positioned decision clock resolved against the
+         felt instead and hung half off the right edge, clipped by the board. */
+      .seat { position: relative; width: auto; margin-bottom: 7px; padding: 7px 9px; }
+      /* `inset: auto` on `.seat` alone does NOT undo the corner offsets — the
+         `.seat.tl` family outranks it — and once the seat is relative those
+         offsets become real displacement: the stack shifted left and right by
+         16px and the bottom pair rode up over the pair above. Neutralised at
+         matching specificity. */
+      .seat.tl, .seat.tr, .seat.br, .seat.bl { top: auto; right: auto; bottom: auto; left: auto; }
+      .seat .nm { font-size: 13px; max-width: none; }
+      /* The agent id is a 22-character hash under every name — the single
+         biggest space cost in the stack, and unreadable at this size anyway.
+         It is one tap away on the agent's own page. */
+      .seat .id { display: none; }
+      .seat .cnt { margin-right: 30px; }   /* clear of the clock, top-right */
+      .clock { width: 26px; height: 26px; top: 6px; right: 6px; }
+      .clock .val { font-size: 8.5px; }
+      /* A hand has to fit a phone's width without wrapping into three rows. */
+      .hand { margin-top: 6px; min-height: 38px; }
+      .hand .card { width: 27px; height: 38px; border-radius: 4px; }
+      .hand .card .mid.n { font-size: 13px; }
+      .hand .card .mid.g { font-size: 11px; }
+      .hand .card .nm { display: none; }
+      .hand .card .ix { font-size: 7px; top: 2px; left: 3px; }
+      .hand .card .ix.br { bottom: 2px; right: 3px; }
+      .hand .card + .card { margin-left: -7px; }
+      .pile-col .card.lg { width: 44px; height: 62px; }
+      .pile-col .card.lg .mid.n { font-size: 21px; }
+      .pile-col .card.lg .mid.g { font-size: 18px; }
+      /* The board bar was four wrapped lines (89px) before a single card was
+         visible, and `#board-meta` names the seats — which are right below it —
+         and repeats the game number `#board-event` already carries. */
+      #board-meta { display: none; }
+      .board-bar { padding: 6px 10px; gap: 8px; }
+      /* The transport rides the bottom of the screen while the stage is in
+         view, so play/pause and the scrubber stay reachable no matter where in
+         the stack you are. `.board` must drop its clip for this: an
+         `overflow: hidden` ancestor is a scrollport, and sticky inside a
+         scrollport that never scrolls is inert. */
+      .board { overflow: visible; }
+      .controls {
+        /* Sits ABOVE the fixed tab bar, not under it: `bottom: 0` parked the
+           transport's second row behind that bar, which is how a control you
+           can see half of gets shipped. 47px is the bar's measured height. */
+        position: sticky; bottom: calc(47px + env(safe-area-inset-bottom, 0px));
+        z-index: 6;
+        padding: 8px 10px; gap: 8px 10px;
+        box-shadow: 0 -6px 16px rgba(0,0,0,.35);
+      }
+      .controls .label { display: none; }   /* the select says "1x" itself */
+      /* The standalone pages (an agent, the profile) hide the tab bar, so on
+         those the transport has no bar to clear and should sit on the edge. */
+      body:has(nav.tabbar[hidden]) .controls { bottom: env(safe-area-inset-bottom, 0px); }
+
+      /* One row, at any hand size: the scrubber gives up its 160px floor so
+         pause + scrub + counter fit the width, and speed + sound wrap beneath
+         only when they must. */
+      .controls input[type="range"] { min-width: 0; flex: 1 1 90px; }
+      .controls button.primary { padding: 7px 12px; font-size: 13px; }
+      .controls button.ghost, .controls select.ghost { padding: 6px 9px; font-size: 12px; }
+      .controls .scrub-label { font-size: 12px; }
     }
 
     /* ---- T53: Rainbow Storm takes the felt ---- */
@@ -1924,6 +1999,35 @@
         position: static;
       }
 
+      /* --- the pages that HOST the replay, so a sideways-scrolling page can
+             never let the reader swipe the felt off screen ---------------- */
+      /* A wide table is the one thing here that cannot reflow. It scrolls in
+         its own box instead of widening the document. */
+      #view-agent table, #view-standings table, #view-tournament table {
+        min-width: 460px;
+      }
+
+      #view-agent .panel:has(table), #view-standings .panel:has(table),
+      #view-tournament .panel:has(table) {
+        overflow-x: auto;
+      }
+
+      /* The play-style rows are a four-track grid whose fixed columns come to
+         358px before any content — wider than the phone. Label and detail take
+         a line, the bar and its percentage take the next. Placed HERE, after
+         `.ag-srow`'s own rule: a media query adds no specificity, so the same
+         override up in the stage block silently lost to the later definition. */
+      .ag-srow {
+        /* minmax(0,1fr), not 1fr: a grid track's default min is its content, so
+           a long detail line widens the track instead of wrapping in it. */
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 10px;
+        padding: 9px 12px;
+      }
+
+      .ag-srow .k, .ag-srow .dim { grid-column: 1 / -1; min-width: 0; }
+      .ag-bar { width: auto; }
+
       .feed {
         flex: none;
         max-height: 300px;
@@ -2007,37 +2111,10 @@
       }
     }
 
-    /* narrow screens: drop the oval, stack the seats */
-    @media (max-width: 720px) {
-      .felt {
-        min-height: 0;
-        padding: 16px;
-        overflow: visible;
-      }
-
-      .felt::before,
-      .dir-arc {
-        display: none;
-      }
-
-      .pile {
-        position: static;
-        transform: none;
-        justify-content: center;
-        margin: 0 0 14px;
-      }
-
-      .seats {
-        position: static;
-      }
-
-      .seat {
-        position: static;
-        width: auto;
-        margin-bottom: 8px;
-        inset: auto;
-      }
-    }
+    /* The narrow-screen replay cut used to be duplicated here, verbatim, and
+       being later in the sheet it silently won — `position: static` on the seat
+       undid the containing block the decision clock needs. The one copy lives
+       with the rest of the stage, above. */
 
     /* ===================================================================
          T52 — hero mode (?view=hero): the embedded, chrome-free cut of this
@@ -2128,9 +2205,13 @@
         position: absolute;
         width: auto;
         margin: 0;
-        padding: 4px 8px;
+        padding: 4px 9px;
         border-radius: 999px;
-        background: var(--panel);
+        /* A felt pill, not a page panel: `var(--panel)` is near-white, and the
+           seat's own text is chalk — white on white, so the four names on the
+           homepage hero were invisible on a phone. */
+        background: rgba(9, 20, 14, .82);
+        border-color: var(--felt-line);
       }
 
       body.hero-mode .seat .id,
@@ -2145,6 +2226,10 @@
         font-size: 11px;
       }
 
+      /* The stacked cut re-aligns the corner offsets; hero mode wants them back. */
+      body.hero-mode .seat.tl, body.hero-mode .seat.tr,
+      body.hero-mode .seat.bl, body.hero-mode .seat.br { top: auto; right: auto; bottom: auto; left: auto; }
+
       body.hero-mode .seat.tl {
         top: 8px;
         left: 8px;
@@ -2156,12 +2241,12 @@
       }
 
       body.hero-mode .seat.bl {
-        bottom: 30px;
+        bottom: 38px;   /* clear of the embedding page's caption strip */
         left: 8px;
       }
 
       body.hero-mode .seat.br {
-        bottom: 30px;
+        bottom: 38px;
         right: 8px;
       }
     }
