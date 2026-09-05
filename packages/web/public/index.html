@@ -932,6 +932,14 @@
        without touching the four-seat board. */
     .felt.ringed .seat { width: 190px; }
     .felt.ringed .seat .nm { max-width: 78px; }
+    /* A ringed table's two side seats collide once a seat grows past ~0.287 of
+       the felt's height, and the ring cannot simply spread wider — past ~43%
+       the top and bottom seats hang off the felt, which clips. So the seat is
+       bounded instead: the hand shows two rows, and the seat's own "N cards"
+       stays authoritative for the rest. Measured: a 20-card hand overlapped its
+       neighbour by 125px on the full board and 144px in the hero. Corner
+       tables are untouched — four seats have the room. */
+    .felt.ringed .hand { max-height: 100px; overflow: hidden; }
 
     /* the table itself — one large oval */
     .felt::before {
@@ -2209,6 +2217,12 @@
       min-height: 0;
       height: 100vh;
     }
+
+    /* Every pixel of seat height costs ~3.5px of felt on a ringed table (the
+       side seats collide at h > 0.287H), and a 22-character agent id is the
+       cheapest 16px to give back — the hero is a loop to watch, not a place to
+       read ids. The narrow cut already drops it for the same reason. */
+    body.hero-mode .seat .id { display: none; }
 
     /* the embedding page paints a caption strip over the bottom edge */
     body.hero-mode .seat.bl,

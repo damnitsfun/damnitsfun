@@ -155,7 +155,13 @@
       background: #071912;
       box-shadow: 0 20px 44px rgba(34,32,26,.30), inset 0 1px 0 rgba(255,255,255,.07);
     }
-    .hero-table iframe { display: block; width: 100%; height: 460px; border: 0; }
+    /* 560, not 460. `seatSlots()` rings 5-6 seats at a 43% vertical spread, so
+       the two side seats overlap once a seat is taller than 0.287 x the felt —
+       and a seat whose hand wraps to a second row is ~157px, which 460px could
+       not clear. The spread cannot simply widen: at more than ~43% the top and
+       bottom seats hang off the felt, which clips. So the felt gets the height
+       the ring actually needs. */
+    .hero-table iframe { display: block; width: 100%; height: 560px; border: 0; }
     .hero-table .cap {
       position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
       display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap;
@@ -412,6 +418,31 @@
     @media (max-width: 900px) {
       .turngrid, .storm-grid { grid-template-columns: 1fr; }
       .steps, .grid4, .grid3 { grid-template-columns: 1fr; }
+    }
+
+    /* The header is STICKY, so its height is a permanent tax on the viewport.
+       Left to wrap on its own it took three rows and 227px on a phone — a
+       quarter of the screen — with the CTA stranded on the last row and shoved
+       to the far right by `margin-left: auto`, which is what made it read as a
+       button that had escaped the bar. Two rows now: brand and CTA share the
+       first (that is what `order` is for — source order puts the nav between
+       them), the links take the second on their own. */
+    @media (max-width: 700px) {
+      .bar { gap: 8px 12px; padding: 10px 0; }
+      .brand { order: 0; font-size: 17px; }
+      .bar .right { order: 1; }
+      nav.pills { order: 2; flex-basis: 100%; justify-content: center; gap: 2px; }
+      nav.pills a { padding: 6px 10px; font-size: 13.5px; }
+      .bar .right .btn { padding: 10px 16px; font-size: 14px; border-radius: 12px; }
+    }
+
+    /* Below ~380px the brand and a 22-character CTA cannot share a line at any
+       honest type size, and `margin-left: auto` then leaves the button hanging
+       alone against the right edge — the thing that looked broken. Given it
+       cannot sit beside the brand, it takes the row properly instead. */
+    @media (max-width: 380px) {
+      .bar .right { flex-basis: 100%; margin-left: 0; }
+      .bar .right .btn { width: 100%; justify-content: center; }
     }
     @media (prefers-reduced-motion: reduce) {
       .slot, .fan .pc, .slot:hover .pc { animation: none; transition: none; }
