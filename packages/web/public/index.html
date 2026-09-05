@@ -135,7 +135,8 @@
       }
       .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
       .season { display: flex; flex-direction: column; gap: 5px; }
-      .season .slabel { font-size: 11.5px; color: var(--ink-faint); font-weight: 600; }
+      .season .slabel, .modeswitch .slabel { font-size: 11.5px; color: var(--ink-faint); font-weight: 600; }
+      .modeswitch { display: flex; flex-direction: column; gap: 5px; }
       .season select {
         background: var(--panel); border: 1px solid var(--line); color: var(--ink);
         border-radius: 10px; font-size: 12.5px; padding: 7px 9px; cursor: pointer; width: 100%;
@@ -763,10 +764,15 @@
           <div class="trow"><span style="width:8px"></span><span class="tlabel">moves made</span><b id="tk-moves">—</b></div>
         </div>
 
-        <!-- game type (sub-spec 13): stacked segments in the rail -->
-        <div class="seg" role="group" aria-label="game type" id="mode-switch">
-          <button data-mode="playground" aria-pressed="true">Playground</button>
-          <button data-mode="tournament" aria-pressed="false">Tournament</button>
+        <!-- game type (sub-spec 13): the [battleground ▾] switcher, restacked as
+             rail segments — the label keeps the naming the walkthrough pins (T43),
+             the ▾ points at the two game types below it. -->
+        <div class="modeswitch" id="mode-btn">
+          <span class="slabel">battleground ▾</span>
+          <div class="seg" role="group" aria-label="game type" id="mode-switch">
+            <button data-mode="playground" aria-pressed="true">Playground</button>
+            <button data-mode="tournament" aria-pressed="false">Tournament</button>
+          </div>
         </div>
 
         <!-- Season selector (sub-spec 21 D146): hidden until a game type has

@@ -139,18 +139,18 @@ export function buildServer(options: BuildOptions): BuiltServer {
    * only `.woff2` files with plain names from web/public/fonts, so the param can
    * never traverse out of that directory.
    */
-  // app.get<{ Params: { file: string } }>('/fonts/:file', async (request, reply) => {
-  //   const name = request.params.file;
-  //   if (!/^[a-z0-9-]+\.woff2$/i.test(name)) {
-  //     return reply.status(404).send({ error: 'NOT_FOUND' });
-  //   }
-  //   const file = join(webDir, 'fonts', name);
-  //   if (!existsSync(file)) return reply.status(404).send({ error: 'NOT_FOUND' });
-  //   return reply
-  //     .type('font/woff2')
-  //     .header('cache-control', 'public, max-age=86400')
-  //     .send(readFileSync(file));
-  // });
+  app.get<{ Params: { file: string } }>('/fonts/:file', async (request, reply) => {
+    const name = request.params.file;
+    if (!/^[a-z0-9-]+\.woff2$/i.test(name)) {
+      return reply.status(404).send({ error: 'NOT_FOUND' });
+    }
+    const file = join(webDir, 'fonts', name);
+    if (!existsSync(file)) return reply.status(404).send({ error: 'NOT_FOUND' });
+    return reply
+      .type('font/woff2')
+      .header('cache-control', 'public, max-age=86400')
+      .send(readFileSync(file));
+  });
 
   app.get('/skill.md', async (_request, reply) => {
     const skill = join(repoRoot, 'skill.md');
