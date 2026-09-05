@@ -181,6 +181,13 @@ export function listSessions(
   if (!options.includeLive) {
     // The security invariant: the public list is finished sessions only.
     clauses.push(`status IN ('settled', 'archived')`);
+    // ...and a finished session with an empty log is not a game anyone can watch.
+    // `reapOrphanedSessions()` archives tables abandoned by a restart, including
+    // lobbies that never dealt a card; those carry zero events, yet they sort
+    // newest, so the spectator's "feature the newest finished game" aired an
+    // empty felt and the replay looked broken. Excluded here rather than in the
+    // web, because every consumer of this feed wants a watchable table.
+    clauses.push(`EXISTS (SELECT 1 FROM session_events e WHERE e.session_id = sessions.id)`);
     const age = options.minFinishedAgeMs ?? 0;
     if (age > 0) {
       // Optional UX buffer — lag the featured frontier by SPECTATOR_DELAY_MS.

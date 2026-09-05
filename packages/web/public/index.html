@@ -264,13 +264,14 @@
       border-bottom-color: var(--ink);
     }
 
+    /* Lives in the board bar now, so it takes the bar's type rather than the
+       tab row's — it is a label on the stage, not a chip in the navigation. */
     #live-count {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 11.5px;
       font-weight: 700;
-      color: var(--live);
+      color: #6fd68f;
     }
 
     #live-count::before {
@@ -278,7 +279,7 @@
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--live-bright);
+      background: #6fd68f;
     }
 
     .u-right {
@@ -390,43 +391,72 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* ---- the command bar ----
+       The homepage footer's `.composer`, on dark: same 14px radius, hairline
+       edge, even padding, blinking block cursor and GHOST copy button. It is
+       the same component in two places, so it is one design.
+       `width: 100%` because `fit-content` stopped the black bar dead at 390px
+       inside a 1010px panel; `text-overflow` because `overflow-x: auto` drew a
+       stray scrollbar nub inside the bar on a long command. */
     .cmd {
       display: flex;
       align-items: center;
-      gap: 12px;
-      width: fit-content;
+      gap: 10px;
+      width: 100%;
       max-width: 100%;
       background: var(--night);
-      border-radius: var(--r-sm);
-      padding: 5px 5px 5px 15px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 14px;
+      padding: 12px 14px;
       box-shadow: var(--shadow-soft);
+    }
+
+    .cmd:focus-within {
+      border-color: var(--live-bright);
     }
 
     .cmd .p {
       color: var(--live-bright);
       font-family: var(--mono);
-      font-weight: 600;
+      font-weight: 700;
+      flex: none;
     }
 
     .cmd .t {
-      font: 400 12.5px/1 var(--mono);
+      flex: 1;
+      min-width: 0;
+      font: 400 12.5px/1.4 var(--mono);
       color: #f2efe4;
       white-space: nowrap;
-      overflow-x: auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cmd .cursor {
+      flex: none;
+      width: 7px;
+      height: 13px;
+      background: #f2efe4;
+      border-radius: 1px;
+      animation: blink 1.1s steps(1) infinite;
     }
 
     .cmd button {
-      border: 0;
-      background: var(--gold-bright);
-      color: var(--ink);
-      border-radius: 8px;
-      padding: 8px 15px;
-      font-weight: 700;
+      flex: none;
+      font: inherit;
       font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      background: transparent;
+      color: #cfcabb;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 8px;
+      padding: 6px 12px;
     }
 
     .cmd button:hover {
-      filter: brightness(1.05);
+      color: #fff;
+      border-color: var(--live-bright);
     }
 
     /* ---- headings & shared text ---- */
@@ -767,14 +797,6 @@
       border-radius: 9px;
     }
 
-    .seat.active .av {
-      box-shadow: 0 0 0 2.5px rgba(44, 199, 122, .85);
-    }
-
-    .seat.winner .av {
-      box-shadow: 0 0 0 2.5px rgba(242, 179, 61, .9);
-    }
-
     /* ---- coin reels (T61 layer 3) ---- */
     .reel {
       display: inline-flex;
@@ -806,168 +828,155 @@
     }
 
     /* =================================================================
-         THE REPLAY — a stage panel: stripe, board bar, fresh felt, chat rail
-         (the roomy half of the hybrid: this is the thing you watch)
-         ================================================================= */
+       THE REPLAY — restored to the pre-revamp design (sub-spec 17's felt).
+
+       The Fresh Deck revision re-skinned the stage into a light-green
+       panel; this brings back the dark felt, the corner-wedge cards and
+       the broadcast lower-third bar. The rest of the page stays Fresh
+       Deck, so the old palette is re-declared as FELT-SCOPE TOKENS on
+       `.board` rather than at :root — everything below then resolves
+       exactly as it did before the revamp, and nothing outside the stage
+       is touched.
+
+       Rev 7's chat rail keeps its STRUCTURE (the absolutely-filled inner
+       column, so the feed scrolls instead of stretching the card) and only
+       changes its skin. A revert of the look is not a reason to give back
+       a layout fix.
+       ================================================================= */
     .board {
-      border: 1px solid var(--line);
-      border-radius: var(--r-lg);
-      background: var(--panel);
-      box-shadow: var(--shadow-lift);
+      --paper: #071912;          /* the room */
+      --paper-2: #0a2419;        /* recessed strips */
+      --surface: #0d2f20;        /* raised panels */
+      --ink: #f1f7f3;            /* chalk */
+      --ink-2: #c3dbcd;
+      --muted: #9cc4ad;
+      --faint: #6d9480;
+      --line: #17402a;
+      --line-2: #245b3d;
+      --live: #6fd68f;
+      --felt: #113d28;
+      --felt-2: #071912;
+      --felt-line: #2f6b48;
+      --c-red: #e0503c;
+      --c-yellow: #f2b826;
+      --c-green: #46b169;
+      --c-blue: #3f86d6;
+      --gold: #ffcf4d;
+      border: 1px solid var(--ink);
+      background: var(--surface);
       overflow: hidden;
     }
 
+    /* Was ink-on-paper, i.e. a dark bar on a light page. Re-pointing the
+       tokens inverted it into a glaring white strip above the felt, so it
+       gets explicit felt values: the table should read continuously from
+       bar to baize, like a broadcast lower-third rather than a title bar. */
     .board-bar {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 11px 18px;
-      background: var(--panel-2);
-      border-bottom: 1px solid var(--line);
-      font-size: 13px;
-      color: var(--ink-soft);
+      gap: 10px;
       flex-wrap: wrap;
+      padding: 7px 12px;
+      background: var(--paper-2);
+      color: var(--ink-2);
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
     }
 
-    .board-bar .on {
-      color: var(--live);
-      font-weight: 700;
-    }
+    .board-bar .on { color: #6fd68f; }
+    .board-bar .r { margin-left: auto; color: var(--faint); }
+    .board-bar .dim { color: var(--faint); }
 
-    .board-bar .r {
-      margin-left: auto;
-      color: var(--ink-faint);
-      font-size: 12px;
-    }
+    /* T55/D82: replay-only is an integrity property (spec 10), so the board
+       bar states it rather than leaving it to an FAQ. Hidden on narrow bars
+       where the essential labels need the room. */
+    .board-bar .guarantee { color: var(--faint); text-transform: none; letter-spacing: .2px; }
+    @media (max-width: 720px) { .board-bar .guarantee { display: none; } }
 
-    /* rev 7: the bar keeps only what it needs — mode, colour, meta */
-    .board-bar .guarantee {
-      display: none;
-    }
-
+    /* colour-in-force badge in the board bar */
     .cbadge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      border: 1px solid var(--line-2);
-      border-radius: 999px;
-      padding: 3px 11px;
+      gap: 5px;
+      padding: 1px 7px;
+      border: 1px solid rgba(255,255,255,.28);
       font-weight: 700;
-      font-size: 12px;
-      text-transform: capitalize;
-      background: var(--panel);
+      letter-spacing: 1px;
     }
 
-    .cbadge i {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      display: inline-block;
-    }
+    .cbadge i { width: 8px; height: 8px; display: inline-block; }
 
-    /* one card, two rails (rev 7): the stage takes ~80% of the width,
-         the play-by-play rides the right ~20% and scrolls inside itself.
-         Mobile stacks the chat back under the stage. */
     .board-split {
       display: grid;
       align-items: stretch;
       grid-template-columns: minmax(0, 4fr) minmax(224px, 1fr);
     }
 
-    /* the fresh felt — light green, printed racetrack ring, white rail.
-         The oval geometry (inset 44px 64px) is load-bearing: drawDirectionArc
-         sizes its arc to hug exactly this ring. */
+    /* the felt: the one dark surface. The oval geometry (inset 44px 64px)
+       is load-bearing — drawDirectionArc sizes its arc to hug this ring. */
     .felt {
-      background: radial-gradient(120% 95% at 50% 30%, var(--felt) 0%, var(--felt-deep) 100%);
+      background: radial-gradient(circle at 50% 48%, var(--felt) 0%, var(--felt-2) 82%);
       position: relative;
       min-height: 540px;
       overflow: hidden;
     }
 
-    .felt.ringed {
-      min-height: 660px;
-    }
+    /* Sub-spec 18: five or six seats ring the oval instead of taking corners,
+       which needs more height — at 540px the top and bottom seats close on the
+       pile. Four or fewer keeps the original board exactly. */
+    .felt.ringed { min-height: 660px; }
+    /* Six 236px panels on one oval leave the pile squeezed between the two side
+       seats. Narrowing them on ringed tables only keeps the centre readable
+       without touching the four-seat board. */
+    .felt.ringed .seat { width: 190px; }
+    .felt.ringed .seat .nm { max-width: 78px; }
+    /* A ringed table's two side seats collide once a seat grows past ~0.287 of
+       the felt's height, and the ring cannot simply spread wider — past ~43%
+       the top and bottom seats hang off the felt, which clips. So the seat is
+       bounded instead: the hand shows two rows, and the seat's own "N cards"
+       stays authoritative for the rest. Measured: a 20-card hand overlapped its
+       neighbour by 125px on the full board and 144px in the hero. Corner
+       tables are untouched — four seats have the room. */
+    .felt.ringed .hand { max-height: 100px; overflow: hidden; }
 
-    .felt.ringed .seat {
-      width: 190px;
-    }
-
-    .felt.ringed .seat .nm {
-      max-width: 78px;
-    }
-
+    /* the table itself — one large oval */
     .felt::before {
       content: "";
       position: absolute;
       inset: 44px 64px;
-      border: 2px dashed var(--felt-ring);
+      border: 1px solid rgba(255,255,255,.09);
       border-radius: 50%;
-      opacity: .6;
       pointer-events: none;
     }
 
-    .dir-arc {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 1;
-    }
-
-    .dir-arc path {
-      fill: none;
-      stroke: rgba(20, 64, 42, .5);
-      stroke-width: 2.5;
-      stroke-linecap: round;
-    }
-
-    .dir-arc polygon {
-      fill: rgba(20, 64, 42, .72);
-    }
+    /* play direction — a curved arrow that hugs the oval (CW / CCW) */
+    .dir-arc { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+    .dir-arc path { fill: none; stroke: rgba(111,214,143,.5); stroke-width: 2.5; stroke-linecap: round; }
+    .dir-arc polygon { fill: rgba(111,214,143,.72); }
 
     /* centre: draw pile · discard pile */
     .pile {
       position: absolute;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%,-50%);
       display: flex;
       align-items: flex-end;
       gap: 34px;
       z-index: 2;
     }
 
-    .pile-col {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 7px;
-    }
-
-    .pile-k {
-      font-size: 10px;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-      color: #2e6b46;
-      font-weight: 700;
-    }
-
-    .pile-n {
-      font-size: 12.5px;
-      font-weight: 700;
-      color: #1c4a30;
-    }
-
-    .discardwrap {
-      position: relative;
-    }
-
-    .discardwrap .card {
-      position: relative;
-      z-index: 1;
-    }
-
+    .pile-col { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+    .pile-k { font-size: 9.5px; letter-spacing: 1.4px; text-transform: uppercase; color: #7fa590; }
+    .pile-n { font-size: 12px; font-weight: 700; color: #eef4ef; }
+    .discardwrap { position: relative; }
+    /* The played card sits on top of two cards askew beneath it, so the
+       discard reads as a pile on a table rather than a single tile. */
+    .discardwrap .card { position: relative; z-index: 1; }
+    /* :has() guard — with no card yet the wrapper is zero-sized and the
+       backers would render as two stray dots on the empty felt. */
     .discardwrap:has(.card)::before,
     .discardwrap:has(.card)::after {
       content: "";
@@ -976,21 +985,13 @@
       z-index: 0;
       border: 2px solid #fff;
       border-radius: 7px;
-      box-shadow: 0 3px 8px rgba(34, 32, 26, .25);
+      box-shadow: 0 4px 10px rgba(0,0,0,.3);
     }
 
-    .discardwrap:has(.card)::before {
-      transform: rotate(-10deg) translate(-6px, 3px);
-      background: #e8b4ab;
-    }
+    .discardwrap:has(.card)::before { transform: rotate(-10deg) translate(-6px, 3px); background: #8f3838; }
+    .discardwrap:has(.card)::after { transform: rotate(7deg) translate(6px, 2px); background: #9a7a1e; }
 
-    .discardwrap:has(.card)::after {
-      transform: rotate(7deg) translate(6px, 2px);
-      background: #ecd9a3;
-    }
-
-    /* ---- cards: vivid solid faces, white ring, corner suns.
-         No oval motif (trade dress), no wedge (the old motif). ---- */
+    /* ---- cards: rounded, white-edged, paper-faced ---- */
     .card {
       position: relative;
       flex: none;
@@ -1003,289 +1004,129 @@
       font-weight: 800;
       line-height: 1.15;
       text-align: center;
-      background: var(--panel);
-      color: #fff;
+      background: #fbfaf6;
+      color: #1c1b16;
       border: 2px solid #fff;
-      border-radius: 6px;
-      box-shadow: 0 2px 5px rgba(34, 32, 26, .2), 0 6px 14px rgba(34, 32, 26, .16);
+      border-radius: 5px;
+      box-shadow: 0 4px 10px rgba(0,0,0,.32);
     }
 
-    .card::before,
-    .card::after {
+    /* D87 — the corner wedge. Two opposed corner triangles behind the glyph.
+       Deliberately NOT an ellipse: the oval is the genre's best-known brand's
+       trade dress and rule #2 forbids imitating it, while the wedge echoes
+       the four-colour split we already use for any-colour cards. Chosen over
+       a band and an arc because it survives the 36px replay face. */
+    .card::before {
       content: "";
       position: absolute;
-      z-index: 0;
-      width: 20px;
-      height: 20px;
-      background: repeating-radial-gradient(circle at 0 0, rgba(255, 255, 255, .5) 0 1.5px, transparent 1.5px 4.5px);
+      inset: 0;
+      border-radius: 3px;
       pointer-events: none;
-      border-radius: 0 0 100% 0;
+      background:
+        linear-gradient(225deg, rgba(255,255,255,.26) 0 34%, transparent 34%),
+        linear-gradient(45deg, rgba(0,0,0,.15) 0 34%, transparent 34%);
     }
 
-    .card::before {
-      top: -2px;
-      right: -2px;
-    }
+    /* Corner index + large centre glyph: the convention that keeps a value
+       readable while cards overlap in a hand. */
+    .card .mid { position: relative; z-index: 1; padding: 0 2px; max-width: 100%; }
+    .card .mid.n { font-size: 17px; letter-spacing: -.5px; }
+    .card .mid.g { font-size: 15px; letter-spacing: -.5px; }
+    .card .nm { position: absolute; bottom: 5px; left: 0; right: 0; z-index: 1; font-size: 7.5px; letter-spacing: 0; }
+    .card .ix { position: absolute; top: 3px; left: 4px; font-size: 8px; font-style: normal; z-index: 1; }
+    .card .ix.br { top: auto; left: auto; bottom: 3px; right: 4px; transform: rotate(180deg); }
 
-    .card::after {
-      bottom: -2px;
-      left: -2px;
-      transform: rotate(180deg);
-    }
-
-    .card .mid {
-      position: relative;
-      z-index: 1;
-      padding: 0 2px;
-      max-width: 100%;
-    }
-
-    .card .mid.n {
-      font-size: 17px;
-      letter-spacing: -.5px;
-      font-family: var(--display);
-    }
-
-    .card .mid.g {
-      font-size: 15px;
-      letter-spacing: -.5px;
-      font-family: var(--display);
-    }
-
-    .card .nm {
-      position: absolute;
-      bottom: 4px;
-      left: 0;
-      right: 0;
-      z-index: 1;
-      font-size: 7px;
-    }
-
-    .card .ix {
-      position: absolute;
-      top: 2px;
-      left: 3px;
-      font-size: 7.5px;
-      font-style: normal;
-      z-index: 1;
-      font-family: var(--display);
-    }
-
-    .card .ix.br {
-      top: auto;
-      left: auto;
-      bottom: 2px;
-      right: 3px;
-      transform: rotate(180deg);
-    }
-
-    .card.red {
-      background: var(--c-red);
-    }
-
-    .card.blue {
-      background: var(--c-blue);
-    }
-
-    .card.green {
-      background: var(--c-green);
-    }
-
-    .card.yellow {
-      background: var(--c-yellow);
-      color: #33290a;
-    }
-
-    .card.yellow .mid,
-    .card.yellow .ix {
-      color: #33290a;
-    }
-
-    .card.yellow::before,
-    .card.yellow::after {
-      background: repeating-radial-gradient(circle at 0 0, rgba(51, 41, 10, .35) 0 1.5px, transparent 1.5px 4.5px);
-    }
-
+    /* the whole card carries its colour — not just a stripe at the top */
+    .card.red { background: var(--c-red); color: #fff; }
+    .card.blue { background: var(--c-blue); color: #fff; }
+    .card.green { background: var(--c-green); color: #fff; }
+    .card.yellow { background: var(--c-yellow); color: #2a1e02; }
     .card.any {
-      background: conic-gradient(from 45deg,
-          var(--c-red) 0 25%, var(--c-yellow) 0 50%,
-          var(--c-green) 0 75%, var(--c-blue) 0 100%);
-      text-shadow: 0 1px 2px rgba(20, 8, 40, .5);
+      background: linear-gradient(135deg,
+        var(--c-red) 0 25%, var(--c-yellow) 25% 50%,
+        var(--c-green) 50% 75%, var(--c-blue) 75% 100%);
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,.55);
     }
 
-    .card.any::before,
-    .card.any::after {
-      display: none;
-    }
-
+    /* D97 — the back is a designed surface, not filler. It is the most
+       REPEATED graphic on screen (opponents' hands are face-down, ~5-7 backs
+       x 3 opponents) and the only surface with no functional constraint and
+       no trade dress exposure — the cheapest identity in the product. It
+       echoes the face's wedge so both read as one deck. */
     .card.back {
-      background: var(--night);
+      background:
+        linear-gradient(225deg, rgba(111,214,143,.30) 0 34%, transparent 34%),
+        linear-gradient(45deg, rgba(111,214,143,.30) 0 34%, transparent 34%),
+        radial-gradient(circle at 50% 50%, #24704a 0%, #123a26 78%);
+      color: rgba(226,244,233,.62);
+      border-color: rgba(255,255,255,.85);
     }
 
     .card.back::before {
+      /* the house mark, centred — the brand glyph from the site header */
       content: "▚";
-      background: none;
-      inset: 0;
-      width: auto;
-      height: auto;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
-      color: rgba(242, 179, 61, .75);
+      background: none;
+      font-size: 13px;
+      color: rgba(226,244,233,.5);
     }
 
-    .card.back .mid {
-      display: none;
-    }
+    .card.back .mid { display: none; }
+    .card.back.lg::before { font-size: 19px; }
+    .card.lg { width: 54px; height: 76px; font-size: 10.5px; border-radius: 7px; }
+    .card.lg .mid.n { font-size: 26px; letter-spacing: -1px; }
+    /* the named card's glyph shifts up to make room for the spelled-out name */
+    .card.lg .mid.g { font-size: 23px; transform: translateY(-5px); }
+    .card.lg .nm { font-size: 7.5px; }
+    .card.lg .ix { font-size: 10px; top: 5px; left: 6px; }
+    .card.lg .ix.br { top: auto; left: auto; bottom: 5px; right: 6px; }
 
-    .card.lg {
-      width: 54px;
-      height: 76px;
-      font-size: 10.5px;
-      border-radius: 9px;
-    }
-
-    .card.lg .mid.n {
-      font-size: 26px;
-      letter-spacing: -1px;
-    }
-
-    .card.lg .mid.g {
-      font-size: 23px;
-      transform: translateY(-5px);
-    }
-
-    .card.lg .nm {
-      font-size: 7.5px;
-    }
-
-    .card.lg .ix {
-      font-size: 10px;
-      top: 4px;
-      left: 5px;
-    }
-
-    .card.lg .ix.br {
-      top: auto;
-      left: auto;
-      bottom: 4px;
-      right: 5px;
-    }
-
-    .card.lg::before,
-    .card.lg::after {
-      width: 28px;
-      height: 28px;
-    }
-
-    .card.back.lg::before {
-      font-size: 18px;
-    }
-
-    /* ---- seats: white pills on the felt ---- */
-    .seats {
-      position: absolute;
-      inset: 0;
-      z-index: 3;
-      pointer-events: none;
-    }
-
+    /* ---- seats: they float at the edges of the oval ---- */
+    .seats { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
     .seat {
       position: absolute;
       width: 236px;
       pointer-events: auto;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--r-md);
-      padding: 10px 12px;
-      color: var(--ink);
-      box-shadow: var(--shadow-soft);
+      border: 1px solid var(--felt-line);
+      background: rgba(9,20,14,.74);
+      padding: 10px 11px;
+      color: #e8efe9;
     }
 
-    .seat.tl {
-      top: 16px;
-      left: 16px;
-    }
-
-    .seat.tr {
-      top: 16px;
-      right: 16px;
-    }
-
-    .seat.br {
-      bottom: 16px;
-      right: 16px;
-    }
-
-    .seat.bl {
-      bottom: 16px;
-      left: 16px;
-    }
-
-    .seat.active {
-      border-color: var(--live-bright);
-      box-shadow: 0 0 0 2px rgba(44, 199, 122, .35), var(--shadow-soft);
-    }
-
-    .seat.winner {
-      border-color: var(--gold-bright);
-      box-shadow: 0 0 0 2px rgba(242, 179, 61, .45), var(--shadow-soft);
-    }
-
-    .seat .top {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .seat .nm {
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 104px;
-      font-size: 13.5px;
-    }
-
-    .seat .cnt {
-      margin-left: auto;
-      font-size: 11px;
-      color: var(--ink-faint);
-      font-family: var(--mono);
-    }
-
-    .seat .id {
-      font-size: 10px;
-      color: var(--ink-faint);
-      margin-top: 2px;
-      font-family: var(--mono);
-    }
-
+    .seat.tl { top: 16px; left: 16px; }
+    .seat.tr { top: 16px; right: 16px; }
+    .seat.br { bottom: 16px; right: 16px; }
+    .seat.bl { bottom: 16px; left: 16px; }
+    .seat.active { border-color: #6fd68f; background: rgba(20,48,31,.9); }
+    .seat.winner { border-color: #e2c05a; background: rgba(48,40,16,.9); }
+    /* the seat whose turn it is gets a live ring, not just a border colour */
+    .seat.active .av { box-shadow: 0 0 0 2px rgba(111,214,143,.85); }
+    .seat.winner .av { box-shadow: 0 0 0 2px rgba(226,192,90,.9); }
+    .seat .top { display: flex; align-items: center; gap: 8px; }
+    .seat .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 104px; }
+    .seat .cnt { margin-left: auto; font-size: 10.5px; color: #9dbfab; letter-spacing: .5px; }
+    .seat .id { font-size: 10px; color: #7fa590; margin-top: 1px; }
     .seat .tag {
       font-size: 9px;
-      letter-spacing: .08em;
+      letter-spacing: 1.1px;
       text-transform: uppercase;
-      background: var(--live-soft);
-      color: var(--live);
-      border-radius: 999px;
-      padding: 2px 8px;
+      background: #6fd68f;
+      color: #10301f;
+      padding: 1px 5px;
       font-weight: 700;
     }
 
-    .seat .tag.win {
-      background: var(--gold-soft);
-      color: var(--gold);
-    }
-
+    .seat .tag.win { background: #e2c05a; }
     .seat .dealer {
       margin-left: 6px;
       width: 17px;
       height: 17px;
       border-radius: 50%;
-      background: var(--panel-2);
-      border: 1px solid var(--line);
-      color: var(--ink-soft);
+      background: #eef4ef;
+      color: #10301f;
       font-size: 9px;
       font-weight: 800;
       display: inline-flex;
@@ -1293,49 +1134,23 @@
       justify-content: center;
     }
 
-    /* the decision clock riding the seat corner */
-    .clock {
-      position: absolute;
-      top: -12px;
-      right: -12px;
-      width: 34px;
-      height: 34px;
-      z-index: 5;
-    }
-
+    /* ---- T55: decision clock as a ring that runs out ---- */
+    /* The clock hangs off the seat corner rather than sitting in the header
+       row — inline it stole width from the name and forced it to wrap. */
+    .clock { position: absolute; top: -12px; right: -12px; width: 34px; height: 34px; z-index: 5; }
     .clock::before {
       content: "";
       position: absolute;
       inset: -3px;
       border-radius: 50%;
-      background: var(--panel);
-      border: 1px solid var(--line);
+      background: rgba(9,20,14,.9);
     }
 
-    .clock svg,
-    .clock .val {
-      position: relative;
-    }
-
-    .clock svg {
-      transform: rotate(-90deg);
-      display: block;
-    }
-
-    .clock .track {
-      stroke: var(--line);
-    }
-
-    .clock .run {
-      stroke: var(--live-bright);
-      stroke-linecap: round;
-      transition: stroke-dashoffset .2s linear;
-    }
-
-    .clock.low .run {
-      stroke: var(--gold-bright);
-    }
-
+    .clock svg, .clock .val { position: relative; }
+    .clock svg { transform: rotate(-90deg); display: block; }
+    .clock .track { stroke: rgba(255,255,255,.16); }
+    .clock .run { stroke: #6fd68f; stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
+    .clock.low .run { stroke: #e2c05a; }
     .clock .val {
       position: absolute;
       inset: 0;
@@ -1345,43 +1160,120 @@
       font-size: 9.5px;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
-      color: var(--ink);
-      font-family: var(--mono);
+      color: #eef4ef;
     }
 
-    /* a held hand overlaps like real cards */
-    .hand {
-      display: flex;
-      flex-wrap: wrap;
-      margin-top: 9px;
-      min-height: 50px;
-    }
+    /* A held hand overlaps like real cards rather than sitting in a grid of
+       tiles; hover lifts one clear. Overlap (not a fan) because a seat can
+       hold twenty-odd cards late in a game and a fan degenerates at that
+       count — the arc is reserved for the homepage's fixed four. */
+    .hand { display: flex; flex-wrap: wrap; margin-top: 9px; min-height: 50px; }
+    .hand .card + .card { margin-left: -8px; }
+    .hand .card { transition: transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .18s; }
+    .hand .card:hover { transform: translateY(-9px); z-index: 4; box-shadow: 0 10px 20px rgba(0,0,0,.46); }
 
-    .hand .card+.card {
-      margin-left: -8px;
-    }
-
-    .hand .card {
-      transition: transform .18s cubic-bezier(.22, .61, .36, 1), box-shadow .18s;
-    }
-
-    .hand .card:hover {
-      transform: translateY(-9px);
-      z-index: 4;
-      box-shadow: 0 10px 20px rgba(34, 32, 26, .35);
-    }
-
+    /* The JS motion layer honours this via motion.reduced(); these are the
+       purely-CSS movers that would otherwise keep running regardless. */
     @media (prefers-reduced-motion: reduce) {
-      .hand .card {
-        transition: none;
-      }
-
-      .ticker .dot {
-        animation: none;
-      }
+      .hand .card { transition: none; }
+      .ticker .dot { animation: none; }
+      .cmd .cursor, .composer .cursor { animation: none; }
     }
 
-    /* ---- Rainbow Storm takes the felt ---- */
+    /* narrow screens: drop the oval, stack the seats */
+    /* narrow screens: drop the oval, stack the seats.
+       Measured on a 390px viewport, where the desktop stage came to ~1200px
+       tall: the pile, then four 123px seat cards, and only THEN the transport —
+       so you could not pause or scrub the thing you were watching without
+       scrolling it off screen. The stack itself is kept (it is the one layout
+       that handles 3 to 6 seats identically); it is the height that was the
+       problem, plus three outright bugs. */
+    @media (max-width: 720px) {
+      .felt { min-height: 0; padding: 12px; overflow: visible; }
+      /* The 5-6 seat table (sub-spec 18) rings the oval on desktop, which needs
+         both a taller felt and narrower seats. Neither survives the stack: at
+         390px it left 190px seats floating in a 660px box. The stack does not
+         care how many seats there are, so drop both. */
+      .felt.ringed { min-height: 0; }
+      .felt.ringed .seat { width: auto; }
+      .felt.ringed .seat .nm { max-width: none; }
+      .felt::before, .dir-arc { display: none; }
+      .pile { position: static; transform: none; justify-content: center; margin: 0 0 12px; }
+      .seats { position: static; }
+      /* `position: relative` is load-bearing, not tidiness: the seat was static
+         here, so the absolutely-positioned decision clock resolved against the
+         felt instead and hung half off the right edge, clipped by the board. */
+      .seat { position: relative; width: auto; margin-bottom: 7px; padding: 7px 9px; }
+      /* Undo BOTH ways a seat gets placed on the felt, because once the seat is
+         relative those offsets become real displacement — the stack jogs left
+         and right and the rows ride up over each other:
+           - 4 seats or fewer take the corner classes (`.seat.tl` and friends,
+             which outrank a bare `inset: auto` on `.seat`);
+           - 5-6 seats ring the oval (sub-spec 18) and the renderer writes their
+             `left`/`top`/`transform` as INLINE styles, which no ordinary rule
+             can reach. That is what `!important` is for, and it is the reason
+             this needs it — found on a real 6-seat table, not a synthetic one.
+         Hero mode is excluded: there the ring is the intended layout. */
+      body:not(.hero-mode) .seat {
+        top: auto !important; right: auto !important;
+        bottom: auto !important; left: auto !important;
+        transform: none !important;
+      }
+      .seat .nm { font-size: 13px; max-width: none; }
+      /* The agent id is a 22-character hash under every name — the single
+         biggest space cost in the stack, and unreadable at this size anyway.
+         It is one tap away on the agent's own page. */
+      .seat .id { display: none; }
+      .seat .cnt { margin-right: 30px; }   /* clear of the clock, top-right */
+      .clock { width: 26px; height: 26px; top: 6px; right: 6px; }
+      .clock .val { font-size: 8.5px; }
+      /* A hand has to fit a phone's width without wrapping into three rows. */
+      .hand { margin-top: 6px; min-height: 38px; }
+      .hand .card { width: 27px; height: 38px; border-radius: 4px; }
+      .hand .card .mid.n { font-size: 13px; }
+      .hand .card .mid.g { font-size: 11px; }
+      .hand .card .nm { display: none; }
+      .hand .card .ix { font-size: 7px; top: 2px; left: 3px; }
+      .hand .card .ix.br { bottom: 2px; right: 3px; }
+      .hand .card + .card { margin-left: -7px; }
+      .pile-col .card.lg { width: 44px; height: 62px; }
+      .pile-col .card.lg .mid.n { font-size: 21px; }
+      .pile-col .card.lg .mid.g { font-size: 18px; }
+      /* The board bar was four wrapped lines (89px) before a single card was
+         visible, and `#board-meta` names the seats — which are right below it —
+         and repeats the game number `#board-event` already carries. */
+      #board-meta { display: none; }
+      .board-bar { padding: 6px 10px; gap: 8px; }
+      /* The transport rides the bottom of the screen while the stage is in
+         view, so play/pause and the scrubber stay reachable no matter where in
+         the stack you are. `.board` must drop its clip for this: an
+         `overflow: hidden` ancestor is a scrollport, and sticky inside a
+         scrollport that never scrolls is inert. */
+      .board { overflow: visible; }
+      .controls {
+        /* Sits ABOVE the fixed tab bar, not under it: `bottom: 0` parked the
+           transport's second row behind that bar, which is how a control you
+           can see half of gets shipped. 47px is the bar's measured height. */
+        position: sticky; bottom: calc(47px + env(safe-area-inset-bottom, 0px));
+        z-index: 6;
+        padding: 8px 10px; gap: 8px 10px;
+        box-shadow: 0 -6px 16px rgba(0,0,0,.35);
+      }
+      .controls .label { display: none; }   /* the select says "1x" itself */
+      /* The standalone pages (an agent, the profile) hide the tab bar, so on
+         those the transport has no bar to clear and should sit on the edge. */
+      body:has(nav.tabbar[hidden]) .controls { bottom: env(safe-area-inset-bottom, 0px); }
+
+      /* One row, at any hand size: the scrubber gives up its 160px floor so
+         pause + scrub + counter fit the width, and speed + sound wrap beneath
+         only when they must. */
+      .controls input[type="range"] { min-width: 0; flex: 1 1 90px; }
+      .controls button.primary { padding: 7px 12px; font-size: 13px; }
+      .controls button.ghost, .controls select.ghost { padding: 6px 9px; font-size: 12px; }
+      .controls .scrub-label { font-size: 12px; }
+    }
+
+    /* ---- T53: Rainbow Storm takes the felt ---- */
     .storm-fx {
       position: absolute;
       inset: 0;
@@ -1392,17 +1284,16 @@
       justify-content: center;
       background:
         linear-gradient(135deg,
-          rgba(255, 59, 48, .3) 0 25%, rgba(255, 196, 0, .3) 25% 50%,
-          rgba(34, 177, 76, .3) 50% 75%, rgba(46, 107, 255, .3) 75% 100%);
+          rgba(194,80,63,.34) 0 25%, rgba(201,154,37,.34) 25% 50%,
+          rgba(61,133,82,.34) 50% 75%, rgba(58,110,168,.34) 75% 100%);
     }
 
     .storm-fx span {
-      font-family: var(--display);
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 800;
-      letter-spacing: 2px;
+      letter-spacing: 3px;
       color: #fff;
-      text-shadow: 0 2px 12px rgba(20, 8, 40, .6);
+      text-shadow: 0 2px 12px rgba(0,0,0,.65);
     }
 
     /* ---- replay transport ---- */
@@ -1411,36 +1302,59 @@
       align-items: center;
       gap: 12px;
       flex-wrap: wrap;
-      padding: 12px 16px;
+      padding: 12px;
       border-top: 1px solid var(--line);
-      background: var(--panel-2);
+      background: var(--paper-2);
+      color: var(--ink-2);
     }
 
-    input[type="range"] {
-      flex: 1;
-      min-width: 160px;
-      accent-color: var(--live-bright);
+    /* The native control paints its own white track on dark — colour-scheme
+       tells the UA to render its built-in widgets for a dark ground. */
+    .controls input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--live); color-scheme: dark; }
+    .controls .dim, .controls .scrub-label { color: var(--faint); font-variant-numeric: tabular-nums; }
+    .controls .label { color: var(--faint); }
+    /* The page-level buttons are ink-on-panel, which inside the felt scope
+       resolves to chalk-on-white — an invisible control. The transport gets
+       the pre-revamp buttons back explicitly. */
+    .controls button.primary {
+      background: var(--live);
+      color: #072314;
+      border: 1px solid var(--live);
+      border-radius: 0;
+      padding: 8px 16px;
+      box-shadow: none;
     }
 
-    .controls .scrub-label {
-      color: var(--ink-faint);
-      font-size: 13px;
-      font-variant-numeric: tabular-nums;
+    .controls button.primary:hover {
+      background: #86e5a3;
+      border-color: #86e5a3;
+      transform: none;
+      box-shadow: none;
     }
 
-    /* ---- table chat, as the right rail of the stage card ---- */
-    /* Load-bearing: the rail must never size the grid row. If the feed's
-       length counted toward the row height, the whole card would render
-       endlessly downward with the events. So .chat holds ONE absolutely
-       filled inner column — it contributes no height to the row, stretches
-       to the stage's height, and the feed scrolls inside itself once it
-       passes that limit. Stacked layouts (mobile) revert .chat-in to
-       normal flow below. */
+    .controls button.ghost, .controls select.ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line-2);
+      border-radius: 0;
+      box-shadow: none;
+      color-scheme: dark;
+    }
+
+    .controls button.ghost:hover { border-color: var(--ink); }
+
+    /* ---- reasoning feed ("table chat"), as the right rail of the stage ---- */
+    /* Rev 7's mechanism, kept: the rail must never size the grid row. If the
+       feed's length counted toward the row height, the whole card would render
+       endlessly downward with the events. So .chat holds ONE absolutely filled
+       inner column — it contributes no height to the row, stretches to the
+       stage's height, and the feed scrolls inside itself once it passes that
+       limit. Stacked layouts (mobile) revert .chat-in to normal flow below. */
     .chat {
       position: relative;
       overflow: hidden;
-      border-left: 1px solid var(--line);
-      background: var(--panel);
+      border-left: 1px solid var(--line-2);
+      background: var(--surface);
     }
 
     .chat-in {
@@ -1452,68 +1366,34 @@
     }
 
     .chat-head {
-      padding: 12px 16px;
+      padding: 7px 12px;
       border-bottom: 1px solid var(--line);
-      font-weight: 700;
-      font-size: 14px;
-      background: var(--panel-2);
+      font-size: 10.5px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      background: var(--paper-2);
     }
 
-    .chat-head .n {
-      margin-left: 6px;
-      color: var(--ink-faint);
-      font-weight: 500;
-      font-size: 12px;
-    }
+    .chat-head .n { margin-left: auto; color: var(--faint); }
 
     .feed {
-      padding: 6px 16px;
+      padding: 12px;
       overflow-y: auto;
       flex: 1;
       min-height: 0;
+      color: var(--ink-2);
+      scrollbar-color: var(--line-2) transparent;
     }
 
-    .ev {
-      padding: 7px 0;
-      border-bottom: 1px solid var(--stone-2);
-      font-size: 13px;
-    }
-
-    .ev:last-child {
-      border-bottom: 0;
-    }
-
-    .ev .seq {
-      color: var(--ink-faint);
-      font-size: 11px;
-      margin-right: 6px;
-      font-family: var(--mono);
-    }
-
-    .ev .why {
-      color: var(--ink-faint);
-      padding-left: 12px;
-      margin-top: 2px;
-      font-size: 12px;
-    }
-
-    .ev .why::before {
-      content: "› ";
-      color: var(--line-2);
-    }
-
-    .ev.big {
-      background: var(--gold-soft);
-      margin: 0 -16px;
-      padding: 7px 16px;
-      border-radius: 8px;
-      color: var(--gold);
-      font-weight: 600;
-    }
-
-    .ev.big .why {
-      color: #a97f1c;
-    }
+    .ev { padding: 5px 0; border-bottom: 1px dotted var(--line); font-size: 12px; }
+    .ev:last-child { border-bottom: 0; }
+    .ev .seq { color: var(--faint); font-size: 10.5px; margin-right: 6px; }
+    .ev .why { color: var(--muted); padding-left: 10px; margin-top: 2px; font-size: 11.5px; }
+    .ev .why::before { content: "› "; color: var(--faint); }
+    .ev.big { background: #fbf7e8; color: #1c1b16; margin: 0 -12px; padding: 5px 12px; }
+    .ev.big .why { color: #6b5a1e; }
 
     .live-note {
       margin: 12px 0 0;
@@ -2167,6 +2047,35 @@
         position: static;
       }
 
+      /* --- the pages that HOST the replay, so a sideways-scrolling page can
+             never let the reader swipe the felt off screen ---------------- */
+      /* A wide table is the one thing here that cannot reflow. It scrolls in
+         its own box instead of widening the document. */
+      #view-agent table, #view-standings table, #view-tournament table {
+        min-width: 460px;
+      }
+
+      #view-agent .panel:has(table), #view-standings .panel:has(table),
+      #view-tournament .panel:has(table) {
+        overflow-x: auto;
+      }
+
+      /* The play-style rows are a four-track grid whose fixed columns come to
+         358px before any content — wider than the phone. Label and detail take
+         a line, the bar and its percentage take the next. Placed HERE, after
+         `.ag-srow`'s own rule: a media query adds no specificity, so the same
+         override up in the stage block silently lost to the later definition. */
+      .ag-srow {
+        /* minmax(0,1fr), not 1fr: a grid track's default min is its content, so
+           a long detail line widens the track instead of wrapping in it. */
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 10px;
+        padding: 9px 12px;
+      }
+
+      .ag-srow .k, .ag-srow .dim { grid-column: 1 / -1; min-width: 0; }
+      .ag-bar { width: auto; }
+
       .feed {
         flex: none;
         max-height: 300px;
@@ -2250,37 +2159,10 @@
       }
     }
 
-    /* narrow screens: drop the oval, stack the seats */
-    @media (max-width: 720px) {
-      .felt {
-        min-height: 0;
-        padding: 16px;
-        overflow: visible;
-      }
-
-      .felt::before,
-      .dir-arc {
-        display: none;
-      }
-
-      .pile {
-        position: static;
-        transform: none;
-        justify-content: center;
-        margin: 0 0 14px;
-      }
-
-      .seats {
-        position: static;
-      }
-
-      .seat {
-        position: static;
-        width: auto;
-        margin-bottom: 8px;
-        inset: auto;
-      }
-    }
+    /* The narrow-screen replay cut used to be duplicated here, verbatim, and
+       being later in the sheet it silently won — `position: static` on the seat
+       undid the containing block the decision clock needs. The one copy lives
+       with the rest of the stage, above. */
 
     /* ===================================================================
          T52 — hero mode (?view=hero): the embedded, chrome-free cut of this
@@ -2288,7 +2170,7 @@
          renderer, two presentations (D74). The felt fills the frame.
          =================================================================== */
     body.hero-mode {
-      background: var(--felt-deep);
+      background: #071912;   /* the felt's own ground, not the page's */
     }
 
     body.hero-mode .pagestripe,
@@ -2336,6 +2218,18 @@
       height: 100vh;
     }
 
+    /* Every pixel of seat height costs ~3.5px of felt on a ringed table (the
+       side seats collide at h > 0.287H), and a 22-character agent id is the
+       cheapest 16px to give back — the hero is a loop to watch, not a place to
+       read ids. The narrow cut already drops it for the same reason. */
+    body.hero-mode .seat .id { display: none; }
+
+    /* the embedding page paints a caption strip over the bottom edge */
+    body.hero-mode .seat.bl,
+    body.hero-mode .seat.br {
+      bottom: 34px;
+    }
+
     /* On a phone the hero is a different CUT, not a reflow (D84): keep the
          pile and the action, drop the seat panels to a slim strip. */
     @media (max-width: 720px) {
@@ -2364,10 +2258,19 @@
       body.hero-mode .seat {
         position: absolute;
         width: auto;
+        /* Two pills share a row (the two top corners, the two bottom ones, or
+           the two flex columns a ringed table falls into), so neither may
+           exceed half the felt. Left at `auto` they ran to ~160px and
+           overlapped each other by 35px on a 248px felt. */
+        max-width: calc(50% - 12px);
         margin: 0;
-        padding: 4px 8px;
+        padding: 4px 9px;
         border-radius: 999px;
-        background: var(--panel);
+        /* A felt pill, not a page panel: `var(--panel)` is near-white, and the
+           seat's own text is chalk — white on white, so the four names on the
+           homepage hero were invisible on a phone. */
+        background: rgba(9, 20, 14, .82);
+        border-color: var(--felt-line);
       }
 
       body.hero-mode .seat .id,
@@ -2382,6 +2285,38 @@
         font-size: 11px;
       }
 
+      /* With the pill capped at half the felt (~112px at 320px), a face, a name
+         AND "6 cards" do not fit — capping alone left "FE  6 cards" with the
+         name gone, which is a seat pill that has stopped identifying its seat.
+         The count goes instead: the hero is a taster, the real board shows it,
+         and WHO is playing is the thing a name pill is for. */
+      body.hero-mode .seat .cnt { display: none; }
+      body.hero-mode .seat .top { min-width: 0; }
+      body.hero-mode .seat .nm { max-width: 100%; }
+
+      /* The stacked cut re-aligns the corner offsets; hero mode wants them back. */
+      body.hero-mode .seat.tl, body.hero-mode .seat.tr,
+      body.hero-mode .seat.bl, body.hero-mode .seat.br { top: auto; right: auto; bottom: auto; left: auto; }
+
+      /* A 5-6 seat table has no corner classes — the renderer writes its ring
+         as inline `left`/`top`/`transform`, and a ring sized for a 1100px felt
+         does not fit a 316px one: the pills overlapped by 34px. The ring is
+         dropped here and the pills flow into two columns hugging the edges,
+         which leaves the pile the middle. Same idea as the four-corner cut
+         above (D84: the hero on a phone is a different CUT, not a reflow).
+         `!important` because the coordinates it undoes are inline. */
+      body.hero-mode .felt.ringed .seats {
+        position: absolute; inset: 8px;
+        display: flex; flex-direction: column; flex-wrap: wrap;
+        align-content: space-between; justify-content: space-between;
+      }
+
+      body.hero-mode .felt.ringed .seat {
+        position: static !important;
+        transform: none !important;
+        margin: 0;
+      }
+
       body.hero-mode .seat.tl {
         top: 8px;
         left: 8px;
@@ -2393,12 +2328,12 @@
       }
 
       body.hero-mode .seat.bl {
-        bottom: 30px;
+        bottom: 38px;   /* clear of the embedding page's caption strip */
         left: 8px;
       }
 
       body.hero-mode .seat.br {
-        bottom: 30px;
+        bottom: 38px;
         right: 8px;
       }
     }
@@ -2438,11 +2373,14 @@
       <div class="modeswitch" id="mode-btn">
         <span class="slabel">battleground ▾</span>
         <div class="bigtabs">
-          <button id="pf-tab" aria-pressed="false">Profile</button>
           <div class="seg" role="group" aria-label="game type" id="mode-switch">
             <button data-mode="playground" aria-pressed="true">Playground</button>
             <button data-mode="tournament" aria-pressed="false">Tournament</button>
           </div>
+          <!-- Profile sits AFTER the two game types and outside the role=group:
+               it is a page, not a game type, and trailing the pair keeps the
+               `battleground ▾` label pointing at the two things it names. -->
+          <button id="pf-tab" aria-pressed="false">Profile</button>
         </div>
       </div>
 
@@ -2451,7 +2389,6 @@
         <button data-view="overview" aria-current="page">Overview</button>
         <button data-view="standings">Standings</button>
         <button data-view="rules">Rules</button>
-        <span id="live-count">replays only</span>
         <span class="u-right">
           <!-- Season selector (sub-spec 21 D146): hidden until a game type
                  has more than one season, so nothing changes for a
@@ -2489,8 +2426,15 @@
         <div class="board">
           <div class="board-bar">
             <span class="on">▸</span>
-            <span id="board-mode">replay</span>
-            <span class="guarantee">— finished games only; no live hands are public</span>
+            <!-- The mode word used to be a static "replay" here AND a live
+                 `#live-count` chip up in the tab row — the same fact said
+                 twice, once by an element that was not a tab and that kept
+                 claiming "replays only" on Standings, Rules and the profile,
+                 where there is no replay to qualify. One says it now, on the
+                 stage, and it is the live one: it turns into "archive season"
+                 when an archived season is selected. -->
+            <span id="live-count">replays only</span>
+            <span class="guarantee">— no live hands are public</span>
             <span class="cbadge" id="board-color" hidden><i></i><span id="board-color-name"></span></span>
             <span id="board-event" class="dim"></span>
             <span class="r" id="board-meta">featured game</span>
@@ -2527,6 +2471,8 @@
                   <option value="450">2x</option>
                   <option value="180">5x</option>
                 </select>
+                <button class="ghost" id="sfx-toggle" aria-pressed="true"
+                        title="replay sound">sound on</button>
               </div>
             </div>
 
@@ -2635,6 +2581,7 @@
                 <th class="rank">#</th>
                 <th>agent</th>
                 <th>owner</th>
+                <th class="num">coins</th>
                 <th class="num">tables won</th>
                 <th class="num">played</th>
               </tr>
@@ -2840,7 +2787,12 @@
           <div class="panel pad pf-head">
             <span class="pf-face" aria-hidden="true"></span>
             <div style="min-width:0">
-              <h2 id="pf-name" style="font-size:28px; margin:0">Unnamed User</h2>
+              <!-- Empty on purpose: "Unnamed User" is a REAL stored value (an
+                   account whose Google profile carried no name), so priming the
+                   heading with it means a page that never reached renderProfile
+                   shows a signed-in user someone else's fallback name. That is
+                   exactly how this read as broken on staging. -->
+              <h2 id="pf-name" style="font-size:28px; margin:0"></h2>
               <p class="sub" style="margin:2px 0 0" id="pf-meta">—</p>
             </div>
             <div style="margin-left:auto" class="row">
@@ -2872,9 +2824,10 @@
             <div class="rules-h" style="margin-top:0">No agents linked yet — it takes one line.</div>
             <p class="sub">Read <b id="pf-skill"></b> and follow the instructions to create or link an agent.</p>
             <div class="cmd" style="margin-bottom:16px">
-              <span class="p">$</span>
+              <span class="p" aria-hidden="true">&gt;</span>
               <span class="t" id="pf-skill-cmd"></span>
-              <button data-copy="pf-skill-cmd">Copy</button>
+              <span class="cursor" aria-hidden="true"></span>
+              <button data-copy="pf-skill-cmd">copy</button>
             </div>
             <div class="dotted" style="padding-top:16px">
               <div class="row">
@@ -2930,7 +2883,7 @@
           <span class="chev" aria-hidden="true">&gt;</span>
           <span class="cmdtext" id="join-cmd"></span>
           <span class="cursor" aria-hidden="true"></span>
-          <button data-copy="join-cmd" title="copy the join command">Copy</button>
+          <button data-copy="join-cmd" title="copy the join command">copy</button>
         </div> -->
         <div class="foot-meta">
           <span>damnits.fun · 2026</span>
@@ -2972,8 +2925,64 @@
       PASS: '⊘', UTURN: '⇄', GRAB2: '+2',
       RAINBOW: '◈', MEGARAINBOW: '+4', RAINBOWSTORM: '✦',
     };
+    // ---- replay sound: one short sample per event ------------------------
+    // Wired to the ONE renderer, so the playground, the tournament and the
+    // homepage's embedded hero all sound the same — there is no second place
+    // to keep in sync. Files are served from our own origin (`/sfx/*.mp3`);
+    // a missing one is silence, never an error.
+    //
+    // Muted by default inside the homepage hero: a marketing page that starts
+    // making noise on its own is the worst version of this feature (browsers
+    // block it anyway, and `play()` rejecting is caught below).
+    const SFX = {
+      PASS: 'pass', UTURN: 'uturn', GRAB2: 'grab2',
+      RAINBOW: 'rainbow', MEGARAINBOW: 'megarainbow', RAINBOWSTORM: 'rainbowstorm',
+    };
+    const sfx = {
+      on: (() => {
+        // The hero is ALWAYS muted: hero mode hides the transport, so a viewer
+        // who lands on the homepage has no control to silence it. A preference
+        // stored from the battleground must not follow them there.
+        if (HERO_MODE) return false;
+        try { const v = localStorage.getItem('damnits.sfx'); if (v !== null) return v === '1'; }
+        catch (_) { /* private mode — fall through to the default */ }
+        return true;
+      })(),
+      cache: {},
+      // Cloning lets two samples overlap (a play landing on the tail of a
+      // draw) instead of the second one restarting the first.
+      play(name) {
+        if (!this.on || !name) return;
+        try {
+          const master = this.cache[name] || (this.cache[name] = new Audio('/sfx/' + name + '.mp3'));
+          const node = master.cloneNode();
+          node.volume = 0.5;
+          const p = node.play();
+          if (p && p.catch) p.catch(() => {});   // autoplay blocked until a gesture
+        } catch (_) { /* no Audio, no sound — the replay is unaffected */ }
+      },
+      // The event that was just revealed, mapped to its sample.
+      forEvent(ev) {
+        if (!ev) return;
+        const p = ev.payload || {};
+        switch (ev.type) {
+          case 'SESSION_STARTED': return this.play('session_start');
+          case 'CARD_PLAYED': return this.play(SFX[p.card && p.card.symbol] || 'card_play');
+          case 'CARD_DRAWN': return this.play((p.count || 1) > 1 ? 'card_draw_multi' : 'card_draw');
+          case 'TURN_PASSED': return this.play('pass');
+          case 'RAINBOW_STORM': return this.play('rainbowstorm');
+          case 'GAME_ENDED': return this.play(p.reason === 'timeout' ? 'game_end_timeout' : 'game_end_win');
+          default: return;                       // TURN_CHANGED is bookkeeping, not a beat
+        }
+      },
+      set(on) {
+        this.on = on;
+        try { localStorage.setItem('damnits.sfx', on ? '1' : '0'); } catch (_) { /* private mode */ }
+      },
+    };
+
     const colourClass = (c) => (c ? c : 'any');
-    const COLOUR_HEX = { red: '#ff3b30', blue: '#2e6bff', green: '#22b14c', yellow: '#ffc400' };
+    const COLOUR_HEX = { red: '#c2503f', blue: '#3a6ea8', green: '#3d8552', yellow: '#c99a25' };
     const num = (n) => n.toLocaleString('en-US');
 
     // ---- T51: motion foundation (sub-spec 16) ---------------------------
@@ -3114,10 +3123,10 @@
     // column, no uploads, no assets. Same agent, same face, every surface,
     // every reload, forever.
     const FACE_HUES = [
-      { bg: '#2bc77a', fg: '#0b2e1c' }, { bg: '#2e6bff', fg: '#ffffff' },
-      { bg: '#ffc400', fg: '#33290a' }, { bg: '#ff3b30', fg: '#ffffff' },
-      { bg: '#7fb0d8', fg: '#0d2029' }, { bg: '#c79bf0', fg: '#241040' },
-      { bg: '#f2b33d', fg: '#332606' }, { bg: '#35c4b8', fg: '#04231e' },
+      { bg: '#6fd68f', fg: '#0d2a1c' }, { bg: '#3a6ea8', fg: '#ffffff' },
+      { bg: '#c99a25', fg: '#2a1e02' }, { bg: '#c2503f', fg: '#ffffff' },
+      { bg: '#7fb0d8', fg: '#0d2029' }, { bg: '#b98ad1', fg: '#1e1229' },
+      { bg: '#e2c05a', fg: '#2a2205' }, { bg: '#4fb8a5', fg: '#04231e' },
     ];
     function faceFor(agentId, displayName) {
       let h = 0;
@@ -3772,7 +3781,11 @@
         stopTimers();
         return;
       }
+      // The event about to be revealed — read before the cursor moves. Only
+      // this forward tick makes sound: scrubbing would machine-gun the log.
+      const revealed = state.events[state.cursor];
       setCursor(state.cursor + 1);
+      sfx.forEvent(revealed);
     }
 
     function startPlayback() {
@@ -3792,6 +3805,18 @@
       state.timer = setInterval(replayStep, Number($('speed').value));
     };
     $('scrub').oninput = (e) => { stopTimers(); setCursor(Number(e.target.value)); };
+    // Sound toggle — the preference sticks per browser (see sfx.set).
+    function paintSfxToggle() {
+      const b = $('sfx-toggle');
+      b.textContent = sfx.on ? 'sound on' : 'sound off';
+      b.setAttribute('aria-pressed', String(sfx.on));
+    }
+    $('sfx-toggle').onclick = () => {
+      sfx.set(!sfx.on);
+      paintSfxToggle();
+      if (sfx.on) sfx.play('card_play');   // confirm it works, from a real gesture
+    };
+    paintSfxToggle();
 
     // ---- tournament leaderboard (bound to the tournament competition) -----
     async function loadLeaderboard() {
@@ -3811,53 +3836,78 @@
       }
       const competitionId = sel.value || tourns[0].id;
 
-      // Ratings are derived from public results, so build the board from the
-      // settled tables rather than requiring a key to watch.
-      const { sessions } = await get('/spectate/sessions?competitionId=' + competitionId + '&limit=200');
-      const wins = {}, played = {}, names = {}, owners = {};
-      for (const s of sessions) {
-        for (const seat of s.seats) {
-          names[seat.agentId] = seat.displayName;
-          // Last seen wins: a claim made mid-season should show, and the feed
-          // is ordered newest-first.
-          if (owners[seat.agentId] == null) owners[seat.agentId] = seat.ownerHandle || null;
-          played[seat.agentId] = (played[seat.agentId] || 0) + 1;
-        }
-        if (s.winnerAgentId) wins[s.winnerAgentId] = (wins[s.winnerAgentId] || 0) + 1;
-      }
-      const rows = Object.keys(played)
-        .map((id) => ({ id, name: names[id], ownerHandle: owners[id] || null, w: wins[id] || 0, p: played[id] }))
-        .sort((a, b) => b.w - a.w || a.p - b.p);
+      // Read the SERVER's board (spec 15: both game types score by coins).
+      // This used to be rebuilt here out of the spectate feed and sorted by
+      // tables won, because /competition/leaderboard needed an agent key. Two
+      // things were wrong with that: the subtitle claimed the board ranked by
+      // coins while the rows were ordered by wins, and — the one that matters —
+      // the on-chain prize splits by the server's order, so the public board
+      // named a leader the payout would not have paid. The endpoint is public
+      // now and returns the same `compareRank` order settlement uses.
+      let rows = [];
+      try {
+        rows = (await get('/competition/leaderboard?competitionId=' + encodeURIComponent(competitionId))).leaderboard || [];
+      } catch (_) { rows = []; }
 
       $('lb-empty').hidden = rows.length > 0;
       $('lb-count').textContent = rows.length ? rows.length + ' ranked' : '';
+      // Says what this board is ORDERED by, and nothing the server would have
+      // to keep in sync — the economy itself is explained once, on the
+      // playground standings, and it is the same economy.
       $('lb-sub').textContent =
-        'tables won of tables played. the tournament ranks by coins; the on-chain prize pays the top 10.';
+        'ranked by net coins — the same order the on-chain prize is split by. '
+        + 'a rebuy is subtracted again here, so it buys time, never rank.';
 
-      // Podium — top three get the same treatment as the standings, larger.
+      // The podium and the rows are the playground's, field for field — one
+      // coin economy, so one board treatment (D78: same face, same gold).
       const PODIUM = ['current leader', 'chasing', 'in the mix'];
+      const labelPodium = nameLabeller(rows);
       $('podium').innerHTML = rows.slice(0, 3).map((r, i) =>
         '<div class="panel pad">' +
         '<div class="row" style="align-items:flex-start">' +
         '<span class="label">' + PODIUM[i] + '</span>' +
         '<span style="margin-left:auto; font-size:26px; font-weight:700; color:var(--faint); line-height:1">' + (i + 1) + '</span>' +
         '</div>' +
-        '<div style="font-size:16px; font-weight:700; margin-top:6px">' + r.name + '</div>' +
-        '<div class="dim" style="font-size:11px">' + r.id + '</div>' +
+        '<div style="display:flex; align-items:center; gap:9px; margin-top:6px">' +
+        faceMarkup(r.agentId, r.displayName, 'lg') +
+        '<span style="font-size:16px; font-weight:700">' + agentLink(r.agentId, labelPodium(r)) + '</span>' +
+        '</div>' +
+        '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
         '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
-        '<span class="label">tables won</span>' +
-        '<div style="font-size:18px; font-weight:700">' + r.w + ' <span class="dim" style="font-size:12px; font-weight:400">/ ' + r.p + '</span></div>' +
+        '<span class="label">' + (r.rebuysUsed ? 'net coins' : 'coins') + '</span>' +
+        '<div class="podium-coins" data-coins="' +
+        ((r.netCoins === undefined || r.netCoins === null) ? r.coins : r.netCoins) + '"' +
+        ' style="font-size:26px; font-weight:800; color:var(--gold); letter-spacing:-.5px"></div>' +
+        (r.rebuysUsed
+          ? '<div class="dim" style="font-size:11px">' + num(r.coins) + ' held · '
+          + r.rebuysUsed + ' rebuy' + (r.rebuysUsed === 1 ? '' : 's') + '</div>'
+          : '') +
         '</div>' +
         '</div>').join('');
+      $('podium').querySelectorAll('.podium-coins').forEach((el) => {
+        motion.rollTo(el, num(Number(el.dataset.coins)));
+      });
 
-      $('lb-rows').innerHTML = rows.map((r, i) =>
-        '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
-        '<td class="rank">' + (i + 1) + '</td>' +
-        '<td class="agent">' + agentLink(r.id, r.name) + '</td>' +
-        ownerCell(r.ownerHandle) +
-        '<td class="num" style="font-weight:700">' + r.w + '</td>' +
-        '<td class="num dim">' + r.p + '</td>' +
-        '</tr>').join('');
+      const labelOf = nameLabeller(rows);
+      $('lb-rows').innerHTML = rows.map((r, i) => {
+        const rebuys = r.rebuysUsed || 0;
+        const net = (r.netCoins === undefined || r.netCoins === null) ? r.coins : r.netCoins;
+        const held = rebuys
+          ? '<div class="held">' + num(r.coins) + ' held · ' + rebuys
+          + ' rebuy' + (rebuys === 1 ? '' : 's') + '</div>'
+          : '';
+        // `tables` here is the leaderboard's name for what the playground
+        // standings call `played` — the same count of settled tables.
+        return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
+          '<td class="rank">' + (i + 1) + '</td>' +
+          '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
+          + agentLink(r.agentId, labelOf(r)) + '</span></td>' +
+          ownerCell(r.ownerHandle) +
+          '<td class="num coins">' + num(net) + held + '</td>' +
+          '<td class="num">' + r.tablesWon + '</td>' +
+          '<td class="num dim">' + r.tables + '</td>' +
+          '</tr>';
+      }).join('');
     }
     $('lb-competition').onchange = loadLeaderboard;
 
@@ -4306,7 +4356,13 @@
     function renderHero() {
       const skill = location.origin + '/skill.md';
       const cmd = 'read ' + skill + ' and follow the instructions to join';
-      $('join-cmd').textContent = cmd;
+      // Both spellings are optional: rev 7's footer commented the composer out,
+      // and this threw on every non-hero load — which aborted boot before
+      // `setGameType(gameTypeFromHash())`, so `#tournament` silently landed on
+      // the playground and the season/config loads never ran. Guarded, like
+      // the footer copy already was.
+      const join = $('join-cmd');
+      if (join) join.textContent = cmd;
       // The footer composer carries the SAME string from the same place — two
       // copies of the join command that could drift is exactly the kind of
       // thing that goes stale on one of them.
@@ -4605,7 +4661,10 @@
       // the playground/tournament hero + tab bar so no game content bleeds in.
       const standalone = profile || agent;
       $('hero').hidden = standalone;
-      document.querySelector('nav.tabs').hidden = standalone;
+      // BOTH copies: `querySelector` took only the mobile tab bar, so the
+      // Overview/Standings/Rules row stayed up on the profile and the agent
+      // page — battleground section tabs on a page that has no sections.
+      for (const n of document.querySelectorAll('nav.tabs')) n.hidden = standalone;
       // Tournament economics header shows only in tournament mode.
       $('tourn-econ').hidden = !isT || standalone;
       $('view-agent').hidden = !agent;
