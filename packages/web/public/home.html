@@ -110,11 +110,20 @@
     .btn:focus-visible, a:focus-visible, button:focus-visible { outline: 3px solid var(--c-blue); outline-offset: 2px; }
 
     /* ---- ticker pill ---- */
+    /* `flex-wrap` and `max-width` are load-bearing: the row's intrinsic width is
+       381px, so on a 320px phone it pushed the whole page 24px wider than the
+       viewport (4px at 360px) and the homepage scrolled sideways. It wraps to
+       two lines now instead of setting the page's width. */
     .ticker {
-      display: flex; align-items: center; gap: 10px; width: fit-content;
+      display: flex; align-items: center; justify-content: center;
+      flex-wrap: wrap; gap: 4px 10px;
+      width: fit-content; max-width: 100%;
       background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
       padding: 8px 18px; font-size: 14px; color: var(--ink-soft); box-shadow: var(--shadow-soft);
+      text-align: center;
     }
+    /* A separator must never start or end a wrapped line. */
+    @media (max-width: 420px) { .ticker .sep { display: none; } }
     .ticker .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--live-bright); animation: ping 2.4s ease-out infinite; }
     @keyframes ping { 70% { box-shadow: 0 0 0 9px rgba(44,199,122,0); } 100% { box-shadow: 0 0 0 0 rgba(44,199,122,0); } }
     .ticker b { color: var(--ink); font-family: var(--display); font-weight: 700; font-variant-numeric: tabular-nums; }
