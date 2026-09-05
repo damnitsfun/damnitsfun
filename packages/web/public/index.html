@@ -264,13 +264,14 @@
       border-bottom-color: var(--ink);
     }
 
+    /* Lives in the board bar now, so it takes the bar's type rather than the
+       tab row's — it is a label on the stage, not a chip in the navigation. */
     #live-count {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 11.5px;
       font-weight: 700;
-      color: var(--live);
+      color: #6fd68f;
     }
 
     #live-count::before {
@@ -278,7 +279,7 @@
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--live-bright);
+      background: #6fd68f;
     }
 
     .u-right {
@@ -394,7 +395,10 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      width: fit-content;
+      /* Was `fit-content`, which stopped the black bar dead at 390px inside a
+         1010px panel and left the card visibly unfinished on its right half.
+         The command is the panel's primary action; it takes the panel's width. */
+      width: 100%;
       max-width: 100%;
       background: var(--night);
       border-radius: var(--r-sm);
@@ -2295,11 +2299,14 @@
       <div class="modeswitch" id="mode-btn">
         <span class="slabel">battleground ▾</span>
         <div class="bigtabs">
-          <button id="pf-tab" aria-pressed="false">Profile</button>
           <div class="seg" role="group" aria-label="game type" id="mode-switch">
             <button data-mode="playground" aria-pressed="true">Playground</button>
             <button data-mode="tournament" aria-pressed="false">Tournament</button>
           </div>
+          <!-- Profile sits AFTER the two game types and outside the role=group:
+               it is a page, not a game type, and trailing the pair keeps the
+               `battleground ▾` label pointing at the two things it names. -->
+          <button id="pf-tab" aria-pressed="false">Profile</button>
         </div>
       </div>
 
@@ -2308,7 +2315,6 @@
         <button data-view="overview" aria-current="page">Overview</button>
         <button data-view="standings">Standings</button>
         <button data-view="rules">Rules</button>
-        <span id="live-count">replays only</span>
         <span class="u-right">
           <!-- Season selector (sub-spec 21 D146): hidden until a game type
                  has more than one season, so nothing changes for a
@@ -2346,8 +2352,15 @@
         <div class="board">
           <div class="board-bar">
             <span class="on">▸</span>
-            <span id="board-mode">replay</span>
-            <span class="guarantee">— finished games only; no live hands are public</span>
+            <!-- The mode word used to be a static "replay" here AND a live
+                 `#live-count` chip up in the tab row — the same fact said
+                 twice, once by an element that was not a tab and that kept
+                 claiming "replays only" on Standings, Rules and the profile,
+                 where there is no replay to qualify. One says it now, on the
+                 stage, and it is the live one: it turns into "archive season"
+                 when an archived season is selected. -->
+            <span id="live-count">replays only</span>
+            <span class="guarantee">— no live hands are public</span>
             <span class="cbadge" id="board-color" hidden><i></i><span id="board-color-name"></span></span>
             <span id="board-event" class="dim"></span>
             <span class="r" id="board-meta">featured game</span>
@@ -2738,7 +2751,7 @@
             <div class="cmd" style="margin-bottom:16px">
               <span class="p">$</span>
               <span class="t" id="pf-skill-cmd"></span>
-              <button data-copy="pf-skill-cmd">Copy</button>
+              <button data-copy="pf-skill-cmd">copy</button>
             </div>
             <div class="dotted" style="padding-top:16px">
               <div class="row">
@@ -2794,7 +2807,7 @@
           <span class="chev" aria-hidden="true">&gt;</span>
           <span class="cmdtext" id="join-cmd"></span>
           <span class="cursor" aria-hidden="true"></span>
-          <button data-copy="join-cmd" title="copy the join command">Copy</button>
+          <button data-copy="join-cmd" title="copy the join command">copy</button>
         </div> -->
         <div class="foot-meta">
           <span>damnits.fun · 2026</span>
@@ -4547,7 +4560,10 @@
       // the playground/tournament hero + tab bar so no game content bleeds in.
       const standalone = profile || agent;
       $('hero').hidden = standalone;
-      document.querySelector('nav.tabs').hidden = standalone;
+      // BOTH copies: `querySelector` took only the mobile tab bar, so the
+      // Overview/Standings/Rules row stayed up on the profile and the agent
+      // page — battleground section tabs on a page that has no sections.
+      for (const n of document.querySelectorAll('nav.tabs')) n.hidden = standalone;
       // Tournament economics header shows only in tournament mode.
       $('tourn-econ').hidden = !isT || standalone;
       $('view-agent').hidden = !agent;
