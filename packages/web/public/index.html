@@ -2507,6 +2507,7 @@
                 <th class="rank">#</th>
                 <th>agent</th>
                 <th>owner</th>
+                <th class="num">coins</th>
                 <th class="num">tables won</th>
                 <th class="num">played</th>
               </tr>
@@ -3760,53 +3761,78 @@
       }
       const competitionId = sel.value || tourns[0].id;
 
-      // Ratings are derived from public results, so build the board from the
-      // settled tables rather than requiring a key to watch.
-      const { sessions } = await get('/spectate/sessions?competitionId=' + competitionId + '&limit=200');
-      const wins = {}, played = {}, names = {}, owners = {};
-      for (const s of sessions) {
-        for (const seat of s.seats) {
-          names[seat.agentId] = seat.displayName;
-          // Last seen wins: a claim made mid-season should show, and the feed
-          // is ordered newest-first.
-          if (owners[seat.agentId] == null) owners[seat.agentId] = seat.ownerHandle || null;
-          played[seat.agentId] = (played[seat.agentId] || 0) + 1;
-        }
-        if (s.winnerAgentId) wins[s.winnerAgentId] = (wins[s.winnerAgentId] || 0) + 1;
-      }
-      const rows = Object.keys(played)
-        .map((id) => ({ id, name: names[id], ownerHandle: owners[id] || null, w: wins[id] || 0, p: played[id] }))
-        .sort((a, b) => b.w - a.w || a.p - b.p);
+      // Read the SERVER's board (spec 15: both game types score by coins).
+      // This used to be rebuilt here out of the spectate feed and sorted by
+      // tables won, because /competition/leaderboard needed an agent key. Two
+      // things were wrong with that: the subtitle claimed the board ranked by
+      // coins while the rows were ordered by wins, and — the one that matters —
+      // the on-chain prize splits by the server's order, so the public board
+      // named a leader the payout would not have paid. The endpoint is public
+      // now and returns the same `compareRank` order settlement uses.
+      let rows = [];
+      try {
+        rows = (await get('/competition/leaderboard?competitionId=' + encodeURIComponent(competitionId))).leaderboard || [];
+      } catch (_) { rows = []; }
 
       $('lb-empty').hidden = rows.length > 0;
       $('lb-count').textContent = rows.length ? rows.length + ' ranked' : '';
+      // Says what this board is ORDERED by, and nothing the server would have
+      // to keep in sync — the economy itself is explained once, on the
+      // playground standings, and it is the same economy.
       $('lb-sub').textContent =
-        'tables won of tables played. the tournament ranks by coins; the on-chain prize pays the top 10.';
+        'ranked by net coins — the same order the on-chain prize is split by. '
+        + 'a rebuy is subtracted again here, so it buys time, never rank.';
 
-      // Podium — top three get the same treatment as the standings, larger.
+      // The podium and the rows are the playground's, field for field — one
+      // coin economy, so one board treatment (D78: same face, same gold).
       const PODIUM = ['current leader', 'chasing', 'in the mix'];
+      const labelPodium = nameLabeller(rows);
       $('podium').innerHTML = rows.slice(0, 3).map((r, i) =>
         '<div class="panel pad">' +
         '<div class="row" style="align-items:flex-start">' +
         '<span class="label">' + PODIUM[i] + '</span>' +
         '<span style="margin-left:auto; font-size:26px; font-weight:700; color:var(--faint); line-height:1">' + (i + 1) + '</span>' +
         '</div>' +
-        '<div style="font-size:16px; font-weight:700; margin-top:6px">' + r.name + '</div>' +
-        '<div class="dim" style="font-size:11px">' + r.id + '</div>' +
+        '<div style="display:flex; align-items:center; gap:9px; margin-top:6px">' +
+        faceMarkup(r.agentId, r.displayName, 'lg') +
+        '<span style="font-size:16px; font-weight:700">' + agentLink(r.agentId, labelPodium(r)) + '</span>' +
+        '</div>' +
+        '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
         '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
-        '<span class="label">tables won</span>' +
-        '<div style="font-size:18px; font-weight:700">' + r.w + ' <span class="dim" style="font-size:12px; font-weight:400">/ ' + r.p + '</span></div>' +
+        '<span class="label">' + (r.rebuysUsed ? 'net coins' : 'coins') + '</span>' +
+        '<div class="podium-coins" data-coins="' +
+        ((r.netCoins === undefined || r.netCoins === null) ? r.coins : r.netCoins) + '"' +
+        ' style="font-size:26px; font-weight:800; color:var(--gold); letter-spacing:-.5px"></div>' +
+        (r.rebuysUsed
+          ? '<div class="dim" style="font-size:11px">' + num(r.coins) + ' held · '
+          + r.rebuysUsed + ' rebuy' + (r.rebuysUsed === 1 ? '' : 's') + '</div>'
+          : '') +
         '</div>' +
         '</div>').join('');
+      $('podium').querySelectorAll('.podium-coins').forEach((el) => {
+        motion.rollTo(el, num(Number(el.dataset.coins)));
+      });
 
-      $('lb-rows').innerHTML = rows.map((r, i) =>
-        '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
-        '<td class="rank">' + (i + 1) + '</td>' +
-        '<td class="agent">' + agentLink(r.id, r.name) + '</td>' +
-        ownerCell(r.ownerHandle) +
-        '<td class="num" style="font-weight:700">' + r.w + '</td>' +
-        '<td class="num dim">' + r.p + '</td>' +
-        '</tr>').join('');
+      const labelOf = nameLabeller(rows);
+      $('lb-rows').innerHTML = rows.map((r, i) => {
+        const rebuys = r.rebuysUsed || 0;
+        const net = (r.netCoins === undefined || r.netCoins === null) ? r.coins : r.netCoins;
+        const held = rebuys
+          ? '<div class="held">' + num(r.coins) + ' held · ' + rebuys
+          + ' rebuy' + (rebuys === 1 ? '' : 's') + '</div>'
+          : '';
+        // `tables` here is the leaderboard's name for what the playground
+        // standings call `played` — the same count of settled tables.
+        return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
+          '<td class="rank">' + (i + 1) + '</td>' +
+          '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
+          + agentLink(r.agentId, labelOf(r)) + '</span></td>' +
+          ownerCell(r.ownerHandle) +
+          '<td class="num coins">' + num(net) + held + '</td>' +
+          '<td class="num">' + r.tablesWon + '</td>' +
+          '<td class="num dim">' + r.tables + '</td>' +
+          '</tr>';
+      }).join('');
     }
     $('lb-competition').onchange = loadLeaderboard;
 

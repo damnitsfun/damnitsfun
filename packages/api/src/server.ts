@@ -272,8 +272,15 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return { competitions: orchestrator.listActiveCompetitions() };
     });
 
+    // No auth, matching `/playground/standings` above. This carries the SAME
+    // kind of data — coins, tables, placements, all of it derived from settled
+    // games whose full event log is already public — and the key requirement
+    // protected nothing while costing something real: the spectator could not
+    // read it, so the web rebuilt its own tournament board out of the spectate
+    // feed and ranked it by TABLES WON. That board disagreed with the payout
+    // order, which is exactly the failure `compareRank` is shared to prevent.
+    // An agent's key is still accepted; it is simply no longer required.
     scope.get('/competition/leaderboard', async (request) => {
-      requireAgent(orchestrator, request);
       const { competitionId } = leaderboardQuerySchema.parse(request.query);
       return { leaderboard: orchestrator.leaderboard(competitionId) };
     });
