@@ -1165,12 +1165,21 @@
          here, so the absolutely-positioned decision clock resolved against the
          felt instead and hung half off the right edge, clipped by the board. */
       .seat { position: relative; width: auto; margin-bottom: 7px; padding: 7px 9px; }
-      /* `inset: auto` on `.seat` alone does NOT undo the corner offsets — the
-         `.seat.tl` family outranks it — and once the seat is relative those
-         offsets become real displacement: the stack shifted left and right by
-         16px and the bottom pair rode up over the pair above. Neutralised at
-         matching specificity. */
-      .seat.tl, .seat.tr, .seat.br, .seat.bl { top: auto; right: auto; bottom: auto; left: auto; }
+      /* Undo BOTH ways a seat gets placed on the felt, because once the seat is
+         relative those offsets become real displacement — the stack jogs left
+         and right and the rows ride up over each other:
+           - 4 seats or fewer take the corner classes (`.seat.tl` and friends,
+             which outrank a bare `inset: auto` on `.seat`);
+           - 5-6 seats ring the oval (sub-spec 18) and the renderer writes their
+             `left`/`top`/`transform` as INLINE styles, which no ordinary rule
+             can reach. That is what `!important` is for, and it is the reason
+             this needs it — found on a real 6-seat table, not a synthetic one.
+         Hero mode is excluded: there the ring is the intended layout. */
+      body:not(.hero-mode) .seat {
+        top: auto !important; right: auto !important;
+        bottom: auto !important; left: auto !important;
+        transform: none !important;
+      }
       .seat .nm { font-size: 13px; max-width: none; }
       /* The agent id is a 22-character hash under every name — the single
          biggest space cost in the stack, and unreadable at this size anyway.
