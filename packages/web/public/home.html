@@ -232,8 +232,14 @@
     /* ---- the game: turn explainer ---- */
     .turngrid { display: grid; grid-template-columns: .92fr 1.08fr; gap: 40px; align-items: center; margin-bottom: 20px; }
     .turngrid p { color: var(--ink-soft); margin: 0 0 12px; }
+    /* Both card figures sit on the FELT, the same ground the replay table uses
+       (`.felt` in index.html: the same radial, the same two greens). The cards
+       on this page are the replay's deck; showing them on a white panel and a
+       mint one made three different tables out of one product. */
     .fanfig {
-      margin: 0; background: var(--panel); border: 1px solid var(--line);
+      margin: 0;
+      background: radial-gradient(circle at 50% 48%, #113d28 0%, #071912 82%);
+      border: 1px solid #0d2a1c;
       border-radius: var(--r-lg); box-shadow: var(--shadow-lift);
       padding: 44px 24px 30px; text-align: center;
     }
@@ -247,10 +253,10 @@
     }
     .slot:hover { z-index: 6; }
     .slot:hover .pc { transform: rotate(calc(var(--i) * 7deg)) translateY(calc(var(--y, 0px) - 14px)) scale(1.06); }
-    .fanfig .rule { margin: 24px 0 4px; font-size: 15px; color: var(--ink-soft); }
-    .fanfig .rule b { color: var(--ink); font-weight: 700; }
-    .fanfig figcaption { margin-top: 8px; font-size: 13.5px; color: var(--ink-faint); }
-    .fanfig figcaption .ok { color: var(--live); font-weight: 700; }
+    .fanfig .rule { margin: 24px 0 4px; font-size: 15px; color: #c3dbcd; }
+    .fanfig .rule b { color: #eef4ef; font-weight: 700; }
+    .fanfig figcaption { margin-top: 8px; font-size: 13.5px; color: #9dbfab; }
+    .fanfig figcaption .ok { color: #6fd68f; font-weight: 700; }
     @keyframes dealin { from { opacity: 0; transform: translateY(30px) scale(.92); } }
 
     /* ---- cards: vivid solid faces, white ring, corner suns (no oval, no wedge) ---- */
@@ -326,22 +332,28 @@
     /* ---- rainbow storm ---- */
     .storm-grid { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); gap: 40px; align-items: center; }
     .storm-fig {
-      margin: 0; background: radial-gradient(120% 100% at 50% 0%, var(--felt) 0%, var(--felt-deep) 90%);
-      border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lift);
+      margin: 0; background: radial-gradient(circle at 50% 48%, #113d28 0%, #071912 82%);
+      border: 1px solid #0d2a1c; border-radius: var(--r-lg); box-shadow: var(--shadow-lift);
       padding: 34px 22px 26px; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center;
     }
-    .storm-effect { color: #14402a; font-size: 14.5px; margin: 0; font-weight: 500; }
-    .storm-effect b { font-weight: 800; }
+    .storm-effect { color: #c3dbcd; font-size: 14.5px; margin: 0; font-weight: 500; }
+    .storm-effect b { font-weight: 800; color: #eef4ef; }
     .st-victims { display: flex; gap: 18px; justify-content: center; }
     .st-v { display: flex; flex-direction: column; align-items: center; gap: 7px; }
     .st-stack { display: flex; }
     .st-back {
-      width: 21px; height: 30px; border-radius: 4px; border: 1.5px solid #fff;
-      background: var(--night); margin-left: -12px; box-shadow: 0 2px 5px rgba(34,32,26,.35);
+      width: 21px; height: 30px; border-radius: 4px; border: 1.5px solid rgba(255, 255, 255, .85);
+      /* D97's card back, the one the replay deals — `--night` is near-black and
+         would have disappeared into the felt this figure now sits on. */
+      background:
+        linear-gradient(225deg, rgba(111, 214, 143, .30) 0 34%, transparent 34%),
+        linear-gradient(45deg, rgba(111, 214, 143, .30) 0 34%, transparent 34%),
+        radial-gradient(circle at 50% 50%, #24704a 0%, #123a26 78%);
+      margin-left: -12px; box-shadow: 0 2px 5px rgba(0, 0, 0, .4);
     }
     .st-back:first-child { margin-left: 0; }
-    .st-n { font: 800 12px/1 var(--display); color: #14402a; }
-    .storm-fig figcaption { color: #2e6b46; font-size: 12px; line-height: 1.6; }
+    .st-n { font: 800 12px/1 var(--display); color: #9dbfab; }
+    .storm-fig figcaption { color: #9dbfab; font-size: 12px; line-height: 1.6; }
     .storm-odds {
       border-left: 3px solid var(--gold-bright); border-radius: 3px;
       padding: 10px 0 10px 16px; margin: 18px 0 0; color: var(--ink-soft); font-size: 14.5px;
