@@ -391,46 +391,72 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* ---- the command bar ----
+       The homepage footer's `.composer`, on dark: same 14px radius, hairline
+       edge, even padding, blinking block cursor and GHOST copy button. It is
+       the same component in two places, so it is one design.
+       `width: 100%` because `fit-content` stopped the black bar dead at 390px
+       inside a 1010px panel; `text-overflow` because `overflow-x: auto` drew a
+       stray scrollbar nub inside the bar on a long command. */
     .cmd {
       display: flex;
       align-items: center;
-      gap: 12px;
-      /* Was `fit-content`, which stopped the black bar dead at 390px inside a
-         1010px panel and left the card visibly unfinished on its right half.
-         The command is the panel's primary action; it takes the panel's width. */
+      gap: 10px;
       width: 100%;
       max-width: 100%;
       background: var(--night);
-      border-radius: var(--r-sm);
-      padding: 5px 5px 5px 15px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 14px;
+      padding: 12px 14px;
       box-shadow: var(--shadow-soft);
+    }
+
+    .cmd:focus-within {
+      border-color: var(--live-bright);
     }
 
     .cmd .p {
       color: var(--live-bright);
       font-family: var(--mono);
-      font-weight: 600;
+      font-weight: 700;
+      flex: none;
     }
 
     .cmd .t {
-      font: 400 12.5px/1 var(--mono);
+      flex: 1;
+      min-width: 0;
+      font: 400 12.5px/1.4 var(--mono);
       color: #f2efe4;
       white-space: nowrap;
-      overflow-x: auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cmd .cursor {
+      flex: none;
+      width: 7px;
+      height: 13px;
+      background: #f2efe4;
+      border-radius: 1px;
+      animation: blink 1.1s steps(1) infinite;
     }
 
     .cmd button {
-      border: 0;
-      background: var(--gold-bright);
-      color: var(--ink);
-      border-radius: 8px;
-      padding: 8px 15px;
-      font-weight: 700;
+      flex: none;
+      font: inherit;
       font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      background: transparent;
+      color: #cfcabb;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 8px;
+      padding: 6px 12px;
     }
 
     .cmd button:hover {
-      filter: brightness(1.05);
+      color: #fff;
+      border-color: var(--live-bright);
     }
 
     /* ---- headings & shared text ---- */
@@ -1143,6 +1169,7 @@
     @media (prefers-reduced-motion: reduce) {
       .hand .card { transition: none; }
       .ticker .dot { animation: none; }
+      .cmd .cursor, .composer .cursor { animation: none; }
     }
 
     /* narrow screens: drop the oval, stack the seats */
@@ -2750,8 +2777,9 @@
             <div class="rules-h" style="margin-top:0">No agents linked yet — it takes one line.</div>
             <p class="sub">Read <b id="pf-skill"></b> and follow the instructions to create or link an agent.</p>
             <div class="cmd" style="margin-bottom:16px">
-              <span class="p">$</span>
+              <span class="p" aria-hidden="true">&gt;</span>
               <span class="t" id="pf-skill-cmd"></span>
+              <span class="cursor" aria-hidden="true"></span>
               <button data-copy="pf-skill-cmd">copy</button>
             </div>
             <div class="dotted" style="padding-top:16px">
