@@ -2,10 +2,18 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { createSettlementChain } from './chain';
+import { createSettlementChain, readNativeBalance } from './chain';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { openDatabase, type Db } from './db/index';
+import { explorerBaseUrl } from './explorer';
+import {
+  createIdentityRegistrar,
+  reconcileIdentities,
+  registrationDocument,
+  type IdentityRegistrar,
+} from './erc8004';
+import { createWalletStore } from './agent-wallet';
 import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
 import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
@@ -43,6 +51,13 @@ export interface BuildOptions {
   config: Config;
   orchestrator?: Orchestrator;
   logger?: boolean;
+  /**
+   * ERC-8004 identity registrar (sub-spec 23, D176). Injected by `start()` only,
+   * exactly like the chain clients: absent here means no registration is ever
+   * attempted, so a test or a chainless deployment cannot reach the network by
+   * accident.
+   */
+  registrar?: IdentityRegistrar | null;
 }
 
 export interface BuiltServer {
@@ -205,6 +220,24 @@ export function buildServer(options: BuildOptions): BuiltServer {
 
   const cookieSecure = config.publicBaseUrl.startsWith('https://');
 
+  // ---- ERC-8004 identity reconciliation (sub-spec 23, D176) -----------------
+  // One pass gives an identity to every agent that has a wallet and none yet. It
+  // is a no-op when no registrar was injected, which is the case for every test
+  // and every chainless deployment.
+  const identityWalletStore = createWalletStore(config.walletEncryptionKey);
+  const runIdentityPass = async (): Promise<void> => {
+    if (!options.registrar) return;
+    await reconcileIdentities({
+      db,
+      registrar: options.registrar,
+      walletStore: identityWalletStore,
+      publicBaseUrl: config.publicBaseUrl,
+      apiBaseUrl: `${config.publicBaseUrl.replace(/\/$/, '')}${CANONICAL_BASE}`,
+      chainId: config.bscChainId,
+      log: (m) => app.log.info(m),
+    });
+  };
+
   // ---------------------------------------------------------------------------
   // The API surface (§5). Registered once as an encapsulated set of relative
   // routes, then mounted under BOTH the canonical `/api/battleground` prefix and
@@ -251,12 +284,33 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // was previously no way to tell from outside which one was live.
       payoutFieldFraction: config.payoutFieldFraction,
       payoutTiers: config.payoutSchedule.length,
+      // Sub-spec 23 (D173): the chain this deployment actually anchors to, so the
+      // web can LINK the settlement it has always only described. Published rather
+      // than hard-coded for the same reason as the payout depth above — a page
+      // that states a contract address is a page that can be wrong about it.
+      //
+      // Every field is nullable and a null renders no link: a local box with no
+      // contracts configured must still serve this endpoint, and an unknown chain
+      // id has no explorer we can honestly point at.
+      chainId: config.bscChainId,
+      escrowAddress: config.escrowContractAddress,
+      tournamentAddress: config.tournamentContractAddress,
+      explorerBaseUrl: explorerBaseUrl(config.bscChainId),
     }));
 
     // ---- register (no auth) -------------------------------------------------
     scope.post('/register', async (request, reply) => {
       const { displayName } = registerSchema.parse(request.body);
       const { agentId, apiKey } = orchestrator.registerAgent(displayName);
+      // Give the new agent an on-chain identity — but never inside this request
+      // (D175). `registerAgent` is a synchronous better-sqlite3 transaction; an
+      // on-chain write against a third-party registry does not belong in the same
+      // call, and this endpoint must answer at the same speed whether that
+      // registry is reachable, unreachable or hanging.
+      //
+      // Deliberately not awaited, and it cannot reject: `reconcileIdentities`
+      // catches everything and leaves the work for the next pass.
+      void runIdentityPass();
       return reply.status(201).send({
         agentId,
         apiKey,
@@ -329,6 +383,26 @@ export function buildServer(options: BuildOptions): BuiltServer {
       };
     });
 
+    // The agent's ERC-8004 registration document (sub-spec 23, T117/D178).
+    //
+    // This is the `agentUri` the on-chain identity points at. Served live rather
+    // than frozen into a base64 `data:` URI at registration, so it can reflect
+    // what the agent became — and so the one write that registers it never has
+    // to be followed by a second write to correct it.
+    //
+    // Public and unauthenticated, exactly like the profile it describes: an
+    // identity nobody can resolve is not an identity.
+    scope.get<{ Params: { agentId: string } }>('/agent/:agentId/erc8004.json', async (request) => {
+      // Throws ApiError(404, AGENT_NOT_FOUND), which the shared error handler
+      // renders — same as every other agent-scoped route.
+      return registrationDocument({
+        agent: orchestrator.getAgent(request.params.agentId),
+        publicBaseUrl: config.publicBaseUrl,
+        apiBaseUrl: `${config.publicBaseUrl.replace(/\/$/, '')}${CANONICAL_BASE}`,
+        chainId: config.bscChainId,
+      });
+    });
+
     scope.get<{ Params: { agentId: string } }>('/agent/:agentId/tables', async (request) => {
       const { agentId } = request.params;
       const q = request.query as { competitionId?: string; limit?: string; before?: string };
@@ -373,6 +447,16 @@ export function buildServer(options: BuildOptions): BuiltServer {
         coinsTotal: agent.coins,
         claimed: claim.claimed,
         owner: claim.owner,
+        // Sub-spec 23 (D180): what the agent's own wallet actually holds on chain.
+        // Native only — the MOCK token proposed alongside this was rejected, so
+        // there is no second balance to read.
+        //
+        // Best-effort: `null` on any RPC failure, never a 500. This endpoint is
+        // on the onboarding path, and a chain hiccup must cost a field, not the
+        // response.
+        balances: { native: await readNativeBalance(config, agent.wallet_address) },
+        // The ERC-8004 token id, null until a reconciler pass lands one (D176).
+        erc8004AgentId: agent.erc8004_agent_id,
       };
     });
 
@@ -698,7 +782,35 @@ export async function start(): Promise<void> {
     );
   }
 
-  const { app } = buildServer({ db, config, orchestrator, logger: true });
+  // Sub-spec 23 (D176/D177): agents sign their own ERC-8004 registrations with
+  // the custodial EOA they are already issued. Measured free on chain 97 — the
+  // MegaFuel paymaster sponsors the write — so an empty agent wallet is enough.
+  // Null when the chain has no known registry, which disables the whole path.
+  const registrar = createIdentityRegistrar({
+    chainId: config.bscChainId,
+    rpcUrl: config.bscTestnetRpcUrl,
+  });
+
+  const { app } = buildServer({ db, config, orchestrator, logger: true, registrar });
+
+  // Catch up on anything a previous process left unregistered, then keep going.
+  // Not awaited: a slow or unreachable registry must not delay accepting traffic,
+  // and identity is decoration on a system that already works without it.
+  if (registrar) {
+    void reconcileIdentities({
+      db,
+      registrar,
+      walletStore: createWalletStore(config.walletEncryptionKey),
+      publicBaseUrl: config.publicBaseUrl,
+      apiBaseUrl: `${config.publicBaseUrl.replace(/\/$/, '')}${CANONICAL_BASE}`,
+      chainId: config.bscChainId,
+      log,
+    }).then((s) => {
+      if (s.registered > 0 || s.failed > 0) {
+        log(`[boot] erc8004: registered ${s.registered}, failed ${s.failed} (retried next pass)`);
+      }
+    });
+  }
 
   // Sweep decision deadlines even when nobody is polling, so a table with an
   // unresponsive agent still progresses (T10).

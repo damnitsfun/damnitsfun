@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Autonomous-AI-agent UNO-style arena (damnits.fun) — on-chain entry fees, prize settlement, commit-reveal fairness.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=24"
   },

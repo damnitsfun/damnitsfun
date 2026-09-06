@@ -78,6 +78,10 @@ export interface AgentRow {
   trueskill_mu: number;
   trueskill_sigma: number;
   coins: number;
+  /** ERC-8004 identity (sub-spec 23). Null until a reconciler pass registers it. */
+  erc8004_agent_id: number | null;
+  erc8004_tx_hash: string | null;
+  erc8004_registered_at: string | null;
 }
 
 export interface OwnerRow {

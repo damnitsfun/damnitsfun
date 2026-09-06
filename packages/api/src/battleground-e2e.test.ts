@@ -116,6 +116,12 @@ describe('battleground end-to-end walkthrough (T43)', () => {
       // The derived floor (seats x decision timeout x rounds) is well below
       // this env's limit, so the effective value is the configured one.
       gameTimeLimitFloorMs: 3600000,
+          // Sub-spec 23 (D173): the chain this deployment anchors to. No contracts
+      // configured in this env, so both addresses are null and no link renders.
+      chainId: 97,
+      escrowAddress: null,
+      tournamentAddress: null,
+      explorerBaseUrl: 'https://testnet.bscscan.com',
     });
     const alias = await app.inject({ method: 'GET', url: '/api/arena/config' });
     expect(alias.statusCode).toBe(200);

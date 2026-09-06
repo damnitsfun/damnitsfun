@@ -44,7 +44,7 @@ registration (sub-spec 14). Giving that EOA an on-chain identity is additive —
 | ERC-8004 ReputationRegistry, chain 97 | `0x8004B663056A597Dffe9eCcC1965A193B7388713` — **deployed** |
 | SDK | `@bnbagent/sdk@0.5.5`, MIT, TypeScript, viem-based, Node ≥ 20, published 2026-08-27 |
 | MegaFuel testnet paymaster | `bsc-megafuel-testnet.nodereal.io` — **live**, answers `pm_isSponsorable` |
-| ...for an unsponsored probe | returned `{"sponsorable": false}` — sponsorship is policy-gated, never automatic |
+| ...for a dummy probe | returned `{"sponsorable": false}` — a **false negative**; see D177, where a real registration came back free |
 | BSCScan REST data API | deprecated Dec 2025 — **we do not use it**; only `demo.ts:45` builds explorer URLs |
 
 The SDK is `viem`-based and Node ≥ 20, so it drops into this stack without a second chain
@@ -130,22 +130,42 @@ a chain outage must never corrupt or block a finished game. An agent that never 
 identity registers, plays, settles and gets paid exactly as before. This is decoration on a
 working system and must behave like it.
 
-**D177 — the operator registers; the agent's own EOA is named inside the document.** The
-identity registry is an ERC-721 and somebody has to own the token. Every agent's custodial
-wallet holds zero tBNB, so agent-owned registration needs either confirmed sponsorship (which
-we do not control — see D179) or a funding transfer per agent, i.e. two writes each instead
-of one. The operator key is already funded and already the only address this arena signs
-with.
+**D177 — each agent registers with its own wallet, and it costs nothing. MEASURED.**
 
-It is also the more honest description: this arena **is** custodial, and says so in
-`agent-wallet.ts`'s own header. The agent's EOA is named as the agent's address inside the
-registration document, so the on-chain record still resolves to the wallet a prize would
-actually be paid to.
+The identity registry is an ERC-721 and somebody has to own the token. Every agent's custodial
+wallet holds zero tBNB, so agent-owned registration only works if it is genuinely sponsored —
+which the SDK's README claims and a `pm_isSponsorable` probe appeared to contradict.
 
-**This is the fallback, not the default.** T118 settles which signer to build *before* the
-reconciler exists (D179): if an empty wallet can register, agent-owned wins and this decision
-is never exercised. Write the signer behind a single seam either way, so the choice stays a
-one-line change rather than a redesign.
+**T118 settled it, and the answer is yes.** A wallet holding exactly 0 tBNB registered
+successfully on chain 97:
+
+| | |
+|---|---|
+| Registering address | `0xfd311F0D78DD220e5dEeB53CAB1EE80A521E0478`, balance **0 tBNB** |
+| Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` (chain 97) |
+| Token id assigned | **2193** |
+| Transaction | `0xe596b5397a16ff60c5406281217a1b3a9846f43e193590ddfa5c96e26d3568cc` |
+| Receipt status | `0x1` — success |
+| `effectiveGasPrice` | **0** |
+| Gas used | 483,497, at zero price ⇒ **total cost 0 wei** |
+| Elapsed | ~6 s |
+
+Confirmed independently of the SDK by reading the receipt straight from the RPC. So the
+agent's **own EOA** signs its own registration, the agent owns its own identity, and
+onboarding costs nothing — no funding transfer, no operator custody of the token, and one
+write per agent.
+
+The earlier `sponsorable: false` reading was exactly the false negative it looked like: a
+dummy sender and empty calldata are not a registration, and MegaFuel's policy keys on what
+the transaction actually does.
+
+**Two things this does not license.** Sponsorship is a policy someone else operates and can
+withdraw, so the reconciler must still work when a registration costs real gas or fails
+outright (D176 already requires this — nothing here weakens it), and T121 keeps recording the
+effective gas price in production so a withdrawn policy shows up as data rather than as a
+mystery. The private key is decrypted from our own AES-256-GCM store for the length of one
+signature and the SDK is constructed with `persist: false`, so it never writes a Keystore V3
+file to `~/.bnbagent/wallets/` — our store stays the only place a key lives at rest.
 
 **D178 — `agentUri` is a live JSON document this API serves, not a frozen `data:` URI.** A
 new public route, `GET /agent/:id/erc8004.json`, returns the ERC-8004 registration file for
@@ -176,13 +196,17 @@ effective gas price with the registration and let the truth be whatever it is. N
 user-facing, nothing in a pitch, and no "gasless" claim anywhere until a real registration
 has come back sponsored.
 
-**And the question is settled before the reconciler is written, not after — T118 runs first.**
-The test is binary and costs nothing: generate a wallet holding **zero tBNB** and try to
-register it. An empty wallet either can or it cannot. If it can, sponsorship is real, D177
-flips to agent-owned, agents own their own identities and onboarding genuinely costs no gas.
-If it cannot, D177 stands exactly as written and no claim about gas is made anywhere.
-Running this probe after the reconciler would mean building one signer and then possibly
-rewriting it; running it first builds the right one once.
+**Answered by T118: it is sponsored.** The test was binary and cost nothing — a wallet holding
+zero tBNB either can register or it cannot, and it could: token 2193, receipt status `0x1`,
+`effectiveGasPrice` 0, total cost 0 wei (D177 carries the full record). So D177 is
+agent-owned, and "onboarding an agent costs no gas, sponsored by BNB Chain's own MegaFuel
+paymaster" is a claim this project can now make and prove.
+
+What does **not** follow is that it will stay true. Sponsorship is a policy operated by
+somebody else and it can be narrowed or withdrawn without notice, so T121 keeps recording the
+effective gas price of every registration in production. The day it stops being zero, that
+shows up as data rather than as a mystery — and because D176 already requires the reconciler
+to survive a registration that fails outright, nothing breaks when it does.
 
 ---
 
@@ -272,18 +296,21 @@ tools. Most are rejected, and the reasons matter more than the list:
 **None blocking.** Both had a real answer available, so both are decided here rather than
 left open; what follows is the reasoning, so nobody re-opens them in October.
 
-**Is sponsored registration real on chain 97? — Decided: find out first, in ten minutes.**
-The SDK's README says registration is gas-free there via MegaFuel. A direct probe of the
-paymaster returned `sponsorable: false` for a call to the identity registry — but that probe
-used a dummy sender and empty calldata, which is not a registration, so it disproves nothing.
+**Is sponsored registration real on chain 97? — ANSWERED: yes, measured.** It was going to be
+decided by a ten-minute test rather than by reading a README, and it was. A wallet holding
+zero tBNB registered as token **2193** for **0 wei**, confirmed against the raw receipt as
+well as the SDK's own return value. D177 is therefore agent-owned: every agent signs its own
+registration with the EOA sub-spec 14 already issues it, and onboarding costs nothing.
 
-The honest resolution is not to guess and not to instrument after the fact, but to run the
-one test that cannot be ambiguous: **an empty wallet either can register or it cannot.**
-That is T118, it runs before the reconciler exists, and its result picks the signer D177
-builds. The lean going in is that it *is* sponsored — the README is specific rather than
+The lean going in was that it *would* be sponsored — the README was specific rather than
 vague, and BNB Chain markets the number of agents registered on BSC, so it has an obvious
-reason to pay for registrations. But that is a guess about somebody else's billing policy,
-and this spec does not build on one when the measurement is this cheap.
+reason to pay. That guess turned out right, which is not a reason to have built on it: the
+measurement cost ten minutes and the `pm_isSponsorable` probe that preceded it said the
+opposite. Had we trusted either one, we would have shipped the wrong signer.
+
+The live question that replaces it is **durability**, and T121 is the answer: somebody else
+operates this policy and can withdraw it, so production keeps recording the effective gas
+price of every registration. Zero is the expected value, not a guaranteed one.
 
 **Should the identity carry anything beyond identity? — Decided: no code, but say so out
 loud.** ERC-8004 has a ReputationRegistry live at `0x8004B663…` on chain 97, and this arena
