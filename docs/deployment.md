@@ -100,6 +100,53 @@ Both contracts share one operator, `0xF977F34dB8a986A0A9edec3E744092c715EF793c`
 | BscScan (contract) | <https://testnet.bscscan.com/address/0x9B03Ae8dbda61f5FA7933cc7329021F533727e90> |
 | BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xea6cc9581b89ada5e8823c120a2134dbaa00288309b7804aba0bc6ee4163dbce> |
 
+## Source verification on BscScan (sub-spec 23, T110/D170)
+
+The hackathon submission portal turns the contract address into a BscScan link on
+our own submission page, and BNB Chain's evaluation guide names a verified contract
+outright. All four contracts below (production + staging) must show source.
+
+**These contracts are already deployed and must NOT be redeployed to earn a
+verified badge** — the escrow rows of every settled table point at these
+addresses. Verify retroactively:
+
+```bash
+cd packages/contracts
+set -a && source ../../.env && set +a       # needs ETHERSCAN_API_KEY
+
+# Constructor args are the same for all four: the operator address.
+# Confirmed against the live contract with:
+#   cast call <addr> "operator()(address)" --rpc-url "$BSC_TESTNET_RPC_URL"
+ARGS=$(cast abi-encode "constructor(address)" 0xF977F34dB8a986A0A9edec3E744092c715EF793c)
+
+for pair in \
+  "0x9B03Ae8dbda61f5FA7933cc7329021F533727e90 src/DamnitsTournament.sol:DamnitsTournament" \
+  "0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6 src/DamnitsEscrow.sol:DamnitsEscrow" \
+  "0x121751F6410a78D763D2f2D24704cfb22AeFABc3 src/DamnitsTournament.sol:DamnitsTournament" \
+  "0xcDB87fB9600f585BbC591e5143c9aEB2693e4Ed9 src/DamnitsEscrow.sol:DamnitsEscrow"
+do
+  set -- $pair
+  forge verify-contract --chain 97 "$1" "$2" \
+    --verifier etherscan --etherscan-api-key "$ETHERSCAN_API_KEY" \
+    --constructor-args "$ARGS" --watch
+done
+```
+
+`ETHERSCAN_API_KEY` must be an **Etherscan V2** key from
+<https://etherscan.io/myapikey> — one key covers every chain, and legacy
+BscScan-issued keys are rejected. The compiler is pinned (solc 0.8.36, optimizer
+200 runs, `cancun`) in `foundry.toml`, so the bytecode matches without further
+flags.
+
+New deploys verify themselves: both deploy scripts now document `--verify`.
+
+| Contract | Verified |
+|---|---|
+| production `DamnitsTournament` | ☐ |
+| production `DamnitsEscrow` | ☐ |
+| staging `DamnitsTournament` | ☐ |
+| staging `DamnitsEscrow` | ☐ |
+
 ### Staging
 
 Its own contract pair, deployed per `docs/deploy-aws-ec2.md` §2.7. **No address

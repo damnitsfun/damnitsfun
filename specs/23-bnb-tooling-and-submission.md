@@ -178,6 +178,14 @@ one already has a sibling: `GET /agent/me` returns `profileUrl` (sub-spec 19 D12
 public page with the agent's history and every replay. The JSON document sits beside that
 page and points at it, so the on-chain identity resolves to the real product surface.
 
+**One consequence, found by running it rather than by reading about it.** The registry
+*resolves* the `agentUri` before it accepts a registration, behind an SSRF guard that rejects
+loopback and private addresses — so a document served from `http://localhost:8080` is
+unregisterable by construction. That is the price of a live document over a frozen one and it
+is worth paying, but it means identities only register from a **publicly reachable
+deployment**. The reconciler recognises such a base URL, counts those agents as `skipped`, and
+says so once, rather than retrying forever with a confusing parse error on every dev box.
+
 Because the URL is stable, the SDK's second registration phase (regenerate the URI with the
 token id, then `setAgentUri`) is unnecessary — the document renders its own `registrations`
 from the stored id. A phase-2 `ERC8004PartialRegistrationError` is therefore **caught and
@@ -252,7 +260,7 @@ tools. Most are rejected, and the reasons matter more than the list:
 
 | # | Task |
 |---|---|
-| **T110** | Verify the two **live** contracts on BscScan with an Etherscan V2 key (`--chain 97`), without redeploying either (D170). Record both verified URLs in `docs/deployment.md`. |
+| **T110** | Verify the **live** contracts on BscScan with an Etherscan V2 key (`--chain 97`), without redeploying any (D170). Record the verified URLs in `docs/deployment.md`. **Blocked on an Etherscan V2 key** — everything else is ready: `foundry.toml` carries the `[etherscan]` block, the contracts compile against the pinned solc, the constructor args are encoded and confirmed against the live `operator()`, and `docs/deployment.md` holds the copy-paste loop for all four addresses (production + staging). |
 | **T111** | Add `[etherscan]` to `packages/contracts/foundry.toml` (chain 97, key from env) and `--verify` to the documented `forge script` invocations in `Deploy.s.sol`, `DeployTournament.s.sol`, `docs/deployment.md` and `docs/deploy-aws-ec2.md`, so the next deploy verifies itself (D170). Add the key to `.env.example`, empty. |
 | **T112** | Add a root `LICENSE` (MIT) and set `"license": "MIT"` in the root `package.json` (D172). Leave `packages/engine/vendor/uno/LICENSE` untouched. Confirm the trademark lint still passes over the new file. |
 | **T113** | `GET /config` gains `chainId`, `escrowAddress`, `tournamentAddress`, `explorerBaseUrl` (D173). Extend `config.test.ts`: a deployment with no contract addresses publishes nulls and does not throw. |
