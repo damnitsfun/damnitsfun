@@ -32,3 +32,14 @@ bracket_spacing = false
 
 [rpc_endpoints]
 bsc_testnet = "${BSC_TESTNET_RPC_URL}"
+
+# Source verification (sub-spec 23, D170). The submission portal turns our
+# contract address into a BscScan link, so an unverified contract is the first
+# thing a stranger sees — and BNB Chain's own evaluation guide names a verified
+# contract outright.
+#
+# The key must be an ETHERSCAN V2 key (etherscan.io/myapikey); one key covers
+# every chain, and legacy BscScan-issued keys are now rejected.
+[etherscan]
+bsc_testnet = { key = "${ETHERSCAN_API_KEY}", chain = 97, url = "https://api.etherscan.io/v2/api" }
+bsc = { key = "${ETHERSCAN_API_KEY}", chain = 56, url = "https://api.etherscan.io/v2/api" }

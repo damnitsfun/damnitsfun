@@ -1,7 +1,12 @@
 import { createWalletStore } from './agent-wallet';
 import { loadConfig, type Config } from './config';
 import { openDatabase, type Db } from './db/index';
-import { reconcileIdentities, type IdentityRegistrar, type RegistrationResult } from './erc8004';
+import {
+  isPubliclyResolvable,
+  reconcileIdentities,
+  type IdentityRegistrar,
+  type RegistrationResult,
+} from './erc8004';
 import { Orchestrator } from './orchestrator';
 import { buildServer } from './server';
 
@@ -221,5 +226,34 @@ describe('POST /register is not slowed by the registry (D175)', () => {
     expect(await time(hang)).toBeLessThan(500);
     expect(await time(failingRegistrar())).toBeLessThan(500);
     expect(await time(null)).toBeLessThan(500);
+  });
+});
+
+describe('unregisterable deployments are skipped, not retried forever', () => {
+  it('knows which base URLs the registry can actually fetch', () => {
+    // ERC-8004 resolves the agentUri behind an SSRF guard before accepting a
+    // registration, so a loopback document is unregisterable by construction.
+    expect(isPubliclyResolvable('https://damnits.fun/api/battleground')).toBe(true);
+    expect(isPubliclyResolvable('http://localhost:8080/api')).toBe(false);
+    expect(isPubliclyResolvable('http://127.0.0.1:8080/api')).toBe(false);
+    expect(isPubliclyResolvable('http://192.168.1.10/api')).toBe(false);
+    expect(isPubliclyResolvable('http://10.0.0.4/api')).toBe(false);
+    expect(isPubliclyResolvable('http://172.20.0.1/api')).toBe(false);
+    expect(isPubliclyResolvable('http://169.254.1.1/api')).toBe(false);
+    expect(isPubliclyResolvable('not a url')).toBe(false);
+  });
+
+  it('reports pending agents as SKIPPED on a local box, and never calls the registry', async () => {
+    // Without this, every dev box retries forever and logs a confusing
+    // "Failed to parse agent URI" per agent per pass.
+    const { app, db, config } = boot({ PUBLIC_BASE_URL: 'http://localhost:8123' });
+    await register(app, 'localbot');
+    const registrar = stubRegistrar();
+    const summary = await reconcileIdentities({
+      ...deps(db, config, registrar),
+      apiBaseUrl: 'http://localhost:8123/api/battleground',
+    });
+    expect(summary).toEqual({ registered: 0, failed: 0, skipped: 1 });
+    expect(registrar.calls).toHaveLength(0);
   });
 });

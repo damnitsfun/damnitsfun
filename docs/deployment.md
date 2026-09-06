@@ -44,7 +44,7 @@ yarn workspace contracts test          # 19 tests, incl. a reentrancy attack sim
    ```bash
    cd packages/contracts
    set -a && source ../../.env && set +a
-   forge script script/Deploy.s.sol:Deploy --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast
+   forge script script/Deploy.s.sol:Deploy --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast --verify
    ```
 
 3. Copy the printed address into `.env`:

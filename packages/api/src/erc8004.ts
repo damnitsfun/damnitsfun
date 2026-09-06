@@ -242,7 +242,51 @@ export interface ReconcileDeps {
 export interface ReconcileSummary {
   registered: number;
   failed: number;
+  /** Agents deliberately not attempted — see `isPubliclyResolvable`. */
   skipped: number;
+}
+
+/**
+ * Can the registry actually fetch a document at this base URL?
+ *
+ * ERC-8004 resolves the `agentUri` before accepting a registration, and does so
+ * behind an SSRF guard that rejects loopback, private, link-local and reserved
+ * ranges. So a document served from `http://localhost:8080` is unregisterable by
+ * construction — not a transient failure, and not worth retrying.
+ */
+export function isPubliclyResolvable(baseUrl: string): boolean {
+  let host: string;
+  try {
+    const url = new URL(baseUrl);
+    host = url.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1') return false;
+  // IPv4 literals in the ranges the guard rejects: loopback, private, link-local
+  // and CGNAT. A hostname that is not an IP literal is assumed resolvable — DNS
+  // can still point it somewhere private, and the registry will say so.
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!v4) return true;
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  if (a === 127 || a === 10 || a === 0) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  return true;
+}
+
+function countPending(db: import('./db/index').Db): number {
+  return (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM agents a
+           JOIN agent_wallets w ON w.agent_id = a.id
+          WHERE a.erc8004_agent_id IS NULL`,
+      )
+      .get() as { n: number }
+  ).n;
 }
 
 /**
@@ -262,6 +306,24 @@ export async function reconcileIdentities(deps: ReconcileDeps): Promise<Reconcil
   const { db, registrar, walletStore, log = () => {}, limit = 25 } = deps;
   const summary: ReconcileSummary = { registered: 0, failed: 0, skipped: 0 };
   if (!registrar || !walletStore.enabled) return summary;
+
+  // The registry RESOLVES the agentUri before it accepts a registration, behind
+  // an SSRF guard that rejects loopback and private addresses. That is the price
+  // of D178's live document over a frozen base64 one, and it is worth paying —
+  // but it means a laptop can never register, and without this check every dev
+  // box would retry forever and log a confusing "Failed to parse agent URI" per
+  // agent per pass. Say it once, plainly, and leave them for a box that can.
+  if (!isPubliclyResolvable(deps.apiBaseUrl)) {
+    const pending = countPending(db);
+    if (pending > 0) {
+      log(
+        `[erc8004] skipping ${pending} agent(s): PUBLIC_BASE_URL is ${deps.apiBaseUrl}, which the ` +
+          `registry cannot fetch. Identities register from a publicly reachable deployment.`,
+      );
+    }
+    summary.skipped = pending;
+    return summary;
+  }
 
   const pending = db
     .prepare(

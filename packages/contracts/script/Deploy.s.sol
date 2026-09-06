@@ -16,7 +16,13 @@ import {DamnitsEscrow} from "../src/DamnitsEscrow.sol";
  *
  *   forge script script/Deploy.s.sol:Deploy \
  *     --rpc-url "$BSC_TESTNET_RPC_URL" \
- *     --broadcast
+ *     --broadcast \\
+ *     --verify
+ *
+ * `--verify` needs ETHERSCAN_API_KEY (an Etherscan V2 key) and reads the
+ * [etherscan] block in foundry.toml. Verify at deploy time rather than later:
+ * the submission portal links this address to BscScan, and an unverified
+ * contract is the first thing a stranger sees (sub-spec 23, D170).
  *
  * Then copy the printed address into ESCROW_CONTRACT_ADDRESS in .env.
  */
