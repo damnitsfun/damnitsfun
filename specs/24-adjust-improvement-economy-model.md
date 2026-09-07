@@ -2,7 +2,7 @@
 
 **Depends on:** 23 (the verified contracts, `/config` chain facts, ERC-8004 identity, `balances`),
 22 (per-season coins, the pull-payment pattern, the soak lessons), 15 (unified coin scoring).
-**Hands off:** a new `DamnitsVault` on chain 97 whose BNB deposits are refundable and deployed
+**Hands off:** a new `DamnitsVault` on chain 97 whose tBNB deposits are refundable and deployed
 into a yield source for the season, a sponsor-seeded MockUSDT prize pot settled by the existing
 leaderboard machinery, on-chain phase deadlines with a trust-minimized public exit, and the API,
 tooling and pages that publish all of it — beside an untouched fee-model tournament.
@@ -18,9 +18,9 @@ line of chidx's #20 review that spec 23 left open on purpose):
 ```
 today (spec 08/15/22)              issue #30 (this spec)
 ─────────────────────────────      ─────────────────────────────────────
-0.0005 tBNB buy-in, forfeited      0.01 BNB deposit, REFUNDABLE at resolve
+0.0005 tBNB buy-in, forfeited      0.01 tBNB deposit, REFUNDABLE at resolve
 pool = buy-ins + sponsor seed      corpus staked for the season (Ankr-shaped)
-losers fund the winners            yield → project treasury, as BNB
+losers fund the winners            yield → project treasury, as tBNB
 no time promises at all (D9)       deadlines on chain, exit without the operator
 prize = the pool itself            prize = sponsor-seeded MockUSDT pot, separate
 ```
@@ -52,7 +52,7 @@ Three constraints shape everything below:
 | Ankr aBNBb, chain 97 | `0x93405327644eDF8aD908e41F9a2Ecbb6714769D1` — **deployed**, 2,112 bytes of code (`eth_getCode`, measured 2026-09-07) |
 | Ankr ankrBNB, chain 97 | `0x3C1039C346bd5141BF2D5e855928E61655658fA7` — **deployed**, 2,112 bytes |
 | probe control | the ERC-8004 registry (`0x8004A818…`) answered code on the same probe, so a zero would have meant "absent", not "broken probe" |
-| the Ankr **stake path** | **NOT yet measured.** Tokens deployed ≠ the staking router still mints them for staked BNB — Ankr's own testnet address page still lists Goerli-era networks. T126 walks the full stake→redeem path with dust before any adapter is believed |
+| the Ankr **stake path** | **NOT yet measured.** Tokens deployed ≠ the staking router still mints them for staked tBNB — Ankr's own testnet address page still lists Goerli-era networks. T126 walks the full stake→redeem path with dust before any adapter is believed |
 | USDT on chain 97 | no official USDT exists on BSC testnet; the prize token is a mock ERC-20 (D183) |
 | BSC USDT decimals | 18 on BSC (not Ethereum's 6) — the mock pins 18 so mainnet math ports unchanged |
 | tBNB faucets | ration roughly 1 tBNB/day per address — a 0.01 default deposit is hostile to onboarding; staging pins 0.001 (D187) |
@@ -61,11 +61,11 @@ Three constraints shape everything below:
 
 ## § A — the shape of the money (D181–D184)
 
-**D181 — two assets, two pots, no swaps.** Deposits and yield are **native BNB**; the prize pot
+**D181 — two assets, two pots, no swaps.** Deposits and yield are **native tBNB**; the prize pot
 is **MockUSDT**; nothing converts between them. v1 contains no swap, no price oracle, and no
 mixed-numeraire accounting — the issue's draft once said "10 USDT in the form of tBNB", and the
 way to never implement that bug is to never hold both denominations of the same pot. Yield
-arrives in BNB and leaves in BNB (to the treasury); prizes arrive in MockUSDT and leave in
+arrives in tBNB and leaves in tBNB (to the treasury); prizes arrive in MockUSDT and leave in
 MockUSDT (to winners). One vault, one prize token, one treasury, all fixed at construction — a
 second token is a second vault, not a mapping.
 
@@ -98,7 +98,7 @@ mainnet-shape, and the settlement path is the real one.
 ```solidity
 interface IYieldSource {
     function stake(bytes32 seasonId) external payable;      // takes the corpus
-    function redeem(bytes32 seasonId) external returns (uint256 returned); // returns BNB
+    function redeem(bytes32 seasonId) external returns (uint256 returned); // returns tBNB
 }
 ```
 
@@ -212,7 +212,7 @@ chain, no mid-season entry, and how to `withdraw()` after resolve.
 
 | Not building | Why |
 |---|---|
-| Yield → prize pool (the no-loss model) | Cross-numeraire: BNB yield ≠ MockUSDT prizes without a swap, and a testnet swap adds a DEX dependency for a narrative v1 doesn't need. Deferred with conditions (Open questions). |
+| Yield → prize pool (the no-loss model) | Cross-numeraire: tBNB yield ≠ MockUSDT prizes without a swap, and a testnet swap adds a DEX dependency for a narrative v1 doesn't need. Deferred with conditions (Open questions). |
 | Real Ankr staking as the default demo path | The LSTs are measured deployed; the router is unproven (T126). The mock is the demo floor; the adapter is fork-tested. A demo that needs a third-party router to behave is a demo that can fail on stage. |
 | A Lista adapter on testnet | Named by #30 as an alternative; same seam, mainnet-grade follow-up. One measured adapter plus one mock is the honest scope three weeks out. |
 | Modifying `DamnitsTournament` / `DamnitsEscrow` | D170: live, verified, 4,004 tables anchored. New money, new contract (D185). |
@@ -226,7 +226,7 @@ chain, no mid-season entry, and how to `withdraw()` after resolve.
 
 | # | Task |
 |---|---|
-| **T126** | **RUN FIRST — the T118 move.** A throwaway script stakes a dust amount of tBNB through Ankr's testnet staking path (BNB in, LST out) and redeems it. Record the one-line result **in this spec** — router address, whether it minted, what redeem returned — and delete the script. This decides whether `AnkrAdapter` is testnet-live or fork-only (D184). |
+| **T126** | **RUN FIRST — the T118 move.** A throwaway script stakes a dust amount of tBNB through Ankr's testnet staking path (tBNB in, LST out) and redeems it. Record the one-line result **in this spec** — router address, whether it minted, what redeem returned — and delete the script. This decides whether `AnkrAdapter` is testnet-live or fork-only (D184). |
 | **T127** | Adopt `feat/mock-usdt-token` as `MockUSDT`: pin 18 decimals, keep free minting, add forge tests (mint/transfer bounds, decimals). Note in the PR that spec 23 § D's rejection is not reopened — one transfer per season, outside the loop (D183). |
 | **T128** | `IYieldSource` + `MockYieldSource` (D184): configurable rate including a fast demo rate, accrual capped at funded balance, `redeem` pays principal + accrued. Forge tests: accrual math, the cap, a second season's stake does not see the first's yield. |
 | **T129** | `DamnitsVault.sol` (D185–D188): states `None → Registration → Staked → Resolved`, `openSeason`/`deposit`/`closeRegistration` (closes **and** stakes atomically)/`seedPot`/`resolve`/`exitStale`/`withdraw`, dual `owed` maps, `ReentrancyGuard`, events mirroring the tournament contract's audit trail (`SeasonOpened`, `Deposited`, `SeasonStaked`, `PotSeeded`, `Resolved` with `resultRoot`, `Refunded`, `YieldSwept`, `Withdrawn`). |
@@ -269,7 +269,7 @@ prize. That is honest and it is enough — anyone who wants a bigger prize seeds
 
 **Yield to players later? — Deferred, with its unblocking condition.** The no-loss model (yield
 → prize pot, entries become tickets that cannot lose) is the natural v2. It is blocked on one
-decision — swap BNB yield into the prize token, or denominate prizes in BNB — and either answer
+decision — swap tBNB yield into the prize token, or denominate prizes in tBNB — and either answer
 is a real design, not a hackathon-fortnight tweak. Recorded here so nobody rediscovers the
 question.
 
