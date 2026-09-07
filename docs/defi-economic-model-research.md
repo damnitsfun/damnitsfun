@@ -462,7 +462,7 @@ Found while tracing where our money goes. Nothing to do with DeFi.
    is eligible to win it lives in a **script** — something a human chooses to run. It can be
    skipped or forgotten. If it is, the money is locked in the contract **forever**, with no way to
    recover it. Production actually sat in this dangerous state — funded pool, zero eligible
-   players — for months. This check belongs **inside the contract**, where nothing can skip it.
+   players — for months. This check belongs **inside the contract**, where nothing can bypass it.
 2. **Leftover money vanishes.** If the prizes we pay add up to less than the pool, the remainder
    sits there and nothing ever reads it again.
 3. **The per-table escrow pushes money instead of letting people pull it.** If a winner's address
