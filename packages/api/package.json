@@ -18,6 +18,7 @@
     "demo:tournament": "yarn build && node dist/demo-tournament.js"
   },
   "dependencies": {
+    "@bnbagent/sdk": "0.5.5",
     "better-sqlite3": "^12.11.1",
     "engine": "0.1.0",
     "fastify": "^5.10.0",

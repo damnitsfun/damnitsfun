@@ -271,3 +271,37 @@ export function createSettlementChain(
     },
   };
 }
+
+/**
+ * Read an address's native balance (sub-spec 23, D180).
+ *
+ * Standalone rather than a method on `SettlementChain`, because it needs neither
+ * an operator key nor a deployed escrow — a deployment with no settlement wiring
+ * at all can still tell an agent what its own wallet holds.
+ *
+ * Best-effort by construction. This feeds `GET /agent/me`, which is on the
+ * onboarding path `skill.md` sends every new agent down, so an RPC that is slow,
+ * down or lying must degrade one FIELD rather than the endpoint. Every failure
+ * resolves to `null`; nothing here throws.
+ *
+ * No cache. `/agent/me` is not polled the way `pending-actions` is, and caching
+ * before there is traffic to justify it would be a guess — add one if a soak ever
+ * shows this endpoint hot.
+ */
+export async function readNativeBalance(
+  config: Config,
+  address: string | null,
+  timeoutMs = 2000,
+): Promise<string | null> {
+  if (!address) return null;
+  try {
+    const client = createPublicClient({
+      chain: bscTestnet,
+      transport: http(config.bscTestnetRpcUrl, { timeout: timeoutMs, retryCount: 0 }),
+    });
+    const wei = await client.getBalance({ address: address as Address });
+    return wei.toString();
+  } catch {
+    return null;
+  }
+}

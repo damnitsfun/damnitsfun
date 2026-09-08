@@ -58,6 +58,13 @@ describe('battleground rename (T42)', () => {
       // The derived floor (seats x decision timeout x rounds) is well below
       // this env's limit, so the effective value is the configured one.
       gameTimeLimitFloorMs: 120000,
+      // Sub-spec 23 (D173): the chain this deployment anchors to, so the web can
+      // link the settlement it describes. No contracts are configured in this
+      // env, so both addresses are null and the page renders no link.
+      chainId: 97,
+      escrowAddress: null,
+      tournamentAddress: null,
+      explorerBaseUrl: 'https://testnet.bscscan.com',
     });
     // The config endpoint must not leak secret/operational fields.
     const keys = Object.keys(res.json());

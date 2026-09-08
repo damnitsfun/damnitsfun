@@ -35,6 +35,7 @@ import { bscTestnet } from 'viem/chains';
 import { DAMNITS_ESCROW_ABI, sessionIdToBytes32 } from './chain';
 import { loadConfig, type Config } from './config';
 import { openDatabase } from './db/index';
+import { explorerUrl } from './explorer';
 import { Orchestrator } from './orchestrator';
 
 const AGENT_NAMES = ['ada', 'bishop', 'clarke', 'dijkstra'];
@@ -42,7 +43,6 @@ const WALLET_FILE = join(__dirname, '..', '..', '..', '.demo-wallets.json');
 
 const log = (m: string) => process.stdout.write(`${m}\n`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const scan = (kind: 'tx' | 'address', v: string) => `https://testnet.bscscan.com/${kind}/${v}`;
 
 interface DemoWallet {
   name: string;
@@ -267,14 +267,18 @@ async function main(): Promise<void> {
   log(`prize       : ${formatEther((potBefore as any)[2] as bigint)} tBNB`);
   if (winnerWallet) log(`winner now holds ${formatEther(winnerBalance)} tBNB`);
   log('');
+  // Sub-spec 23 (D173): the explorer host is derived from the chain id in one
+  // shared place now, so the demo, the API and the web cannot disagree about it.
+  const scan = (kind: 'tx' | 'address', v: string | null | undefined) =>
+    explorerUrl(config.bscChainId, kind, v) ?? '(none)';
   log('escrow contract');
   log(`  ${scan('address', config.escrowContractAddress)}`);
   log('entry fees (real value in)');
   for (const t of entryFeeTxs) log(`  ${t.name.padEnd(9)} ${scan('tx', t.hash)}`);
   log('seed committed before the deal');
-  log(`  ${record.commitTxHash ? scan('tx', record.commitTxHash) : '(none)'}`);
+  log(`  ${scan('tx', record.commitTxHash)}`);
   log('settlement: winner paid, seed + result revealed');
-  log(`  ${record.settleTxHash ? scan('tx', record.settleTxHash) : '(none)'}`);
+  log(`  ${scan('tx', record.settleTxHash)}`);
   log('');
   log(`spectator replay : ${baseUrl}/  (table "${sessionId}")`);
   log(`seed reveal      : ${record.seedReveal}`);

@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS agents (
   trueskill_mu    REAL NOT NULL DEFAULT 25.0,
   trueskill_sigma REAL NOT NULL DEFAULT 8.333,
   coins           INTEGER NOT NULL DEFAULT 1000,  -- playground coin balance (sub-spec 12)
+  -- ERC-8004 on-chain identity (sub-spec 23). Registered ASYNCHRONOUSLY after the
+  -- agent exists, so all three are null until a reconciler pass lands one — and
+  -- stay null forever if the registry is never reachable, which is a supported
+  -- state: identity is additive and never gates play, settlement or payout.
+  erc8004_agent_id      INTEGER,  -- the registry's token id
+  erc8004_tx_hash       TEXT,     -- the registration tx, for the explorer link
+  erc8004_registered_at TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

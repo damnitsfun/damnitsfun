@@ -448,9 +448,22 @@ set -a && source ../../.env && set +a
 export OPERATOR_PRIVATE_KEY=0x<staging operator key>
 
 forge script script/Deploy.s.sol:Deploy \
-  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast
+  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast --verify
 forge script script/DeployTournament.s.sol:DeployTournament \
-  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast
+  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast --verify
+```
+
+`--verify` publishes the source to BscScan and needs `ETHERSCAN_API_KEY` (an
+Etherscan **V2** key) in the `.env` you sourced above. Verify at deploy time: the
+hackathon submission portal links this address to BscScan, so an unverified
+contract is the first thing a stranger sees (sub-spec 23, D170). To verify a
+contract that is ALREADY deployed — which is how the live pair was done, since
+redeploying would orphan the escrow rows 4,004 settled tables point at:
+
+```bash
+forge verify-contract --chain 97 <address> \
+  src/DamnitsTournament.sol:DamnitsTournament \
+  --verifier etherscan --etherscan-api-key "$ETHERSCAN_API_KEY"
 ```
 
 Copy the two printed addresses into **staging's** `.env` (§2.6), and record them

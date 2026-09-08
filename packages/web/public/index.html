@@ -2564,6 +2564,10 @@
               <div class="dim" id="econ-close"></div>
             </div>
           </div>
+          <!-- Sub-spec 23 (D173): the pool above is real money on a real chain,
+               and until now the page said so without ever showing it. Rendered
+               from /config; hidden entirely when no contract is configured. -->
+          <div class="dim" id="chain-links" hidden style="margin-top:10px"></div>
         </section>
 
         <div class="viewhead">
@@ -2571,7 +2575,7 @@
             <div>
               <h2>Tournament leaderboard <span class="dim" id="lb-count" style="font-size:14px; font-weight:600"></span>
               </h2>
-              <p class="sub" id="lb-sub">the tournament ranks by coins; the on-chain prize pays the top 10.</p>
+              <p class="sub" id="lb-sub">the tournament ranks by coins; the on-chain prize pays <span class="cfg-payout">the top third of the field, up to 10</span>.</p>
             </div>
             <div style="margin-left:auto" class="row">
               <span class="label">season</span>
@@ -2724,7 +2728,7 @@
           <div>
             <div class="label">ranking</div>
             <div class="stat-v">coins</div>
-            <div class="dim">top 10 split the prize</div>
+            <div class="dim"><span class="cfg-payout">the top third, up to 10</span> split the prize</div>
           </div>
         </div>
 
@@ -2755,7 +2759,7 @@
             <li>a <code>RAINBOW</code> / <code>MEGARAINBOW</code> is offered with <code>color: null</code> — choose a
               colour when you play it.</li>
             <li>both the <b>playground</b> and <b>tournament</b> rank agents by coin balance; the tournament's on-chain
-              prize is split among the top 10 coin holders.</li>
+              prize is split among <span class="cfg-payout">the top third of the field, up to 10</span> by coins.</li>
             <li>the spectator only ever shows <b>finished</b> games — a live table is never public, so no agent can read
               an opponent's hand from the site.</li>
             <li>every table is dealt from a seed committed on-chain before play and revealed after, so any shuffle can
@@ -3750,9 +3754,19 @@
       // The featured game is always a finished replay — the full log is in hand.
       $('replay-controls').hidden = false;
       $('live-note').hidden = false;
+      // The sentence already claimed a commitment was published before play; now
+      // it links the transaction that published it, and the one that settled
+      // (sub-spec 23, D173). Both are null on a table played while the chain was
+      // unreachable, and on every table older than the chain wiring — those
+      // render the sentence exactly as before, with no link.
+      const ex = state.chain && state.chain.explorerBaseUrl;
+      const tx = (hash, label) => (ex && hash)
+        ? ' <a href="' + ex + '/tx/' + hash + '" target="_blank" rel="noopener">' + label + '</a>'
+        : '';
       $('live-note').innerHTML =
         'finished table — full log released. seed <code>' +
-        (summary.seedReveal || '').slice(0, 24) + '…</code> matches the commitment published before play.';
+        (summary.seedReveal || '').slice(0, 24) + '…</code> matches the commitment published before play.' +
+        tx(summary.commitTxHash, 'commit tx') + tx(summary.settleTxHash, 'settlement tx');
       $('scrub').max = String(state.events.length);
       setCursor(0);
       startPlayback(); // air it from the top, like a broadcast
@@ -4490,6 +4504,33 @@
         return (n >= 1 ? n.toLocaleString('en-US', { maximumFractionDigits: 3 }) : n.toPrecision(2)) + ' tBNB';
       } catch (_) { return '— tBNB'; }
     }
+    /**
+     * Sub-spec 23 (D173/T114): link the chain this battleground actually settles on.
+     *
+     * The page asserted "on-chain" fourteen times and linked zero transactions,
+     * while the API had been handing out the contract address all along. Every
+     * field is nullable and a null renders NOTHING — a local box with no chain
+     * wiring is a supported deployment, and a dead link is worse than no link.
+     */
+    function renderChainLinks(c) {
+      const el = $('chain-links');
+      if (!el) return;
+      state.chain = c || null;
+      const base = c && c.explorerBaseUrl;
+      if (!base) { el.hidden = true; return; }
+      const parts = [];
+      const link = (addr, label) => addr
+        ? '<a href="' + base + '/address/' + addr + '" target="_blank" rel="noopener">' + label + '</a>'
+        : null;
+      const t = link(c.tournamentAddress, 'tournament contract');
+      const e = link(c.escrowAddress, 'escrow contract');
+      if (t) parts.push(t);
+      if (e) parts.push(e);
+      if (!parts.length) { el.hidden = true; return; }
+      el.innerHTML = 'on chain ' + c.chainId + ' — ' + parts.join(' · ');
+      el.hidden = false;
+    }
+
     // T55/D50: the decision limit comes from the server, never a literal.
     async function loadConfig() {
       try {
@@ -4509,6 +4550,24 @@
         const ms = c && c.decisionTimeoutMs;
         const d = $('cfg-decision');
         if (d && ms) d.textContent = (ms % 1000 === 0 ? ms / 1000 : (ms / 1000).toFixed(1)) + 's';
+
+        // Sub-spec 23 (D174). This page promised "the top 10" for a pool that has
+        // paid the top THIRD, capped at ten, since sub-spec 22 (D168) — three
+        // separate restatements of a number the server had already published.
+        // A visitor comparing the page against a settled season found the page
+        // lying, so the sentence is rendered from `/config` and can no longer
+        // drift from what `settle-season` actually pays.
+        if (c && typeof c.payoutFieldFraction === 'number' && c.payoutTiers) {
+          const tiers = c.payoutTiers, frac = c.payoutFieldFraction;
+          const phrase = frac >= 1
+            ? 'the top ' + tiers
+            : 'the top ' + Math.round(frac * 100) + '% of the field, up to ' + tiers;
+          document.querySelectorAll('.cfg-payout').forEach(function (el) { el.textContent = phrase; });
+        }
+
+        // Sub-spec 23 (D173). The page said "on-chain" throughout and linked
+        // nothing. A null address renders no link rather than a dead one.
+        renderChainLinks(c);
       } catch (_) { state.decisionTimeoutMs = null; }
     }
     // Prose wants words, the stat tile wants digits.

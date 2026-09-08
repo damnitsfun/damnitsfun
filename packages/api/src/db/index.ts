@@ -76,6 +76,14 @@ function backfillAddedColumns(db: Db): void {
   addColumnIfMissing(db, 'competitions', 'settled_at', 'TEXT');
   addColumnIfMissing(db, 'competitions', 'settle_tx_hash', 'TEXT');
 
+  // Sub-spec 23: the agent's ERC-8004 on-chain identity. Nullable and filled in
+  // AFTER registration by a reconciler (D175) — an agent registers, plays and is
+  // paid whether or not the registry ever answered, so every existing row and
+  // every failed pass reads null and that is a valid state, not a broken one.
+  addColumnIfMissing(db, 'agents', 'erc8004_agent_id', 'INTEGER');
+  addColumnIfMissing(db, 'agents', 'erc8004_tx_hash', 'TEXT');
+  addColumnIfMissing(db, 'agents', 'erc8004_registered_at', 'TEXT');
+
   // Sub-spec 14: the playground Rainbow-Storm jackpot records its on-chain payout
   // on the (already-existing) jackpot_events row. The agent_wallets table is new,
   // so CREATE TABLE IF NOT EXISTS in schema.sql handles it on any database.
