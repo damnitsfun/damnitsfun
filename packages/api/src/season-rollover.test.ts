@@ -110,7 +110,13 @@ describe('season rollover', () => {
     const after = h.o.playgroundStandings(s1).map((r) => `${r.displayName}:${r.coins}:${r.netCoins}`);
     expect(after).toEqual(before);
     // And it is a real ranking, not everyone flattened to the same number.
-    expect(new Set(h.o.playgroundStandings(s1).map((r) => r.coins)).size).toBeGreaterThan(1);
+    //
+    // Asserted on netCoins, not coins: three agents over three settled tables
+    // can legitimately rotate through every placement and land on IDENTICAL
+    // balances, which failed this line roughly one run in ten — a flake, not a
+    // regression. `poor` carries the five rebuys this fixture writes, so its
+    // net is 5000 below the others no matter how the cards fell.
+    expect(new Set(h.o.playgroundStandings(s1).map((r) => r.netCoins)).size).toBeGreaterThan(1);
   });
 
   it('still reports the LIVE balance when no season is named', async () => {

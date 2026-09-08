@@ -152,6 +152,25 @@ export function buildServer(options: BuildOptions): BuiltServer {
       .send(readFileSync(file));
   });
 
+  /**
+   * Replay sound effects. Same shape and same reasoning as the font route above:
+   * served from the API origin so the replay needs no CDN, narrowly matched so
+   * the param can never traverse out of web/public/sfx. The pages treat a
+   * missing file as silence, so this is additive — nothing depends on it.
+   */
+  app.get<{ Params: { file: string } }>('/sfx/:file', async (request, reply) => {
+    const name = request.params.file;
+    if (!/^[a-z0-9_-]+\.mp3$/i.test(name)) {
+      return reply.status(404).send({ error: 'NOT_FOUND' });
+    }
+    const file = join(webDir, 'sfx', name);
+    if (!existsSync(file)) return reply.status(404).send({ error: 'NOT_FOUND' });
+    return reply
+      .type('audio/mpeg')
+      .header('cache-control', 'public, max-age=86400')
+      .send(readFileSync(file));
+  });
+
   app.get('/skill.md', async (_request, reply) => {
     const skill = join(repoRoot, 'skill.md');
     if (!existsSync(skill)) return reply.status(404).send({ error: 'SKILL_FILE_MISSING' });
@@ -253,8 +272,15 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return { competitions: orchestrator.listActiveCompetitions() };
     });
 
+    // No auth, matching `/playground/standings` above. This carries the SAME
+    // kind of data — coins, tables, placements, all of it derived from settled
+    // games whose full event log is already public — and the key requirement
+    // protected nothing while costing something real: the spectator could not
+    // read it, so the web rebuilt its own tournament board out of the spectate
+    // feed and ranked it by TABLES WON. That board disagreed with the payout
+    // order, which is exactly the failure `compareRank` is shared to prevent.
+    // An agent's key is still accepted; it is simply no longer required.
     scope.get('/competition/leaderboard', async (request) => {
-      requireAgent(orchestrator, request);
       const { competitionId } = leaderboardQuerySchema.parse(request.query);
       return { leaderboard: orchestrator.leaderboard(competitionId) };
     });

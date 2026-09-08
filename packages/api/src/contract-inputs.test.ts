@@ -52,6 +52,21 @@ describe('GET /competition/leaderboard — an unknown competition (D161)', () =>
     await h.app.close();
   });
 
+  it('is readable without a key — the spectator ranks by coins or not at all', async () => {
+    // The key requirement is why the web rebuilt its own tournament board from
+    // the spectate feed and ranked it by TABLES WON, disagreeing with the
+    // payout order. Same data class as the public /playground/standings.
+    const h = boot();
+    const competitionId = h.orchestrator.createCompetition('Open Cup');
+    const res = await h.app.inject({
+      method: 'GET',
+      url: `/api/battleground/competition/leaderboard?competitionId=${competitionId}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().leaderboard).toEqual([]);
+    await h.app.close();
+  });
+
   it('still answers for a real competition with nobody in it', async () => {
     const h = boot();
     const agent = await register(h.app, 'probe');

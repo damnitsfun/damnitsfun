@@ -15,7 +15,7 @@ export const INTROSPECTION = {
   basePath: '/api/battleground',
   auth: {
     header: 'x-battleground-api-key',
-    note: 'Required on every endpoint except register and __introspection. The deprecated x-arena-api-key header is still accepted.',
+    note: 'Required on every endpoint except the ones marked auth:false below (register, __introspection, config, competition/leaderboard). The deprecated x-arena-api-key header is still accepted.',
   },
   vocabulary: {
     symbols: [
@@ -248,6 +248,11 @@ export const INTROSPECTION = {
     {
       method: 'GET',
       path: '/competition/leaderboard?competitionId=...',
+      auth: false,
+      note:
+        'Readable without a key, like the spectator feed: every figure here is derived ' +
+        'from settled games whose full event log is already public. This is the same ' +
+        'order the on-chain prize is split by.',
       response200: {
         leaderboard: [
           {

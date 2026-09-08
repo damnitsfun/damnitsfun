@@ -285,6 +285,42 @@ describe('spectator feed — replay-only (sub-spec 10 T30)', () => {
     });
     expect(events.statusCode).toBe(404);
   });
+
+  it('a finished session with an empty event log is not listed', async () => {
+    // reapOrphanedSessions() archives lobbies abandoned by a restart. They are
+    // `archived` (so they pass the finished-only clause) and they sort newest,
+    // so the spectator featured one and aired an empty felt forever.
+    const { app, db, orchestrator } = boot();
+    const competitionId = orchestrator.createCompetition('Ghost Cup');
+    const agents = [
+      await register(app, 'G1'),
+      await register(app, 'G2'),
+      await register(app, 'G3'),
+      await register(app, 'G4'),
+    ];
+    const sessionId = await seatFour(app, competitionId, agents);
+    await playToEnd(app, agents, sessionId);
+
+    // A settled table with a real log is listed…
+    const first = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/arena/spectate/sessions?competitionId=${competitionId}`,
+      })
+    ).json() as { sessions: Array<{ sessionId: string }> };
+    expect(first.sessions.some((s) => s.sessionId === sessionId)).toBe(true);
+
+    // …the same table with its log erased is not.
+    db.prepare(`DELETE FROM session_events WHERE session_id = ?`).run(sessionId);
+    const second = (
+      await app.inject({
+        method: 'GET',
+        url: `/api/arena/spectate/sessions?competitionId=${competitionId}`,
+      })
+    ).json() as { sessions: Array<{ sessionId: string }> };
+    expect(second.sessions.some((s) => s.sessionId === sessionId)).toBe(false);
+  });
+
 });
 
 describe('redaction allowlist — fail-safe (sub-spec 10 T31)', () => {
