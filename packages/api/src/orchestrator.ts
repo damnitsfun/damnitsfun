@@ -748,19 +748,26 @@ export class Orchestrator {
       if (owner) x = { handle: owner.x_handle, xUserId: owner.x_user_id };
       const rows = this.db
         .prepare(
-          `SELECT id, display_name, payout_address, coins
+          `SELECT id, display_name, payout_address, wallet_address, coins
              FROM agents WHERE owner_id = ? ORDER BY created_at`,
         )
         .all(account.owner_id) as Array<{
         id: string;
         display_name: string;
         payout_address: string | null;
+        wallet_address: string | null;
         coins: number;
       }>;
       agents = rows.map((r) => ({
         agentId: r.id,
         displayName: r.display_name,
+        // The two addresses are different jobs and the account menu names them
+        // separately: `walletAddress` is the custodial wallet the battleground
+        // issued (entry fees out, storm jackpot in, NO withdrawal path), and
+        // `payoutAddress` is where prizes are sent. Returning only the second
+        // is why an owner who claimed an agent could not find the first.
         payoutAddress: r.payout_address,
+        walletAddress: r.wallet_address,
         coins: r.coins,
         claimed: true,
       }));

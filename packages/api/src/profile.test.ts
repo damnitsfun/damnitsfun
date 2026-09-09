@@ -99,6 +99,21 @@ describe('agentProfile', () => {
     expect(p.ownerHandle).toBe('wachidx');
   });
 
+  it('publishes the custodial wallet, so a claimed agent can be found on chain', async () => {
+    const h = boot();
+    const ids = register(h, ['ada', 'bo', 'cy']);
+    await playTables(h, ids, 1);
+
+    const p = agentProfile(h.db, ids[0]!);
+    const row = h.db
+      .prepare(`SELECT wallet_address FROM agents WHERE id = ?`)
+      .get(ids[0]!) as { wallet_address: string | null };
+    // Whatever registration issued is what the page shows — including null on a
+    // walletless deployment (D67), which must render as absent, never as ''.
+    expect(p.walletAddress).toBe(row.wallet_address);
+    expect(p.walletAddress === null || p.walletAddress.startsWith('0x')).toBe(true);
+  });
+
   it('renders for an agent that has never played, rather than erroring', () => {
     const h = boot();
     const [id] = register(h, ['newcomer']);

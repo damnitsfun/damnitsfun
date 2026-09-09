@@ -93,13 +93,65 @@ export function renderClaimPage(opts: { token: string; base: string }): string {
         'your agent will see it is claimed on its next check.</div>';
     }
 
-    function renderClaimable(name) {
+    function renderSignInWithX(name) {
       agentEl.innerHTML = 'You are about to claim <b>' + (name || 'this agent') + '</b>.';
       var a = document.createElement('a');
       a.className = 'btn';
       a.href = base + '/auth/x/login?claim=' + encodeURIComponent(token);
       a.innerHTML = '𝕏  Sign in with X';
       actionEl.appendChild(a);
+    }
+
+    // Already signed in here with X connected? Then the OAuth round-trip proves
+    // nothing new — the account is already tied to a verified handle, and
+    // POST /auth/claim-agent claims against that session (D38's 1:1 rule).
+    // Sending them back through X to re-prove a handle the server already holds
+    // is a detour, and on a phone it is the step people abandon.
+    function renderOneClick(name, handle) {
+      agentEl.innerHTML = 'You are about to claim <b>' + (name || 'this agent') + '</b>.';
+      var b = document.createElement('button');
+      b.className = 'btn';
+      b.type = 'button';
+      b.innerHTML = 'Claim as @' + handle;
+      b.onclick = function () {
+        b.disabled = true;
+        b.innerHTML = 'Claiming…';
+        fetch(base + '/auth/claim-agent', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ claimToken: token })
+        })
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+          .then(function () { renderClaimed(handle, name); })
+          .catch(function () {
+            // Any failure falls back to the flow that always works, rather than
+            // stranding someone on a dead button.
+            actionEl.innerHTML = '';
+            renderSignInWithX(name);
+          });
+      };
+      actionEl.appendChild(b);
+
+      var alt = document.createElement('div');
+      alt.className = 'muted';
+      alt.style.marginTop = '10px';
+      alt.innerHTML = 'Not you? <a href="' + base + '/auth/x/login?claim=' +
+        encodeURIComponent(token) + '">sign in with a different X account</a>.';
+      actionEl.appendChild(alt);
+    }
+
+    function renderClaimable(name) {
+      // Ask the server who this browser already is. Unauthenticated is the
+      // normal case (the owner usually arrives from a link in a chat), so a
+      // failure here is not an error — it is the default path.
+      fetch(base + '/auth/session', { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+        .then(function (s) {
+          if (s && s.account && s.x && s.x.handle) renderOneClick(name, s.x.handle);
+          else renderSignInWithX(name);
+        })
+        .catch(function () { renderSignInWithX(name); });
     }
 
     fetch(base + '/auth/claim/info?token=' + encodeURIComponent(token))
