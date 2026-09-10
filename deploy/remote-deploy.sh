@@ -91,16 +91,41 @@ as_app node packages/api/dist/check-env-drift.js || true
 log "restart $SERVICE"
 sudo systemctl restart "$SERVICE"
 
-log "health check: $HEALTH_URL"
-for i in $(seq 1 15); do
-  if curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null; then
-    echo "healthy after ${i} attempt(s)"
+# How long to wait for the service to answer after a restart.
+#
+# This is a boot budget, not a liveness check. The API is synchronous
+# (better-sqlite3) and opens a database that is already 1.7 GB across ~2.5M
+# session_events, so it can take the better part of a minute to serve its first
+# request — during which it is listening but not yet answering. The production
+# deploy of a3d8992 spent ~53s in exactly that state and was failed by a budget
+# of 15 x (5 + 2) = 95s, having done every other step correctly: source synced,
+# built, migrated, restarted, serving. A slow boot is not a failed deploy.
+#
+# The seconds in the FATAL line are DERIVED, not typed. The old message said
+# "within 30s" while the loop actually waited 95s, which made a near-miss read
+# as an instant hard failure and sent the first investigation down the wrong path.
+HEALTH_ATTEMPTS=${HEALTH_ATTEMPTS:-40}
+HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-5}
+HEALTH_SLEEP=${HEALTH_SLEEP:-2}
+health_budget_s=$(( HEALTH_ATTEMPTS * (HEALTH_TIMEOUT + HEALTH_SLEEP) ))
+
+log "health check: $HEALTH_URL (up to ${health_budget_s}s)"
+started_at=$SECONDS
+for i in $(seq 1 "$HEALTH_ATTEMPTS"); do
+  if curl -fsS --max-time "$HEALTH_TIMEOUT" "$HEALTH_URL" >/dev/null; then
+    echo "healthy after ${i} attempt(s), $(( SECONDS - started_at ))s"
     systemctl is-active "$SERVICE"
     exit 0
   fi
-  sleep 2
+  # A restart that is merely slow looks identical to one that is stuck, for
+  # minutes. Say which it is while it is happening, so a watcher does not have to
+  # guess from a wall of curl errors.
+  if [ $(( i % 5 )) -eq 0 ]; then
+    log "  still waiting — ${i}/${HEALTH_ATTEMPTS} attempts, $(( SECONDS - started_at ))s elapsed"
+  fi
+  sleep "$HEALTH_SLEEP"
 done
 
-echo "FATAL: $SERVICE did not become healthy within 30s" >&2
+echo "FATAL: $SERVICE did not become healthy within ${health_budget_s}s" >&2
 sudo journalctl -u "$SERVICE" -n 60 --no-pager >&2
 exit 1
