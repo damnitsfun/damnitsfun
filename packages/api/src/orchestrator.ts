@@ -1499,14 +1499,29 @@ export class Orchestrator {
   }
 
   /**
-   * Pay the playground's Rainbow-Storm jackpot on-chain, immediately, to the
-   * triggering agent's custodial wallet — regardless of claim (sub-spec 14
-   * D64/D65/D66). Called from {@link settle} only for a `classic` session that
-   * just recorded the season's first storm. Fire-and-forget and fully swallowed:
-   * a chain failure must never corrupt the settled game (sub-spec 05's rule), and
-   * an unfunded/walletless/chain-off case is a graceful record-but-don't-pay (D67).
+   * Pay the Rainbow-Storm jackpot on-chain, immediately, to the triggering
+   * agent's custodial wallet — regardless of claim (sub-spec 14 D64/D65/D66),
+   * and for BOTH game types. Called from {@link settle} for any session that
+   * just recorded its season's first storm.
+   *
+   * A tournament used to defer this to `settleTournament` instead, where
+   * {@link resolveJackpotWinner} paid it only if the triggerer was claimed AND
+   * had a payout address, and only once the season was settled at all. That made
+   * the same achievement pay differently depending on which table it happened at,
+   * and on production it would mostly not have paid: 21 of 24 tournament agents
+   * are unclaimed. The storm is the achievement, so it pays when it happens.
+   *
+   * On success this drains `jackpot_seed_wei` to '0', which is what stops
+   * `settleTournament` paying it a second time — `resolveJackpotWinner` returns
+   * null for a zero pool. If the chain call fails the mirror is left intact, so
+   * the settlement path still catches it. That is deliberate: the two paths are
+   * now primary and fallback rather than two different rules.
+   *
+   * Fire-and-forget and fully swallowed: a chain failure must never corrupt the
+   * settled game (sub-spec 05's rule), and an unfunded/walletless/chain-off case
+   * is a graceful record-but-don't-pay (D67).
    */
-  private awardPlaygroundStormJackpot(
+  private awardStormJackpot(
     captured: { competitionId: string; agentId: string },
     sessionId: string,
     resultHash: string,
@@ -2564,9 +2579,8 @@ export class Orchestrator {
 
     // Coins now score BOTH game types (hackathon simplification): the tournament
     // follows the playground — its on-chain prize is split among the top coin
-    // holders. So every settled table moves coins. The Rainbow-Storm jackpot,
-    // however, stays a PLAYGROUND (classic) feature.
-    const isClassic = current.kind === 'classic';
+    // holders. So every settled table moves coins. The Rainbow-Storm jackpot now
+    // follows the same way: both game types run storms and both pay instantly.
 
     const winner = entry.game.winnerAgentId;
     const handValues = entry.game.getHandValues();
@@ -2592,12 +2606,14 @@ export class Orchestrator {
     finalize();
 
     // Record the first Rainbow Storm of the season (both kinds now, sub-spec 14
-    // D65). Reads the just-persisted event log. For a `classic` playground season
-    // this also triggers the immediate on-chain jackpot to the storm agent's
-    // custodial wallet (a tournament instead reads it back at settleTournament).
+    // D65). Reads the just-persisted event log, then pays the jackpot immediately
+    // to the storm agent's custodial wallet — for BOTH game types. A tournament
+    // used to defer this to `settleTournament`, which meant the prize depended on
+    // the triggerer being claimed and on the season ever being settled; the storm
+    // is the achievement, so it pays when it happens.
     const capturedStorm = this.captureJackpotFromSession(sessionId);
-    if (isClassic && capturedStorm) {
-      this.awardPlaygroundStormJackpot(capturedStorm, sessionId, resultHash);
+    if (capturedStorm) {
+      this.awardStormJackpot(capturedStorm, sessionId, resultHash);
     }
 
     // Attach point for sub-spec 05 (T13): settle on-chain with the revealed seed

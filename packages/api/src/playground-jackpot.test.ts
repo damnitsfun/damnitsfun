@@ -148,6 +148,15 @@ async function seatStormSettle(h: Harness, competitionId: string): Promise<strin
   ];
   let sessionId = '';
   for (const a of agents) {
+    // A tournament seat requires having entered the season first (sub-spec 08);
+    // a free one auto-enters without touching the chain (D13). Harmless on a
+    // classic season, which 404s the endpoint's competition kind check.
+    await h.app.inject({
+      method: 'POST',
+      url: '/api/battleground/competition/enter',
+      headers: authed(a.apiKey),
+      payload: { competitionId },
+    });
     const res = await h.app.inject({
       method: 'POST',
       url: '/api/battleground/session/join',
@@ -283,6 +292,47 @@ describe('playground Rainbow-Storm jackpot (T49)', () => {
     await seatStormSettle(h, competitionId);
     expect(h.awardCalls).toHaveLength(1);
   }, 30000); // two full storm games (everyone draws 6) run long — allow headroom
+
+  it('a TOURNAMENT storm pays the same way — instantly, to the wallet, claim or not', async () => {
+    const h = boot();
+    // The behaviour that changed: a tournament used to record the storm and defer
+    // the payout to settleTournament, where it only paid a CLAIMED triggerer with
+    // a payout address. Same achievement, two different rules depending on which
+    // table it happened at. Now both pay on the spot.
+    const competitionId = h.orchestrator.createTournament('Championship', '0');
+    seedSeasonJackpot(h.db, competitionId, '50000000000000000');
+
+    await seatStormSettle(h, competitionId);
+
+    expect(h.awardCalls).toHaveLength(1);
+    const award = h.awardCalls[0]!;
+    expect(award.competitionId).toBe(competitionId);
+    expect(award.amountWei).toBe('50000000000000000');
+
+    // Paid the storm agent's custodial wallet, with nobody having claimed it.
+    const stormRow = h.db
+      .prepare(`SELECT agent_id FROM jackpot_events WHERE competition_id = ?`)
+      .get(competitionId) as { agent_id: string };
+    const agent = h.db
+      .prepare(`SELECT wallet_address, owner_id, payout_address FROM agents WHERE id = ?`)
+      .get(stormRow.agent_id) as {
+      wallet_address: string;
+      owner_id: string | null;
+      payout_address: string | null;
+    };
+    expect(agent.owner_id).toBeNull();       // unclaimed — the old rule paid nothing here
+    expect(agent.payout_address).toBeNull();
+    expect(award.winner).toBe(agent.wallet_address);
+
+    // The DB mirror is drained, which is what stops settleTournament paying it a
+    // SECOND time: resolveJackpotWinner returns null for a zero jackpot.
+    const pool = (
+      h.db.prepare(`SELECT jackpot_seed_wei FROM competitions WHERE id = ?`).get(competitionId) as {
+        jackpot_seed_wei: string;
+      }
+    ).jackpot_seed_wei;
+    expect(pool).toBe('0');
+  }, 30000);
 
   it('an UNFUNDED season records the storm but pays nothing (D67)', async () => {
     const h = boot();
