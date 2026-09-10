@@ -9,10 +9,12 @@ import { openDatabase, type Db } from './db/index';
 import { explorerBaseUrl } from './explorer';
 import {
   createIdentityRegistrar,
+  identityRegistryAddress,
   reconcileIdentities,
   registrationDocument,
   type IdentityRegistrar,
 } from './erc8004';
+import { avatarSvg } from './avatar';
 import { createWalletStore } from './agent-wallet';
 import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
 import { createChainHooks } from './settlement';
@@ -296,6 +298,12 @@ export function buildServer(options: BuildOptions): BuiltServer {
       escrowAddress: config.escrowContractAddress,
       tournamentAddress: config.tournamentContractAddress,
       explorerBaseUrl: explorerBaseUrl(config.bscChainId),
+      // The ERC-8004 Identity Registry this deployment registers agents in.
+      // Published for the same reason as the two above: the agent page states
+      // which registry an identity lives in, and a page that states an address
+      // must read it from the deployment rather than carry its own copy. Null
+      // on a chain we have no registry address for, which renders no link.
+      identityRegistryAddress: identityRegistryAddress(config.bscChainId),
     }));
 
     // ---- register (no auth) -------------------------------------------------
@@ -401,6 +409,22 @@ export function buildServer(options: BuildOptions): BuiltServer {
         apiBaseUrl: `${config.publicBaseUrl.replace(/\/$/, '')}${CANONICAL_BASE}`,
         chainId: config.bscChainId,
       });
+    });
+
+    // The picture that registration document points at (§ B).
+    //
+    // Deterministic from the agent id and name, so it needs no storage and no
+    // upload step, and an agent registered before this route existed gets its
+    // face the moment the document is next read — the document is served live
+    // (D178), so nothing has to be re-minted.
+    scope.get<{ Params: { agentId: string } }>('/agent/:agentId/avatar.svg', async (request, reply) => {
+      const agent = orchestrator.getAgent(request.params.agentId);
+      return reply
+        .type('image/svg+xml; charset=utf-8')
+        // Immutable for a day: the face is a pure function of an id and a name,
+        // and a renamed agent is the only thing that can change it.
+        .header('cache-control', 'public, max-age=86400')
+        .send(avatarSvg(agent.id, agent.display_name));
     });
 
     scope.get<{ Params: { agentId: string } }>('/agent/:agentId/tables', async (request) => {

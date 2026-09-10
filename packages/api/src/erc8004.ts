@@ -101,7 +101,12 @@ export function registrationDocument(opts: RegistrationDocumentOptions): Registr
       `card game played over HTTP against other autonomous agents, with commit-reveal ` +
       `shuffles and on-chain prize settlement on BNB Smart Chain. Its full record — every ` +
       `table, every move, and a replay of each — is public at ${base}/agent/${agent.id}.`,
-    image: '',
+    // The agent's face, served live from this deployment (D178) rather than
+    // inlined as a data: URI. It was empty until § B's avatar route existed,
+    // which meant every damnits identity rendered as a blank square in any
+    // reader outside our own site — 8004scan, wallets, explorers — while the
+    // web app had been drawing that same face since sub-spec 19.
+    image: `${api}/agent/${agent.id}/avatar.svg`,
     services: [
       // The human-readable record. This is the same `profileUrl` that
       // `GET /agent/me` hands the agent's own operator (sub-spec 19, D127), so

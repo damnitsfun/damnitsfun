@@ -58,6 +58,27 @@ export interface AgentProfile {
   /** Claiming X handle, or null while unclaimed — the normal case (D114). */
   ownerHandle: string | null;
   claimed: boolean;
+  /**
+   * The custodial wallet issued at registration (sub-spec 14) — the address the
+   * agent pays entry fees from, and where a Rainbow-Storm jackpot is pushed.
+   * Public on purpose: it is already published in the agent's ERC-8004 document
+   * (sub-spec 23, D178), and an address nobody can see is one nobody can check.
+   *
+   * NOT the payout address. Prizes go to `agents.payout_address`, which the
+   * owner sets separately and which should be a wallet they can withdraw from —
+   * there is no withdrawal path out of the custodial wallet.
+   *
+   * Null for a walletless deployment (blank WALLET_ENCRYPTION_KEY, D67).
+   */
+  walletAddress: string | null;
+  /**
+   * The agent's ERC-8004 Identity Registry token id, and the transaction that
+   * minted it (sub-spec 23, § B). Null until the background registrar reaches
+   * this agent — identity is ADDITIVE and never gates play, so "not yet" is a
+   * normal state and must render as absent rather than as a failure.
+   */
+  erc8004AgentId: number | null;
+  erc8004TxHash: string | null;
   registeredAt: string;
   /** When this agent last took a seat, or null if it never has. */
   lastPlayedAt: string | null;
@@ -102,7 +123,8 @@ const AGENT_NOT_FOUND = (agentId: string): ApiError =>
 export function agentProfile(db: Db, agentId: string): AgentProfile {
   const agent = db
     .prepare(
-      `SELECT a.id, a.display_name, a.coins, a.created_at, a.owner_id, o.x_handle AS ownerHandle
+      `SELECT a.id, a.display_name, a.coins, a.created_at, a.owner_id, a.wallet_address,
+              a.erc8004_agent_id, a.erc8004_tx_hash, o.x_handle AS ownerHandle
          FROM agents a LEFT JOIN owners o ON o.id = a.owner_id
         WHERE a.id = ?`,
     )
@@ -113,6 +135,9 @@ export function agentProfile(db: Db, agentId: string): AgentProfile {
         coins: number;
         created_at: string;
         owner_id: string | null;
+        wallet_address: string | null;
+        erc8004_agent_id: number | null;
+        erc8004_tx_hash: string | null;
         ownerHandle: string | null;
       }
     | undefined;
@@ -170,6 +195,9 @@ export function agentProfile(db: Db, agentId: string): AgentProfile {
     displayName: agent.display_name,
     ownerHandle: agent.ownerHandle,
     claimed: agent.owner_id !== null,
+    walletAddress: agent.wallet_address,
+    erc8004AgentId: agent.erc8004_agent_id,
+    erc8004TxHash: agent.erc8004_tx_hash,
     registeredAt: agent.created_at,
     lastPlayedAt: last.at,
     coins: agent.coins,

@@ -229,17 +229,91 @@
       border-bottom-color: var(--gold-bright);
     }
 
-    /* a signed-in account reads as a small gold dot on the tab — quiet,
-         but this tab is where the account lives now */
-    body:has(#auth-account) #pf-tab::after {
-      content: "";
+    /* ---- account menu (the ▾ on the signed-in chip) ----
+         A real menu, not a link: the chip has always ended in ▾ and only
+         navigated. Built from the same panel/line/ink tokens as every other
+         surface so it needs no palette of its own. */
+    .acct-wrap {
+      position: relative;
       display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--gold-bright);
-      margin-left: 9px;
-      vertical-align: 11px;
+    }
+
+    .acct-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 60;
+      min-width: 232px;
+      background: var(--panel);
+      border: 1px solid var(--line-2);
+      border-radius: 10px;
+      box-shadow: 0 12px 28px rgba(34, 32, 26, .16);
+      padding: 6px;
+      text-align: left;
+    }
+
+    .acct-menu[hidden] {
+      display: none;
+    }
+
+    .acct-menu button {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      background: none;
+      border: 0;
+      border-radius: 7px;
+      padding: 9px 10px;
+      font: inherit;
+      font-size: 14px;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .acct-menu button:hover:not(:disabled),
+    .acct-menu button:focus-visible {
+      background: var(--panel-2);
+      outline: none;
+    }
+
+    .acct-menu button:disabled {
+      color: var(--ink-faint);
+      cursor: default;
+    }
+
+    .acct-menu svg {
+      flex: none;
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 1.6;
+      fill: none;
+      opacity: .75;
+    }
+
+    .acct-menu .lab {
+      min-width: 0;
+    }
+
+    /* the address under a wallet row — the whole point of the row */
+    .acct-menu .val {
+      display: block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      color: var(--ink-faint);
+      margin-top: 1px;
+    }
+
+    .acct-menu .sep {
+      height: 1px;
+      background: var(--line);
+      margin: 6px 4px;
+    }
+
+    .acct-menu .danger {
+      color: var(--c-red);
     }
 
     /* utilities: view links and the live badge, then season + auth right */
@@ -1656,6 +1730,47 @@
       color: var(--ink);
     }
 
+    .ag-wallet code {
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    .ag-wallet-note {
+      opacity: .7;
+    }
+
+    /* The identity card. The face is the SAME image the on-chain registration
+       document points at, not a second drawing of it — served from
+       /agent/:id/avatar.svg, so the token and the page cannot disagree. */
+    .ag-identity-face {
+      border-radius: 12px;
+      display: block;
+      flex: none;
+    }
+
+    .ag-identity-name {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .ag-identity .sub code {
+      font-size: 12px;
+    }
+
+    .ag-identity-link {
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 560px) {
+      .ag-identity .row {
+        flex-wrap: wrap;
+      }
+      .ag-identity-link {
+        margin-left: 0 !important;
+      }
+    }
+
     .ag-claim {
       color: var(--ink-faint);
     }
@@ -2618,6 +2733,7 @@
               <h2 id="ag-name" style="font-size:30px; margin:0">—</h2>
               <p class="sub" style="margin:2px 0 0" id="ag-id"></p>
               <p class="sub" style="margin:6px 0 0" id="ag-meta"></p>
+              <p class="sub ag-wallet" style="margin:4px 0 0" id="ag-wallet" hidden></p>
             </div>
             <div style="margin-left:auto; text-align:right" class="ag-headline">
               <div><span class="label">best place</span>
@@ -2627,6 +2743,19 @@
                 <div class="econ-v" id="ag-tables">—</div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div class="sec-kick" id="ag-identity-kick" hidden>ONCHAIN IDENTITY</div>
+        <div class="panel pad ag-identity" id="ag-identity" hidden>
+          <div class="row" style="align-items:center; gap:14px">
+            <img id="ag-identity-face" class="ag-identity-face" alt="" width="56" height="56">
+            <div>
+              <div class="ag-identity-name" id="ag-identity-name"></div>
+              <p class="sub" style="margin:2px 0 0" id="ag-identity-meta"></p>
+            </div>
+            <a class="agent-link ag-identity-link" id="ag-identity-link" style="margin-left:auto"
+               target="_blank" rel="noopener noreferrer" hidden>view on explorer &#8599;</a>
           </div>
         </div>
 
@@ -4060,6 +4189,9 @@
         $('ag-name').textContent = 'no such agent';
         $('ag-id').textContent = agentId;
         $('ag-meta').textContent = '';
+        $('ag-wallet').hidden = true;
+        $('ag-identity').hidden = true;
+        $('ag-identity-kick').hidden = true;
         $('ag-tabs').innerHTML = '';
         $('ag-review').innerHTML = '';
         $('ag-style-panel').hidden = true;
@@ -4097,6 +4229,63 @@
         ? 'owner <a class="agent-link" href="https://x.com/' + encodeURIComponent(p.ownerHandle)
         + '" target="_blank" rel="noopener noreferrer">@' + esc(p.ownerHandle) + '</a>'
         : '<span class="ag-claim">unclaimed — its owner can claim it to become payout-eligible</span>');
+      // The custodial wallet the battleground issued this agent (sub-spec 14).
+      // It was already public in the agent's ERC-8004 document (D178) and shown
+      // nowhere a person looks — so an owner who claimed an agent could not find
+      // the address their agent pays and is paid at.
+      //
+      // Linked to the explorer when /config supplies one, plain text otherwise:
+      // a null renders NO link rather than a dead one, exactly as the chain
+      // links below do (D173). `state.chain` is loaded by loadConfig() before
+      // this page is shown, and degrading to text is the correct answer if it
+      // has not arrived yet.
+      const wallet = $('ag-wallet');
+      if (p.walletAddress) {
+        const wex = state.chain && state.chain.explorerBaseUrl;
+        wallet.innerHTML = 'wallet '
+          + (wex
+            ? '<a class="agent-link" href="' + wex + '/address/' + encodeURIComponent(p.walletAddress)
+              + '" target="_blank" rel="noopener noreferrer"><code>' + esc(p.walletAddress) + '</code></a>'
+            : '<code>' + esc(p.walletAddress) + '</code>')
+          + ' <span class="ag-wallet-note">— where it pays entry fees from, not where prizes are sent</span>';
+        wallet.hidden = false;
+      } else {
+        wallet.hidden = true;
+      }
+      // ERC-8004: the identity card. Hidden entirely until the background
+      // registrar reaches this agent — registration is asynchronous and
+      // additive, so "not yet" is the normal state for most of the roster and
+      // an empty card would report our own queue depth as a fact about the
+      // agent.
+      const identOn = p.erc8004AgentId != null;
+      $('ag-identity').hidden = !identOn;
+      $('ag-identity-kick').hidden = !identOn;
+      if (identOn) {
+        const chain = state.chain || {};
+        // The same image the on-chain registration document points at, so the
+        // page and the token show one face (D178).
+        $('ag-identity-face').src = API + '/agent/' + encodeURIComponent(p.agentId) + '/avatar.svg';
+        $('ag-identity-face').alt = p.displayName + ' identity token';
+        $('ag-identity-name').textContent = p.displayName;
+        // Registry address second, shortened: it is what makes this a STANDARD
+        // registry rather than a row in our own database, which is the whole
+        // claim. Absent on a chain we have no registry for — then say only what
+        // we know rather than implying a registry we cannot name.
+        $('ag-identity-meta').innerHTML = 'identity nft #' + esc(String(p.erc8004AgentId))
+          + (chain.identityRegistryAddress
+            ? ' <span class="ag-wallet-note">\u00b7</span> <code>'
+              + esc(shortAddr(chain.identityRegistryAddress)) + '</code>'
+            : '');
+        // The transaction that minted it. No explorer or no hash renders no
+        // link rather than a dead one (D173).
+        const link = $('ag-identity-link');
+        if (chain.explorerBaseUrl && p.erc8004TxHash) {
+          link.href = chain.explorerBaseUrl + '/tx/' + encodeURIComponent(p.erc8004TxHash);
+          link.hidden = false;
+        } else {
+          link.hidden = true;
+        }
+      }
       const best = p.competitions.reduce((b, c) =>
         c.bestPlace != null && (b == null || c.bestPlace < b) ? c.bestPlace : b, null);
       $('ag-best').textContent = best == null ? '—' : '#' + best;
@@ -4409,12 +4598,113 @@
       renderAuthSlot();
       if (state.view === 'profile') renderProfile();
     }
+    // Line icons for the account menu, in the same stroke weight as the rest of
+    // the chrome. Inline because the page has no icon set and no build step.
+    const ICON = {
+      profile: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6.5" r="3.2"/><path d="M3.8 17c0-3.4 2.8-5.4 6.2-5.4s6.2 2 6.2 5.4"/></svg>',
+      agent: '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3.5" y="6.5" width="13" height="9.5" rx="2"/><path d="M10 3.2v3.3M7.3 10.6h.01M12.7 10.6h.01"/></svg>',
+      wallet: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7.6" cy="10" r="4.1"/><path d="M11.4 6.6a4.1 4.1 0 0 1 0 6.8"/></svg>',
+      prize: '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="5.6" width="14" height="9.8" rx="2"/><path d="M3 9.2h14"/></svg>',
+      out: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 3.5H4.6v13H8M12 6.4l3.4 3.6L12 13.6M15.4 10H7.6"/></svg>',
+    };
+
+    /** Truncate an address to something a menu row can hold. */
+    function shortAddr(a) {
+      return a ? a.slice(0, 6) + '…' + a.slice(-4) : null;
+    }
+
+    function closeAcctMenu() {
+      const m = $('acct-menu');
+      if (m && !m.hidden) {
+        m.hidden = true;
+        const t = $('auth-account');
+        if (t) t.setAttribute('aria-expanded', 'false');
+      }
+    }
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest || !e.target.closest('.acct-wrap')) closeAcctMenu();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAcctMenu(); });
+
+    /**
+     * The signed-in chip's menu.
+     *
+     * The two wallet rows carry the ADDRESS, not just a label, because they are
+     * the only place an owner can currently see either one: `PATCH /agent/me`
+     * takes the agent's API key, not this browser session, so claiming an agent
+     * grants no way to configure it. Until that changes, the honest thing is to
+     * show the addresses and say plainly which is which — a row that opened an
+     * editor that does not exist would be worse than no row.
+     */
+    function renderAcctMenu() {
+      const s = state.session;
+      const menu = $('acct-menu');
+      if (!menu || !s || !s.account) return;
+      const agent = (s.agents || [])[0] || null;   // one agent per account (D38)
+      const rows = [];
+      const row = (icon, label, value, opts) => {
+        const o = opts || {};
+        rows.push('<button type="button" data-act="' + o.act + '"' + (o.disabled ? ' disabled' : '')
+          + (o.title ? ' title="' + esc(o.title) + '"' : '')
+          + (o.danger ? ' class="danger"' : '') + '>' + icon
+          + '<span class="lab">' + esc(label)
+          + (value ? '<span class="val">' + esc(value) + '</span>' : '') + '</span></button>');
+      };
+
+      row(ICON.profile, 'my profile', null, { act: 'profile' });
+      row(ICON.agent, agent ? 'my agent' : 'my agent', agent ? agent.displayName : 'none claimed yet',
+        { act: 'agent', disabled: !agent });
+      row(ICON.wallet, 'agent wallet', agent && agent.walletAddress
+        ? shortAddr(agent.walletAddress) : 'unavailable',
+        {
+          act: 'wallet', disabled: !(agent && agent.walletAddress),
+          title: 'Where this agent pays entry fees from. Copy to clipboard.',
+        });
+      row(ICON.prize, 'prize wallet', agent && agent.payoutAddress
+        ? shortAddr(agent.payoutAddress) : 'not set yet',
+        {
+          act: 'payout', disabled: !(agent && agent.payoutAddress),
+          title: 'Where prizes are sent. Set it from the agent, not here.',
+        });
+      rows.push('<div class="sep"></div>');
+      row(ICON.out, 'log out', null, { act: 'logout', danger: true });
+      menu.innerHTML = rows.join('');
+
+      const copy = async (text, btn) => {
+        const lab = btn.querySelector('.val');
+        try {
+          await navigator.clipboard.writeText(text);
+          if (lab) { const was = lab.textContent; lab.textContent = 'copied'; setTimeout(() => { lab.textContent = was; }, 1200); }
+        } catch (_) { /* clipboard denied — nothing to fall back to in a menu */ }
+      };
+      for (const b of menu.querySelectorAll('button')) {
+        b.onclick = async (e) => {
+          e.stopPropagation();
+          const act = b.dataset.act;
+          if (act === 'profile') { closeAcctMenu(); history.pushState(null, '', '/profile'); show('profile'); }
+          else if (act === 'agent' && agent) { closeAcctMenu(); location.href = '/agent/' + encodeURIComponent(agent.agentId); }
+          else if (act === 'wallet' && agent) await copy(agent.walletAddress, b);
+          else if (act === 'payout' && agent) await copy(agent.payoutAddress, b);
+          else if (act === 'logout') { closeAcctMenu(); signOut(); }
+        };
+      }
+    }
+
     function renderAuthSlot() {
       const s = state.session, el = $('auth-slot');
       if (s && s.account) {
-        el.innerHTML = '<button class="gbtn" id="auth-account"></button>';
+        el.innerHTML = '<span class="acct-wrap"><button class="gbtn" id="auth-account" '
+          + 'aria-haspopup="menu" aria-expanded="false"></button>'
+          + '<div class="acct-menu" id="acct-menu" role="menu" hidden></div></span>';
         $('auth-account').textContent = (s.account.name || s.account.email || 'account') + ' ▾';
-        $('auth-account').onclick = () => { history.pushState(null, '', '/profile'); show('profile'); };
+        $('auth-account').onclick = (e) => {
+          e.stopPropagation();
+          const m = $('acct-menu');
+          const open = m.hidden;
+          if (open) renderAcctMenu();
+          m.hidden = !open;
+          $('auth-account').setAttribute('aria-expanded', String(open));
+        };
       } else {
         const disabled = s && s.providers && !s.providers.google;
         el.innerHTML = '<a class="gbtn" id="auth-login"' + (disabled ? ' title="login needs a Google app configured"' : '') + '><span class="g">G</span> Sign in</a>';
@@ -4466,10 +4756,12 @@
         tb.appendChild(tr);
       }
     }
-    $('pf-signout').onclick = async () => {
+    // One sign-out, two callers: the profile button and the account menu.
+    async function signOut() {
       await fetch(API + '/auth/logout', { method: 'POST' });
       state.session = null; history.pushState(null, '', '/battleground'); show('overview'); renderAuthSlot();
-    };
+    }
+    $('pf-signout').onclick = signOut;
     $('pf-edit').onclick = async () => {
       const name = prompt('Display name', (state.session && state.session.account && state.session.account.name) || '');
       if (name == null) return;
