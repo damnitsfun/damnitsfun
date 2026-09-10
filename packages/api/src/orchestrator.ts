@@ -792,6 +792,38 @@ export class Orchestrator {
     return { name: clean };
   }
 
+  /**
+   * Set the payout address of an agent the LOGGED-IN OWNER owns.
+   *
+   * `PATCH /agent/me` has always been able to do this, but it authenticates with
+   * the agent's own API key — which the operator of a claimed agent may not have,
+   * and a person reading their profile page certainly does not. So claiming an
+   * agent produced a payout address the owner could see and could not change,
+   * and the address is the one thing that decides whether a prize can be paid.
+   *
+   * An agent the account does not own answers 404, not 403: whether some other
+   * account's agent exists is not this caller's business.
+   */
+  setAgentPayoutAddressAsAccount(
+    token: string | undefined,
+    agentId: string,
+    payoutAddress: string,
+  ): { agentId: string; displayName: string; payoutAddress: string | null } {
+    const account = this.requireAccount(token);
+    const owned =
+      account.owner_id &&
+      this.db
+        .prepare(`SELECT id FROM agents WHERE id = ? AND owner_id = ?`)
+        .get(agentId, account.owner_id);
+    if (!owned) throw new ApiError(404, 'AGENT_NOT_FOUND', `No such agent: ${agentId}`);
+    const updated = this.setPayoutAddress(agentId, payoutAddress);
+    return {
+      agentId: updated.id,
+      displayName: updated.display_name,
+      payoutAddress: updated.payout_address,
+    };
+  }
+
   private requireAccount(token: string | undefined): AccountRow {
     const account = this.accountByToken(token);
     if (!account) throw new ApiError(401, 'NOT_LOGGED_IN', 'Sign in with Google first');

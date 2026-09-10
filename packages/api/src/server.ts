@@ -610,6 +610,18 @@ export function buildServer(options: BuildOptions): BuiltServer {
       return orchestrator.renameAccount(token, name);
     });
 
+    // Set an owned agent's payout address from the profile page.
+    //
+    // The sibling of `PATCH /agent/me`, which authenticates as the AGENT. This
+    // one authenticates as the OWNER, because the person who needs to change
+    // this is reading their profile in a browser and does not hold the agent's
+    // API key.
+    scope.patch<{ Params: { agentId: string } }>('/auth/agent/:agentId', async (request) => {
+      const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+      const { payoutAddress } = patchAgentSchema.parse(request.body);
+      return orchestrator.setAgentPayoutAddressAsAccount(token, request.params.agentId, payoutAddress);
+    });
+
     // Claim an agent to the logged-in account via its claim link (1:1 rule, D38).
     scope.post('/auth/claim-agent', async (request) => {
       const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
