@@ -87,10 +87,34 @@ async function main(): Promise<void> {
     db.close();
     process.exit(1);
   }
-  if (before.kind !== 'tournament') {
-    log(`FATAL: ${competitionId} is a "${before.kind}" season; only a tournament holds a pool.`);
+  // Which season kind can hold which money is not interchangeable, and getting
+  // it wrong strands funds rather than erroring:
+  //
+  //   tournament — holds the prize `pool`, paid by `settleCompetition`. Its
+  //     jackpot side-pool is resolved from `jackpot_events` for THAT competition,
+  //     and a Rainbow Storm only ever fires in a CLASSIC season (spec 15), so a
+  //     tournament's jackpot has no path to a winner: it would sit on chain
+  //     until someone called `rolloverJackpot` by hand.
+  //   classic — holds only a jackpot, pushed straight to the storm triggerer by
+  //     `awardPlaygroundStormJackpot`. It has no prize pool at all.
+  const classic = before.kind === 'classic';
+  if (!classic && before.kind !== 'tournament') {
+    log(`FATAL: ${competitionId} is a "${before.kind}" season; nothing here can hold funds.`);
     db.close();
     process.exit(1);
+  }
+  if (classic && BigInt(poolWei) > 0n) {
+    log(`FATAL: ${competitionId} is a playground season and has no prize pool.`);
+    log('Only --jackpot-wei applies here; the prize pool lives on a tournament.');
+    db.close();
+    process.exit(1);
+  }
+  if (!classic && BigInt(jackpotWei) > 0n) {
+    log('REFUSING: a Rainbow Storm only fires in a playground (classic) season,');
+    log('so a tournament jackpot has no path to a winner — it would sit on chain');
+    log('until rolled over by hand. Seed the playground season instead.');
+    db.close();
+    process.exit(2);
   }
 
   log('');
@@ -99,8 +123,8 @@ async function main(): Promise<void> {
   log(`competition    ${competitionId}  ${before.name}  [${before.status}]`);
   log(`pool now       ${fmt(before.pool_wei)}`);
   log(`jackpot now    ${fmt(before.jackpot_seed_wei)}`);
-  log(`adding pool    ${fmt(poolWei)}`);
-  log(`adding jackpot ${fmt(jackpotWei)}`);
+  log(`${classic ? 'setting jackpot' : 'adding pool   '} ${fmt(classic ? jackpotWei : poolWei)}`);
+  if (!classic) log(`adding jackpot ${fmt(jackpotWei)}`);
   log('');
 
   if (!has('--confirm-spend')) {
@@ -121,9 +145,16 @@ async function main(): Promise<void> {
   }
 
   log('seeding (this moves funds)…');
-  const seeded = await orchestrator.seedTournament(competitionId, poolWei, jackpotWei);
-  log(`  pool now ${fmt(seeded.pool)}`);
-  log(`  jackpot now ${fmt(seeded.jackpot)}`);
+  if (classic) {
+    // NOTE: `seedPlaygroundJackpot` SETS the mirror rather than adding to it, so
+    // this is "make the jackpot N", not "add N". It is printed as such above.
+    await orchestrator.seedPlaygroundJackpot(competitionId, jackpotWei);
+    log(`  jackpot now ${fmt(jackpotWei)}`);
+  } else {
+    const seeded = await orchestrator.seedTournament(competitionId, poolWei, jackpotWei);
+    log(`  pool now ${fmt(seeded.pool)}`);
+    log(`  jackpot now ${fmt(seeded.jackpot)}`);
+  }
   log('');
   log('Check it landed on both sides: GET /competitions should now report the');
   log('same poolWei the contract holds.');
