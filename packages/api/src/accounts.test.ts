@@ -129,6 +129,53 @@ describe('sub-spec 11 — web accounts', () => {
     expect(s.x).toEqual({ handle: 'alice_x', xUserId: 'x_7' });
   });
 
+  it('an owner can set their own agent\'s payout address, and only their own', async () => {
+    const h = boot();
+    const cookie = await signInWithGoogle(h);
+    await connectX(h, cookie);
+    const token = await registerAgentWithClaim(h, 'Mine');
+    const claimed = await h.app.inject({
+      method: 'POST',
+      url: '/api/arena/auth/claim-agent',
+      headers: { cookie },
+      payload: { claimToken: token },
+    });
+    expect(claimed.statusCode).toBe(200);
+    const agentId = claimed.json().agentId as string;
+
+    const addr = '0xF977F34dB8a986A0A9edec3E744092c715EF793c';
+    const ok = await h.app.inject({
+      method: 'PATCH',
+      url: `/api/arena/auth/agent/${agentId}`,
+      headers: { cookie },
+      payload: { payoutAddress: addr },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().payoutAddress).toBe(addr);
+    expect((await session(h, cookie)).agents[0].payoutAddress).toBe(addr);
+
+    // Someone else's agent is a 404, not a 403: whether it exists is not this
+    // caller's business, and the old route wanted an api key an owner lacks.
+    const other = (
+      await h.app.inject({ method: 'POST', url: '/api/arena/register', payload: { displayName: 'Theirs' } })
+    ).json();
+    const denied = await h.app.inject({
+      method: 'PATCH',
+      url: `/api/arena/auth/agent/${other.agentId}`,
+      headers: { cookie },
+      payload: { payoutAddress: addr },
+    });
+    expect(denied.statusCode).toBe(404);
+
+    // Signed out, it is a 401 rather than a silent no-op.
+    const anon = await h.app.inject({
+      method: 'PATCH',
+      url: `/api/arena/auth/agent/${agentId}`,
+      payload: { payoutAddress: addr },
+    });
+    expect(anon.statusCode).toBe(401);
+  });
+
   it('claims one agent to the account; enforces the 1:1 rule', async () => {
     const h = boot();
     const cookie = await signInWithGoogle(h);

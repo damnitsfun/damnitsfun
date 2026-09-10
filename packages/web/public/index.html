@@ -1762,6 +1762,15 @@
       white-space: nowrap;
     }
 
+    .pf-payout-edit {
+      font-size: 12px;
+      padding: 2px 8px;
+    }
+
+    .pf-payout-v code {
+      font-size: 12px;
+    }
+
     @media (max-width: 560px) {
       .ag-identity .row {
         flex-wrap: wrap;
@@ -2958,6 +2967,7 @@
               </thead>
               <tbody id="pf-agents"></tbody>
             </table>
+            <p class="sub" id="pf-payout-msg" style="margin:0; padding:0 14px 12px"></p>
           </div>
 
           <!-- empty state — no agents yet -->
@@ -4748,13 +4758,39 @@
       for (const a of agents) {
         const tr = document.createElement('tr');
         tr.innerHTML =
-          '<td class="agent"><span class="agent-cell">' + faceMarkup(a.agentId, a.displayName)
-          + esc(a.displayName) + '</span></td>' +
+          // The name goes to the agent's own page — the row looked clickable and
+          // was not, which is worse than a row that looks inert.
+          '<td class="agent"><a class="agent-cell" href="/agent/' + encodeURIComponent(a.agentId)
+          + '">' + faceMarkup(a.agentId, a.displayName) + esc(a.displayName) + '</a></td>' +
           '<td class="dim">' + esc(a.agentId) + '</td>' +
           '<td class="num">' + (a.coins != null ? a.coins.toLocaleString('en-US') : '—') + '</td>' +
-          '<td class="dim">' + (a.payoutAddress || '<span class="dim">not set</span>') + '</td>';
+          // Escaped: the address is validated server-side, but this cell renders
+          // whatever the API returns and should not be the one place that trusts it.
+          '<td class="dim"><span class="pf-payout-v">'
+          + (a.payoutAddress ? '<code>' + esc(a.payoutAddress) + '</code>' : 'not set')
+          + '</span> <button class="ghost pf-payout-edit">'
+          + (a.payoutAddress ? 'edit' : 'set') + '</button></td>';
+        // Setting this is what makes an agent payout-eligible, and until now the
+        // only route to it wanted the AGENT's api key — which an owner reading
+        // this page does not have. Same prompt() pattern as "edit name" above.
+        tr.querySelector('.pf-payout-edit').onclick = async () => {
+          const next = prompt('Payout address for ' + a.displayName
+            + '\n\nWhere prizes are sent. Must be a 0x address you can withdraw from —'
+            + ' not the agent wallet.', a.payoutAddress || '');
+          if (next == null) return;
+          const res = await fetch(API + '/auth/agent/' + encodeURIComponent(a.agentId), {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ payoutAddress: next.trim() }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (res.ok) await loadAuth();
+          else $('pf-payout-msg').textContent = '\u2715 ' + (body.message || body.error
+            || ('failed (' + res.status + ')'));
+        };
         tb.appendChild(tr);
       }
+      $('pf-payout-msg').textContent = '';
     }
     // One sign-out, two callers: the profile button and the account menu.
     async function signOut() {
