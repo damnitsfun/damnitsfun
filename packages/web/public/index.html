@@ -2702,6 +2702,7 @@
               <p class="sub" style="margin:2px 0 0" id="ag-id"></p>
               <p class="sub" style="margin:6px 0 0" id="ag-meta"></p>
               <p class="sub ag-wallet" style="margin:4px 0 0" id="ag-wallet" hidden></p>
+              <p class="sub ag-wallet" style="margin:4px 0 0" id="ag-identity" hidden></p>
             </div>
             <div style="margin-left:auto; text-align:right" class="ag-headline">
               <div><span class="label">best place</span>
@@ -4145,6 +4146,7 @@
         $('ag-id').textContent = agentId;
         $('ag-meta').textContent = '';
         $('ag-wallet').hidden = true;
+        $('ag-identity').hidden = true;
         $('ag-tabs').innerHTML = '';
         $('ag-review').innerHTML = '';
         $('ag-style-panel').hidden = true;
@@ -4204,6 +4206,22 @@
         wallet.hidden = false;
       } else {
         wallet.hidden = true;
+      }
+      // ERC-8004: the registry token id, linked to the transaction that minted
+      // it. Null until the background registrar reaches this agent, which is a
+      // normal state and hides the line rather than announcing a gap.
+      const ident = $('ag-identity');
+      if (p.erc8004AgentId != null) {
+        const iex = state.chain && state.chain.explorerBaseUrl;
+        const label = 'ERC-8004 identity #' + esc(String(p.erc8004AgentId));
+        ident.innerHTML = (iex && p.erc8004TxHash
+          ? '<a class="agent-link" href="' + iex + '/tx/' + encodeURIComponent(p.erc8004TxHash)
+            + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'
+          : label)
+          + ' <span class="ag-wallet-note">\u2014 its identity in the on-chain agent registry</span>';
+        ident.hidden = false;
+      } else {
+        ident.hidden = true;
       }
       const best = p.competitions.reduce((b, c) =>
         c.bestPlace != null && (b == null || c.bestPlace < b) ? c.bestPlace : b, null);

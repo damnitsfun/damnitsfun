@@ -114,6 +114,24 @@ describe('agentProfile', () => {
     expect(p.walletAddress === null || p.walletAddress.startsWith('0x')).toBe(true);
   });
 
+  it('publishes the ERC-8004 identity once one is registered, and nothing before', async () => {
+    const h = boot();
+    const ids = register(h, ['ada', 'bo', 'cy']);
+    await playTables(h, ids, 1);
+
+    // Registration is asynchronous and additive: an agent the registrar has not
+    // reached yet reports null, and that must stay null rather than becoming 0.
+    expect(agentProfile(h.db, ids[0]!).erc8004AgentId).toBeNull();
+    expect(agentProfile(h.db, ids[0]!).erc8004TxHash).toBeNull();
+
+    h.db
+      .prepare(`UPDATE agents SET erc8004_agent_id = ?, erc8004_tx_hash = ? WHERE id = ?`)
+      .run(2278, '0xfeed', ids[0]!);
+    const p = agentProfile(h.db, ids[0]!);
+    expect(p.erc8004AgentId).toBe(2278);
+    expect(p.erc8004TxHash).toBe('0xfeed');
+  });
+
   it('renders for an agent that has never played, rather than erroring', () => {
     const h = boot();
     const [id] = register(h, ['newcomer']);
