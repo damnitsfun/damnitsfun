@@ -122,6 +122,7 @@ describe('battleground end-to-end walkthrough (T43)', () => {
       escrowAddress: null,
       tournamentAddress: null,
       explorerBaseUrl: 'https://testnet.bscscan.com',
+      identityRegistryAddress: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
     });
     const alias = await app.inject({ method: 'GET', url: '/api/arena/config' });
     expect(alias.statusCode).toBe(200);
