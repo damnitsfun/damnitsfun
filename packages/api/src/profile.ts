@@ -242,12 +242,7 @@ export function agentTables(
               p.coin_delta          AS coinDelta,
               s.winner_agent_id     AS winnerAgentId,
               s.ended_at            AS endedAt,
-              s.rowid               AS rowid,
-              (SELECT json_extract(e.payload_json, '$.reason') FROM session_events e
-                WHERE e.session_id = s.id AND e.event_type = 'GAME_ENDED'
-                ORDER BY e.seq DESC LIMIT 1) AS reason,
-              (SELECT COUNT(*) FROM sessions x
-                WHERE x.status IN ('settled','archived') AND x.rowid <= s.rowid) AS gameNumber
+              s.rowid               AS rowid
          FROM session_players p
          JOIN sessions s     ON s.id = p.session_id AND s.status = 'settled'
          JOIN competitions c ON c.id = s.competition_id
@@ -269,10 +264,36 @@ export function agentTables(
         : null,
       limit: limit + 1, // one extra row tells us whether another page exists
     }) as Array<
-    Omit<ProfileTable, 'won' | 'opponents'> & { winnerAgentId: string | null; rowid: number }
+    Omit<ProfileTable, 'won' | 'opponents' | 'reason' | 'gameNumber'> & {
+      winnerAgentId: string | null;
+      rowid: number;
+    }
   >;
 
   const page = rows.slice(0, limit);
+
+  // `reason` and `gameNumber` are looked up PER PAGE ROW rather than selected as
+  // correlated subqueries in the query above (D122 follow-up).
+  //
+  // They used to live in the SELECT list, which reads better and was fine at
+  // 1,699 tables. It is not fine at 22,000: the plan sorts through a TEMP B-TREE
+  // to satisfy `ORDER BY s.rowid DESC`, so every matching row is materialised
+  // BEFORE the LIMIT applies — and `gameNumber` counted up to 22,000 sessions
+  // for each of them. Measured on a 22,000-session database: 16.6 SECONDS, and
+  // production timed the request out at 60s behind the proxy, which the web app
+  // swallowed into an empty history and an empty chart with no error shown.
+  //
+  // Done here instead, both run at most `limit` times.
+  const reasonOf = db.prepare(
+    `SELECT json_extract(payload_json, '$.reason') AS reason
+       FROM session_events
+      WHERE session_id = ? AND event_type = 'GAME_ENDED'
+      ORDER BY seq DESC LIMIT 1`,
+  );
+  const gameNumberOf = db.prepare(
+    `SELECT COUNT(*) AS n FROM sessions
+      WHERE status IN ('settled','archived') AND rowid <= ?`,
+  );
   const seatsFor = db.prepare(
     `SELECT p.agent_id AS agentId, a.display_name AS displayName
        FROM session_players p JOIN agents a ON a.id = p.agent_id
@@ -288,9 +309,10 @@ export function agentTables(
     place: r.place,
     coinDelta: r.coinDelta,
     won: r.winnerAgentId === agentId,
-    reason: r.reason,
+    reason: (reasonOf.get(r.sessionId) as { reason: ProfileTable['reason'] } | undefined)?.reason
+      ?? null,
     endedAt: r.endedAt,
-    gameNumber: r.gameNumber,
+    gameNumber: (gameNumberOf.get(r.rowid) as { n: number }).n,
     opponents: seatsFor.all(r.sessionId, agentId) as Array<{
       agentId: string;
       displayName: string;

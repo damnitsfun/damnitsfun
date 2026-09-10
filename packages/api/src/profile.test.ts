@@ -244,6 +244,24 @@ describe('agentTables', () => {
     expect([...numbers].sort((a, b) => b - a)).toEqual(numbers);
   });
 
+  it('numbers a game globally, counting tables this agent never sat at', async () => {
+    // `gameNumber` used to be a correlated subquery in the paged SELECT, which
+    // made a page cost O(whole history) and timed out in production. It is now
+    // looked up per returned row — this pins the meaning that move must not
+    // change: it counts EVERY settled table up to this one, not the agent's own.
+    const h = boot();
+    const mine = register(h, ['ada', 'bo', 'cy']);
+    const theirs = register(h, ['dee', 'eve', 'fay']);
+    await playTables(h, mine, 1);
+    await playTables(h, theirs, 3); // three tables ada never sat at
+    await playTables(h, mine, 1);
+
+    const { tables } = agentTables(h.db, mine[0]!);
+    expect(tables).toHaveLength(2);
+    expect(tables[0]!.gameNumber).toBe(5); // the 5th settled table overall
+    expect(tables[1]!.gameNumber).toBe(1);
+  });
+
   /**
    * Paginated from the first version, not "later, when it grows": one production
    * agent had 1,699 settled tables when this was written and the field was two

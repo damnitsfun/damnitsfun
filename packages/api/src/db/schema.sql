@@ -281,3 +281,11 @@ CREATE INDEX IF NOT EXISTS idx_sessions_competition_status ON sessions(competiti
 CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id, seq);
 CREATE INDEX IF NOT EXISTS idx_agent_claims_agent ON agent_claims(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agents_owner ON agents(owner_id);
+
+-- The profile's table history numbers each game globally ("#30209"), which is a
+-- COUNT of settled sessions at or below a rowid. Without this it is a scan of
+-- the whole sessions table per row; with it, a range count on a compact index.
+-- Indexing `status` alone is enough: an index entry IS (status, rowid), so the
+-- rows for one status are already ordered by rowid. Naming rowid explicitly is
+-- a syntax error, not a stricter index.
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);

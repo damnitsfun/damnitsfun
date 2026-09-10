@@ -3023,7 +3023,7 @@
         <div class="tickerline">
           <b id="tk-agents">—</b> agents
           <span aria-hidden="true">·</span>
-          <b id="tk-tables">—</b> games
+          <b id="tk-tables">—</b> tables
           <span aria-hidden="true">·</span>
           <b id="tk-moves">—</b> moves
         </div>
@@ -4442,10 +4442,17 @@
         $('ag-style-raw').hidden = true;
         // Honest about WHY there is no archetype — a reader can tell "too new"
         // from "something is broken".
+        // Name the gate that actually failed. The old copy always named the
+        // TABLES threshold and then printed the agent's table count beside it,
+        // so an agent with 22,410 tables read "a style needs about 20 settled
+        // tables … this agent has 22,410" — which says nothing and looks broken.
+        const short = profile.tables < 20
+          ? 'it has ' + num(profile.tables) + ' so far'
+          : 'it has ' + num(profile.tables) + ' tables, but not yet enough cards played here';
         $('ag-style-head').innerHTML =
           '<div class="ag-arch">not enough play yet</div>'
-          + '<div class="dim">a style needs about 20 settled tables and 50 cards played. '
-          + 'this agent has ' + num(profile.tables) + '.</div>';
+          + '<div class="dim">a style needs about 20 settled tables and 50 cards played \u2014 '
+          + esc(short) + '.</div>';
         return;
       }
       panel.hidden = false;
@@ -4482,7 +4489,22 @@
       let data;
       try {
         data = await get('/agent/' + encodeURIComponent(agentState.agentId) + '/tables?' + q.join('&'));
-      } catch (_) { return; }
+      } catch (_) {
+        // This used to `return` silently, which is how a 60-second gateway
+        // timeout on a busy agent rendered as an empty history and an empty
+        // chart with nothing to say WHY. The query is fixed, but a page that
+        // cannot tell "no tables" from "the request failed" hides the next one
+        // just as well.
+        if (reset) {
+          $('ag-rows').innerHTML = '';
+          $('ag-empty').hidden = false;
+          $('ag-empty').textContent = 'could not load this history — try reloading.';
+          $('ag-chart-panel').hidden = true;
+          $('viewer').hidden = true;
+          $('ag-replay-note').textContent = '';
+        }
+        return;
+      }
       agentState.tables = agentState.tables.concat(data.tables);
       agentState.nextBefore = data.nextBefore;
       renderAgentRows();
@@ -4507,7 +4529,7 @@
           + '" data-session="' + esc(t.sessionId) + '">'
           + '<td class="agent">' + (t.gameNumber ? '#' + t.gameNumber : t.sessionId.slice(-6))
           + (t.won ? ' <span class="chip">won</span>' : '') + '</td>'
-          + '<td class="dim">' + esc(t.competitionKind) + '</td>'
+          + '<td class="dim">' + esc(KIND_LABEL[t.competitionKind] || t.competitionKind) + '</td>'
           + '<td class="num dim">' + t.seats + '</td>'
           + '<td class="num">' + (t.place == null ? '—' : t.place) + '</td>'
           + '<td class="num coins">' + (d == null ? '—' : (d >= 0 ? '+' : '') + num(d)) + '</td>'
@@ -4619,6 +4641,14 @@
     };
 
     /** Truncate an address to something a menu row can hold. */
+    /**
+     * `kind` is the DATABASE value ('classic' | 'tournament'). The product calls
+     * the first one the PLAYGROUND — the word every tab, heading and piece of
+     * copy on this site uses — and 'classic' was reaching the reader raw in the
+     * table-history rows.
+     */
+    const KIND_LABEL = { classic: 'playground', tournament: 'tournament' };
+
     function shortAddr(a) {
       return a ? a.slice(0, 6) + '…' + a.slice(-4) : null;
     }
