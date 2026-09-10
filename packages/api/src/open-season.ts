@@ -25,8 +25,8 @@
  * every balance on production".
  *
  * Usage:
- *   node dist/open-season.js --name "damnits.fun Open S2"                  # dry run
- *   node dist/open-season.js --name "damnits.fun Open S2" --archive comp_x --reset-coins --confirm
+ *   node dist/open-season.js --name "damnits.fun Playground S2"                  # dry run
+ *   node dist/open-season.js --name "damnits.fun Playground S2" --archive comp_x --reset-coins --confirm
  */
 import { loadConfig } from './config';
 import { openDatabase } from './db/index';
@@ -45,7 +45,7 @@ const has = (flag: string): boolean => process.argv.includes(flag);
 function main(): void {
   const name = arg('--name');
   if (!name) {
-    log('open-season: --name "damnits.fun Open S2" is required.');
+    log('open-season: --name "damnits.fun Playground S2" is required.');
     process.exit(1);
   }
   const kind = arg('--kind', 'classic') as 'classic' | 'tournament';

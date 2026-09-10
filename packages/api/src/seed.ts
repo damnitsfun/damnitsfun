@@ -18,7 +18,7 @@ import { Orchestrator } from './orchestrator';
 import { createTournamentChain } from './tournament-chain';
 
 async function main(): Promise<void> {
-  const name = process.argv[2] ?? 'damnits.fun Open';
+  const name = process.argv[2] ?? 'damnits.fun Playground';
   const entryFeeWei = process.argv[3] ?? '0';
 
   const config = loadConfig();

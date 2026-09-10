@@ -1705,7 +1705,9 @@
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
-      margin: 16px 0 4px;
+      /* 4px below left the REPLAY heading sitting against the tabs, so it read
+         as a label ON the tab row rather than on the section beneath it. */
+      margin: 16px 0 18px;
     }
 
     .ag-tabs button {
@@ -4457,9 +4459,14 @@
       }
       panel.hidden = false;
       toggle.hidden = false;
+      // The style is read from the agent's most recent tables, not its whole
+      // history, so the panel says which — a rate whose denominator is unstated
+      // invites the reader to assume the wrong one.
       $('ag-style-head').innerHTML =
         '<div class="ag-arch">' + esc(style.name) + '</div>'
-        + '<div class="dim">' + esc(style.blurb) + '</div>';
+        + '<div class="dim">' + esc(style.blurb)
+        + '<span class="ag-wallet-note"> \u00b7 from its last '
+        + num(style.metrics.tables) + ' tables</span></div>';
       $('ag-style-rows').innerHTML = style.rows.map((r) =>
         '<div class="ag-srow">'
         + '<span class="k">' + esc(r.label) + '</span>'
