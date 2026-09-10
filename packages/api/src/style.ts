@@ -35,6 +35,25 @@ export const MIN_TABLES_FOR_STYLE = 20;
  */
 export const MIN_CARDS_FOR_STYLE = 50;
 
+/**
+ * ...and the sample is the agent's MOST RECENT tables, not all of them.
+ *
+ * This module read every event an agent had ever produced. The header of
+ * `profile.ts` set the threshold for revisiting that: 400ms p95, or about 2M
+ * events. Production passed both — 2.55M events, and a style taking **3.26
+ * seconds**, measured on a database built to that shape. It is the whole of the
+ * delay a reader feels switching between the season tabs, because every switch
+ * recomputes it.
+ *
+ * Bounding the window fixes that permanently rather than for one more year of
+ * growth: the work is now proportional to this number, not to how long the agent
+ * has been playing. It is also the better answer to the question the panel asks.
+ * "How does this agent play" means how it plays NOW — a style averaged over
+ * 22,000 tables describes an agent that no longer exists if it changed strategy
+ * a month ago.
+ */
+export const STYLE_WINDOW_TABLES = 500;
+
 export interface StyleMetrics {
   /** Cards played that punish the next seat, per 100 cards played. */
   aggression: number;
@@ -75,8 +94,32 @@ const PUNISHING = ['GRAB2', 'MEGARAINBOW'];
 const COLOUR_CHOOSING = ['RAINBOW', 'MEGARAINBOW'];
 
 export function agentStyle(db: Db, agentId: string, competitionId?: string): AgentStyle | null {
-  const scope = competitionId ? `AND s.competition_id = @competitionId` : '';
-  const args = { agentId, competitionId: competitionId ?? null };
+  const seasonScope = competitionId ? `AND s.competition_id = @competitionId` : '';
+
+  // The oldest table still inside the window, as a rowid. Null when the agent
+  // has played fewer than the window, which means "no lower bound" rather than
+  // "no tables" — OFFSET past the end returns no row.
+  const edge = db
+    .prepare(
+      `SELECT s.rowid AS rowid
+         FROM session_players p
+         JOIN sessions s ON s.id = p.session_id AND s.status = 'settled'
+        WHERE p.agent_id = @agentId ${seasonScope}
+        ORDER BY s.rowid DESC
+        LIMIT 1 OFFSET @offset`,
+    )
+    .get({
+      agentId,
+      competitionId: competitionId ?? null,
+      offset: STYLE_WINDOW_TABLES - 1,
+    }) as { rowid: number } | undefined;
+
+  const scope = `${seasonScope} AND (@minRowid IS NULL OR s.rowid >= @minRowid)`;
+  const args = {
+    agentId,
+    competitionId: competitionId ?? null,
+    minRowid: edge?.rowid ?? null,
+  };
 
   const totals = db
     .prepare(
@@ -94,11 +137,17 @@ export function agentStyle(db: Db, agentId: string, competitionId?: string): Age
 
   const played = db
     .prepare(
+      // Driven from `session_players`, not from `session_events`. Starting at the
+      // events means visiting every event on the site and calling json_extract on
+      // each; starting at the agent's own seats visits only the tables inside the
+      // window. Same rows out, bounded work in.
       `SELECT json_extract(e.payload_json, '$.card.symbol') AS symbol, COUNT(*) AS n
-         FROM session_events e
-         JOIN sessions s ON s.id = e.session_id AND s.status = 'settled'
-        WHERE e.event_type = 'CARD_PLAYED'
-          AND json_extract(e.payload_json, '$.agentId') = @agentId ${scope}
+         FROM session_players p
+         JOIN sessions s       ON s.id = p.session_id AND s.status = 'settled'
+         JOIN session_events e ON e.session_id = s.id
+        WHERE p.agent_id = @agentId ${scope}
+          AND e.event_type = 'CARD_PLAYED'
+          AND json_extract(e.payload_json, '$.agentId') = @agentId
         GROUP BY symbol`,
     )
     .all(args) as Array<{ symbol: string; n: number }>;
@@ -109,20 +158,26 @@ export function agentStyle(db: Db, agentId: string, competitionId?: string): Age
 
   const draws = db
     .prepare(
-      `SELECT COUNT(*) AS n FROM session_events e
-         JOIN sessions s ON s.id = e.session_id AND s.status = 'settled'
-        WHERE e.event_type = 'CARD_DRAWN'
+      `SELECT COUNT(*) AS n
+         FROM session_players p
+         JOIN sessions s       ON s.id = p.session_id AND s.status = 'settled'
+         JOIN session_events e ON e.session_id = s.id
+        WHERE p.agent_id = @agentId ${scope}
+          AND e.event_type = 'CARD_DRAWN'
           AND json_extract(e.payload_json, '$.cause') = 'draw'
-          AND json_extract(e.payload_json, '$.agentId') = @agentId ${scope}`,
+          AND json_extract(e.payload_json, '$.agentId') = @agentId`,
     )
     .get(args) as { n: number };
 
   const storms = db
     .prepare(
-      `SELECT COUNT(*) AS n FROM session_events e
-         JOIN sessions s ON s.id = e.session_id AND s.status = 'settled'
-        WHERE e.event_type = 'RAINBOW_STORM'
-          AND json_extract(e.payload_json, '$.agentId') = @agentId ${scope}`,
+      `SELECT COUNT(*) AS n
+         FROM session_players p
+         JOIN sessions s       ON s.id = p.session_id AND s.status = 'settled'
+         JOIN session_events e ON e.session_id = s.id
+        WHERE p.agent_id = @agentId ${scope}
+          AND e.event_type = 'RAINBOW_STORM'
+          AND json_extract(e.payload_json, '$.agentId') = @agentId`,
     )
     .get(args) as { n: number };
 

@@ -3,7 +3,13 @@ import { openDatabase, type Db } from './db/index';
 import { Orchestrator } from './orchestrator';
 import { agentProfile, agentTables } from './profile';
 import { buildServer } from './server';
-import { MIN_TABLES_FOR_STYLE, agentStyle, archetype, type StyleMetrics } from './style';
+import {
+  MIN_TABLES_FOR_STYLE,
+  STYLE_WINDOW_TABLES,
+  agentStyle,
+  archetype,
+  type StyleMetrics,
+} from './style';
 
 /**
  * Sub-spec 19, T72–T74 — the public read model behind an agent profile.
@@ -300,6 +306,55 @@ describe('agentTables', () => {
 });
 
 describe('agentStyle', () => {
+  /**
+   * The style used to read EVERY event an agent had produced, which on
+   * production meant 2.55M rows and 3.26 seconds — the whole of the delay a
+   * reader felt switching season tabs. It now reads a fixed window of recent
+   * tables. This pins that the window is real: play past it, and the tables
+   * beyond it stop counting.
+   *
+   * Sessions are inserted directly rather than played: the point is the
+   * boundary, and 520 real tables through the orchestrator would take minutes
+   * to prove one comparison.
+   */
+  it('reads a fixed window of recent tables, not the whole history', () => {
+    const h = boot();
+    const [agentId] = register(h, ['ada']);
+    const insS = h.db.prepare(
+      `INSERT INTO sessions (id, competition_id, status, table_size, winner_agent_id, ended_at)
+       VALUES (?, ?, 'settled', 3, NULL, '2026-01-01T00:00:00Z')`,
+    );
+    const insP = h.db.prepare(
+      `INSERT INTO session_players (session_id, agent_id, seat_index, place, coin_delta)
+       VALUES (?, ?, 0, 2, 0)`,
+    );
+    const insE = h.db.prepare(
+      `INSERT INTO session_events (session_id, seq, event_type, payload_json, reasoning)
+       VALUES (?, ?, 'CARD_PLAYED', ?, NULL)`,
+    );
+    const OUTSIDE = 20;
+    // Oldest first, so the last ones inserted are the newest by rowid.
+    for (let i = 0; i < STYLE_WINDOW_TABLES + OUTSIDE; i++) {
+      const sid = `sess_w${String(i).padStart(5, '0')}`;
+      insS.run(sid, h.comp!);
+      insP.run(sid, agentId!);
+      // Everything OUTSIDE the window is a punisher; everything inside is plain.
+      const symbol = i < OUTSIDE ? 'GRAB2' : '5';
+      for (let c = 0; c < 3; c++) {
+        insE.run(sid, c, JSON.stringify({ agentId, card: { symbol, color: 'red' } }));
+      }
+    }
+
+    const style = agentStyle(h.db, agentId!)!;
+    expect(style).not.toBeNull();
+    // 520 tables exist; the window is the newest 500 of them.
+    expect(style.metrics.tables).toBe(STYLE_WINDOW_TABLES);
+    // The punishers all sit outside the window, so aggression reads zero rather
+    // than the 4% it would be across the whole history.
+    expect(style.metrics.aggression).toBe(0);
+    expect(style.metrics.cardsPlayed).toBe(STYLE_WINDOW_TABLES * 3);
+  });
+
   it('says nothing rather than inventing a character from a tiny sample', async () => {
     const h = boot();
     const ids = register(h, ['ada', 'bo', 'cy']);
