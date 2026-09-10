@@ -1456,6 +1456,18 @@ export class Orchestrator {
    *   THIS call recorded the season's first storm; `null` otherwise (already
    *   recorded, no storm this session, or a malformed payload).
    */
+  /**
+   * Can this agent be paid a TOURNAMENT jackpot? The same two conditions
+   * `eligibleRanked` puts on the prize pool — a verified owner, and an address to
+   * pay. One rule for every on-chain payout a tournament makes.
+   */
+  private jackpotEligible(agentId: string): boolean {
+    const row = this.db
+      .prepare(`SELECT owner_id, payout_address FROM agents WHERE id = ?`)
+      .get(agentId) as { owner_id: string | null; payout_address: string | null } | undefined;
+    return Boolean(row?.owner_id && row.payout_address);
+  }
+
   captureJackpotFromSession(
     sessionId: string,
   ): { competitionId: string; agentId: string; seq: number } | null {
@@ -1487,6 +1499,18 @@ export class Orchestrator {
     }
     if (!agentId) return null;
 
+    // A TOURNAMENT jackpot is claimed-only, exactly like its prize pool: on-chain
+    // money in a tournament goes to a verified owner at a nominated address, and
+    // nowhere else. The playground has no such gate — it pays any agent's
+    // custodial wallet (D64).
+    //
+    // Crucially, an ineligible triggerer does NOT consume the season's one
+    // jackpot slot. Recording it would spend the jackpot on someone who cannot
+    // be paid and leave nothing for anyone who can — and with most agents
+    // unclaimed that is the likely outcome, not the edge case. The storm itself
+    // is still in `session_events`; what is withheld is the CLAIM on the pot.
+    if (comp.kind === 'tournament' && !this.jackpotEligible(agentId)) return null;
+
     const info = this.db
       .prepare(
         `INSERT OR IGNORE INTO jackpot_events (competition_id, session_id, seq, agent_id)
@@ -1499,14 +1523,31 @@ export class Orchestrator {
   }
 
   /**
-   * Pay the playground's Rainbow-Storm jackpot on-chain, immediately, to the
-   * triggering agent's custodial wallet — regardless of claim (sub-spec 14
-   * D64/D65/D66). Called from {@link settle} only for a `classic` session that
-   * just recorded the season's first storm. Fire-and-forget and fully swallowed:
-   * a chain failure must never corrupt the settled game (sub-spec 05's rule), and
-   * an unfunded/walletless/chain-off case is a graceful record-but-don't-pay (D67).
+   * Pay the Rainbow-Storm jackpot on-chain, immediately, to the triggering
+   * agent's custodial wallet — regardless of claim (sub-spec 14 D64/D65/D66),
+   * and for BOTH game types. Called from {@link settle} for any session that
+   * just recorded its season's first storm.
+   *
+   * The two game types keep their own rule about WHO can win and WHERE it lands,
+   * and only the timing is now shared:
+   *
+   *   playground — any agent, claimed or not, paid to its custodial wallet.
+   *   tournament — a CLAIMED agent only, paid to its `payout_address` — the same
+   *     gate and the same address as the prize pool, so every on-chain payout a
+   *     tournament makes follows one rule. A tournament used to defer this to
+   *     `settleTournament`; the gate was always right, the delay was not.
+   *
+   * On success this drains `jackpot_seed_wei` to '0', which is what stops
+   * `settleTournament` paying it a second time — `resolveJackpotWinner` returns
+   * null for a zero pool. If the chain call fails the mirror is left intact, so
+   * the settlement path still catches it. That is deliberate: the two paths are
+   * now primary and fallback rather than two different rules.
+   *
+   * Fire-and-forget and fully swallowed: a chain failure must never corrupt the
+   * settled game (sub-spec 05's rule), and an unfunded/walletless/chain-off case
+   * is a graceful record-but-don't-pay (D67).
    */
-  private awardPlaygroundStormJackpot(
+  private awardStormJackpot(
     captured: { competitionId: string; agentId: string },
     sessionId: string,
     resultHash: string,
@@ -1517,8 +1558,19 @@ export class Orchestrator {
     const poolWei = BigInt(comp.jackpot_seed_wei ?? '0');
     if (poolWei <= 0n) return; // unfunded season → recorded, not paid (D67)
 
+    // WHERE the prize lands differs by game type, and deliberately:
+    //   playground — the agent's custodial wallet. Most playground agents are
+    //     unclaimed and have no payout address, so this is the only address that
+    //     always exists (D64/D65).
+    //   tournament — the owner's nominated `payout_address`, the same place the
+    //     prize pool pays. `captureJackpotFromSession` has already refused to
+    //     record a triggerer without one, so this is set here; the fallback to
+    //     the custodial wallet exists only so a null can never become a payout
+    //     to the zero address.
     const agent = this.getAgent(captured.agentId);
-    if (!agent.wallet_address) return; // no custodial wallet (auto-wallets off) → recorded, not paid
+    const toPayoutAddress = comp.kind === 'tournament';
+    const destination = toPayoutAddress ? agent.payout_address : agent.wallet_address;
+    if (!destination) return; // nothing safe to pay → recorded, not paid (D67)
 
     const seedReveal =
       (
@@ -1528,7 +1580,7 @@ export class Orchestrator {
       )?.seed_reveal ?? '';
 
     const competitionId = captured.competitionId;
-    const winner = agent.wallet_address;
+    const winner = destination;
     const amountWei = poolWei.toString();
     void this.tournament
       .awardJackpot(competitionId, winner, amountWei, resultHash, seedReveal)
@@ -2564,9 +2616,8 @@ export class Orchestrator {
 
     // Coins now score BOTH game types (hackathon simplification): the tournament
     // follows the playground — its on-chain prize is split among the top coin
-    // holders. So every settled table moves coins. The Rainbow-Storm jackpot,
-    // however, stays a PLAYGROUND (classic) feature.
-    const isClassic = current.kind === 'classic';
+    // holders. So every settled table moves coins. The Rainbow-Storm jackpot now
+    // follows the same way: both game types run storms and both pay instantly.
 
     const winner = entry.game.winnerAgentId;
     const handValues = entry.game.getHandValues();
@@ -2592,12 +2643,14 @@ export class Orchestrator {
     finalize();
 
     // Record the first Rainbow Storm of the season (both kinds now, sub-spec 14
-    // D65). Reads the just-persisted event log. For a `classic` playground season
-    // this also triggers the immediate on-chain jackpot to the storm agent's
-    // custodial wallet (a tournament instead reads it back at settleTournament).
+    // D65). Reads the just-persisted event log, then pays the jackpot immediately
+    // to the storm agent's custodial wallet — for BOTH game types. A tournament
+    // used to defer this to `settleTournament`, which meant the prize depended on
+    // the triggerer being claimed and on the season ever being settled; the storm
+    // is the achievement, so it pays when it happens.
     const capturedStorm = this.captureJackpotFromSession(sessionId);
-    if (isClassic && capturedStorm) {
-      this.awardPlaygroundStormJackpot(capturedStorm, sessionId, resultHash);
+    if (capturedStorm) {
+      this.awardStormJackpot(capturedStorm, sessionId, resultHash);
     }
 
     // Attach point for sub-spec 05 (T13): settle on-chain with the revealed seed
