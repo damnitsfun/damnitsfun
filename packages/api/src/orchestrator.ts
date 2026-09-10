@@ -1456,6 +1456,18 @@ export class Orchestrator {
    *   THIS call recorded the season's first storm; `null` otherwise (already
    *   recorded, no storm this session, or a malformed payload).
    */
+  /**
+   * Can this agent be paid a TOURNAMENT jackpot? The same two conditions
+   * `eligibleRanked` puts on the prize pool — a verified owner, and an address to
+   * pay. One rule for every on-chain payout a tournament makes.
+   */
+  private jackpotEligible(agentId: string): boolean {
+    const row = this.db
+      .prepare(`SELECT owner_id, payout_address FROM agents WHERE id = ?`)
+      .get(agentId) as { owner_id: string | null; payout_address: string | null } | undefined;
+    return Boolean(row?.owner_id && row.payout_address);
+  }
+
   captureJackpotFromSession(
     sessionId: string,
   ): { competitionId: string; agentId: string; seq: number } | null {
@@ -1487,6 +1499,18 @@ export class Orchestrator {
     }
     if (!agentId) return null;
 
+    // A TOURNAMENT jackpot is claimed-only, exactly like its prize pool: on-chain
+    // money in a tournament goes to a verified owner at a nominated address, and
+    // nowhere else. The playground has no such gate — it pays any agent's
+    // custodial wallet (D64).
+    //
+    // Crucially, an ineligible triggerer does NOT consume the season's one
+    // jackpot slot. Recording it would spend the jackpot on someone who cannot
+    // be paid and leave nothing for anyone who can — and with most agents
+    // unclaimed that is the likely outcome, not the edge case. The storm itself
+    // is still in `session_events`; what is withheld is the CLAIM on the pot.
+    if (comp.kind === 'tournament' && !this.jackpotEligible(agentId)) return null;
+
     const info = this.db
       .prepare(
         `INSERT OR IGNORE INTO jackpot_events (competition_id, session_id, seq, agent_id)
@@ -1504,12 +1528,14 @@ export class Orchestrator {
    * and for BOTH game types. Called from {@link settle} for any session that
    * just recorded its season's first storm.
    *
-   * A tournament used to defer this to `settleTournament` instead, where
-   * {@link resolveJackpotWinner} paid it only if the triggerer was claimed AND
-   * had a payout address, and only once the season was settled at all. That made
-   * the same achievement pay differently depending on which table it happened at,
-   * and on production it would mostly not have paid: 21 of 24 tournament agents
-   * are unclaimed. The storm is the achievement, so it pays when it happens.
+   * The two game types keep their own rule about WHO can win and WHERE it lands,
+   * and only the timing is now shared:
+   *
+   *   playground — any agent, claimed or not, paid to its custodial wallet.
+   *   tournament — a CLAIMED agent only, paid to its `payout_address` — the same
+   *     gate and the same address as the prize pool, so every on-chain payout a
+   *     tournament makes follows one rule. A tournament used to defer this to
+   *     `settleTournament`; the gate was always right, the delay was not.
    *
    * On success this drains `jackpot_seed_wei` to '0', which is what stops
    * `settleTournament` paying it a second time — `resolveJackpotWinner` returns
@@ -1532,8 +1558,19 @@ export class Orchestrator {
     const poolWei = BigInt(comp.jackpot_seed_wei ?? '0');
     if (poolWei <= 0n) return; // unfunded season → recorded, not paid (D67)
 
+    // WHERE the prize lands differs by game type, and deliberately:
+    //   playground — the agent's custodial wallet. Most playground agents are
+    //     unclaimed and have no payout address, so this is the only address that
+    //     always exists (D64/D65).
+    //   tournament — the owner's nominated `payout_address`, the same place the
+    //     prize pool pays. `captureJackpotFromSession` has already refused to
+    //     record a triggerer without one, so this is set here; the fallback to
+    //     the custodial wallet exists only so a null can never become a payout
+    //     to the zero address.
     const agent = this.getAgent(captured.agentId);
-    if (!agent.wallet_address) return; // no custodial wallet (auto-wallets off) → recorded, not paid
+    const toPayoutAddress = comp.kind === 'tournament';
+    const destination = toPayoutAddress ? agent.payout_address : agent.wallet_address;
+    if (!destination) return; // nothing safe to pay → recorded, not paid (D67)
 
     const seedReveal =
       (
@@ -1543,7 +1580,7 @@ export class Orchestrator {
       )?.seed_reveal ?? '';
 
     const competitionId = captured.competitionId;
-    const winner = agent.wallet_address;
+    const winner = destination;
     const amountWei = poolWei.toString();
     void this.tournament
       .awardJackpot(competitionId, winner, amountWei, resultHash, seedReveal)

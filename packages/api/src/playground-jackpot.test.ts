@@ -126,6 +126,8 @@ async function register(app: FastifyInstance, displayName: string) {
 
 const authed = (apiKey: string) => ({ 'x-battleground-api-key': apiKey });
 
+type Registered = Awaited<ReturnType<typeof register>>;
+
 /** Has this session recorded a Rainbow Storm yet? */
 function stormRecorded(h: Harness, sessionId: string): boolean {
   const row = h.db
@@ -139,13 +141,23 @@ function stormRecorded(h: Harness, sessionId: string): boolean {
  * the clock past the game limit and poke `pending-actions` so tick() settles it.
  * Returns the settled session id.
  */
+/**
+ * Register four agents and seat them all at one table. Split out of
+ * `seatStormSettle` so a test can act on the agents — claiming them, giving them
+ * payout addresses — between seating and play.
+ */
 async function seatStormSettle(h: Harness, competitionId: string): Promise<string> {
-  const agents = [
-    await register(h.app, 'A'),
-    await register(h.app, 'B'),
-    await register(h.app, 'C'),
-    await register(h.app, 'D'),
-  ];
+  const { agents, sessionId } = await seatAgents(h, competitionId);
+  return playUntilStormSettles(h, agents, sessionId);
+}
+
+async function seatAgents(
+  h: Harness,
+  competitionId: string,
+  names: readonly string[] = ['A', 'B', 'C', 'D'],
+): Promise<{ agents: Registered[]; sessionId: string }> {
+  const agents: Registered[] = [];
+  for (const n of names) agents.push(await register(h.app, n));
   let sessionId = '';
   for (const a of agents) {
     // A tournament seat requires having entered the season first (sub-spec 08);
@@ -165,7 +177,15 @@ async function seatStormSettle(h: Harness, competitionId: string): Promise<strin
     });
     sessionId = res.json().sessionId;
   }
+  return { agents, sessionId };
+}
 
+/** Play the seated table until the first storm lands, then time it out to settle. */
+async function playUntilStormSettles(
+  h: Harness,
+  agents: readonly Registered[],
+  sessionId: string,
+): Promise<string> {
   // Play moves until the first storm lands (chance 1 → the first card play).
   for (let step = 0; step < 200 && !stormRecorded(h, sessionId); step++) {
     let acted = false;
@@ -293,39 +313,66 @@ describe('playground Rainbow-Storm jackpot (T49)', () => {
     expect(h.awardCalls).toHaveLength(1);
   }, 30000); // two full storm games (everyone draws 6) run long — allow headroom
 
-  it('a TOURNAMENT storm pays the same way — instantly, to the wallet, claim or not', async () => {
+  it('a TOURNAMENT storm by an UNCLAIMED agent pays nothing and does NOT consume the jackpot', async () => {
     const h = boot();
-    // The behaviour that changed: a tournament used to record the storm and defer
-    // the payout to settleTournament, where it only paid a CLAIMED triggerer with
-    // a payout address. Same achievement, two different rules depending on which
-    // table it happened at. Now both pay on the spot.
+    // The tournament jackpot is claimed-only, exactly like its prize pool. The
+    // point of this test is the second half: an ineligible triggerer must not
+    // spend the season's one jackpot slot, or the pot is lost to someone who
+    // could never be paid — the LIKELY case while most agents are unclaimed.
     const competitionId = h.orchestrator.createTournament('Championship', '0');
     seedSeasonJackpot(h.db, competitionId, '50000000000000000');
 
     await seatStormSettle(h, competitionId);
 
+    expect(h.awardCalls).toHaveLength(0);
+    const rows = h.db
+      .prepare(`SELECT COUNT(*) AS c FROM jackpot_events WHERE competition_id = ?`)
+      .get(competitionId) as { c: number };
+    expect(rows.c).toBe(0); // slot NOT consumed — still winnable
+    const pool = (
+      h.db.prepare(`SELECT jackpot_seed_wei FROM competitions WHERE id = ?`).get(competitionId) as {
+        jackpot_seed_wei: string;
+      }
+    ).jackpot_seed_wei;
+    expect(pool).toBe('50000000000000000'); // still funded
+  }, 30000);
+
+  it('a TOURNAMENT storm by a CLAIMED agent pays instantly, to its payout address', async () => {
+    const h = boot();
+    const competitionId = h.orchestrator.createTournament('Championship', '0');
+    seedSeasonJackpot(h.db, competitionId, '50000000000000000');
+
+    // Claim every seat and give each a payout address, so whoever triggers the
+    // storm is eligible — which agent it lands on is seed-determined.
+    const { agents, sessionId } = await seatAgents(h, competitionId);
+    const payoutOf = new Map<string, string>();
+    agents.forEach((a, i) => {
+      h.orchestrator.devClaimAgent(a.agentId, `x_${i}`, `owner${i}`);
+      const addr = `0x${String(i + 1).repeat(40)}`;
+      h.orchestrator.setPayoutAddress(a.agentId, addr);
+      payoutOf.set(a.agentId, addr);
+    });
+
+    await playUntilStormSettles(h, agents, sessionId);
+
     expect(h.awardCalls).toHaveLength(1);
     const award = h.awardCalls[0]!;
-    expect(award.competitionId).toBe(competitionId);
-    expect(award.amountWei).toBe('50000000000000000');
-
-    // Paid the storm agent's custodial wallet, with nobody having claimed it.
     const stormRow = h.db
       .prepare(`SELECT agent_id FROM jackpot_events WHERE competition_id = ?`)
       .get(competitionId) as { agent_id: string };
-    const agent = h.db
-      .prepare(`SELECT wallet_address, owner_id, payout_address FROM agents WHERE id = ?`)
-      .get(stormRow.agent_id) as {
-      wallet_address: string;
-      owner_id: string | null;
-      payout_address: string | null;
-    };
-    expect(agent.owner_id).toBeNull();       // unclaimed — the old rule paid nothing here
-    expect(agent.payout_address).toBeNull();
-    expect(award.winner).toBe(agent.wallet_address);
 
-    // The DB mirror is drained, which is what stops settleTournament paying it a
-    // SECOND time: resolveJackpotWinner returns null for a zero jackpot.
+    // Paid the PAYOUT address, not the custodial wallet — a tournament jackpot
+    // goes where the prize pool goes.
+    const wallet = (
+      h.db.prepare(`SELECT wallet_address FROM agents WHERE id = ?`).get(stormRow.agent_id) as {
+        wallet_address: string;
+      }
+    ).wallet_address;
+    expect(award.winner).toBe(payoutOf.get(stormRow.agent_id));
+    expect(award.winner).not.toBe(wallet);
+    expect(award.amountWei).toBe('50000000000000000');
+
+    // Drained, so settleTournament cannot pay it a second time.
     const pool = (
       h.db.prepare(`SELECT jackpot_seed_wei FROM competitions WHERE id = ?`).get(competitionId) as {
         jackpot_seed_wei: string;
