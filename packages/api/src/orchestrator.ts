@@ -151,6 +151,7 @@ interface CompetitionRow {
   entries_close_at: string | null;
   entries_closed_at: string | null;
   settled_at: string | null;
+  settle_tx_hash: string | null;
   requires_claim: number;
 }
 
@@ -1043,6 +1044,9 @@ export class Orchestrator {
     entriesCloseAt: string | null;
     entriesCount: number;
     requiresClaim: boolean;
+    /** When a tournament paid out, and the transaction that did it; null until then. */
+    settledAt: string | null;
+    settleTxHash: string | null;
   }> {
     const rows =
       status === 'all'
@@ -1051,7 +1055,15 @@ export class Orchestrator {
               // Same ordering rule as listActiveCompetitions (D145): newest first,
               // so a `find()` on kind lands on the current season, and the season
               // selector lists seasons the way anyone would name them.
-              `SELECT * FROM competitions WHERE status IN ('active','archived')
+              //
+              // Every status, not a list of them. This used to name
+              // ('active','archived') and so left out SETTLED — the status a
+              // tournament ends in. The first season ever to settle vanished from
+              // the site the moment it paid: its board, its standings and the
+              // winner the whole season existed to produce, with the Tournament
+              // tab left pointing at nothing. The column's CHECK constraint
+              // allows only these three values, so "all" means no filter.
+              `SELECT * FROM competitions
                 ORDER BY created_at DESC, id DESC`,
             )
             .all() as CompetitionRow[]
@@ -1065,8 +1077,15 @@ export class Orchestrator {
             jackpotWei: r.jackpot_seed_wei,
             entriesCloseAt: r.entries_close_at,
             requiresClaim: Boolean(r.requires_claim),
+            settledAt: r.settled_at,
+            settleTxHash: r.settle_tx_hash,
           }))
-        : this.listActiveCompetitions().map((c) => ({ ...c, status: 'active' }));
+        : this.listActiveCompetitions().map((c) => ({
+            ...c,
+            status: 'active',
+            settledAt: null,
+            settleTxHash: null,
+          }));
 
     return rows.map((c) => ({
       id: c.id,
@@ -1083,6 +1102,8 @@ export class Orchestrator {
           .get(c.id) as { n: number }
       ).n,
       requiresClaim: c.requiresClaim,
+      settledAt: c.settledAt,
+      settleTxHash: c.settleTxHash,
     }));
   }
 
