@@ -5120,7 +5120,7 @@
       const selected = state.season[state.gameType];
       sel.innerHTML = seasons.map((c) =>
         '<option value="' + esc(c.id) + '"' + (c.id === selected ? ' selected' : '') + '>' +
-        esc(c.name) + (c.status === 'archived' ? ' (ended)' : '') +
+        esc(c.name) + (c.status === 'archived' ? ' (ended)' : c.status === 'settled' ? ' (settled)' : '') +
         '</option>').join('');
     }
 
