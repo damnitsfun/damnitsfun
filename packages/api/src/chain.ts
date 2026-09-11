@@ -288,6 +288,48 @@ export function createSettlementChain(
  * before there is traffic to justify it would be a guess — add one if a soak ever
  * shows this endpoint hot.
  */
+/**
+ * What `address` can collect from the tournament contract right now — the
+ * pull-payment ledger `owed[address]`, filled by `settleCompetition` and emptied
+ * by `withdraw()`.
+ *
+ * The profile page shows this beside a payout address so a winner is told there
+ * is money waiting and can claim it with one click, instead of being expected to
+ * find `withdraw()` on BscScan. Best-effort in the same way as
+ * {@link readNativeBalance}: null on any failure, never an error, because it is
+ * read on the profile's load path and a slow RPC must cost a badge, not a page.
+ */
+export async function readClaimable(
+  config: Config,
+  address: string,
+  timeoutMs = 2000,
+): Promise<string | null> {
+  if (!config.tournamentContractAddress) return null;
+  try {
+    const client = createPublicClient({
+      chain: bscTestnet,
+      transport: http(config.bscTestnetRpcUrl, { timeout: timeoutMs, retryCount: 0 }),
+    });
+    const wei = await client.readContract({
+      address: config.tournamentContractAddress as Address,
+      abi: [
+        {
+          type: 'function',
+          name: 'owed',
+          stateMutability: 'view',
+          inputs: [{ name: '', type: 'address' }],
+          outputs: [{ name: '', type: 'uint256' }],
+        },
+      ] as const,
+      functionName: 'owed',
+      args: [address as Address],
+    });
+    return wei.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function readNativeBalance(
   config: Config,
   address: string | null,
