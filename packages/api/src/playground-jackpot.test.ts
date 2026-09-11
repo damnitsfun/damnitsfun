@@ -254,6 +254,24 @@ describe('custodial agent wallets (T48)', () => {
 });
 
 describe('playground Rainbow-Storm jackpot (T49)', () => {
+  it('topping up a live jackpot ADDS to the mirror, the way the contract does', async () => {
+    // The contract adds (`jackpotPool += msg.value`), so the mirror must too. It
+    // used to SET, which only agreed with the chain while every seed landed on an
+    // empty pot: a 0.075 season topped up by 0.025 held 0.1 on chain and reported
+    // 0.025 on the site.
+    const h = boot();
+    const competitionId = h.orchestrator.createCompetition('Playground');
+    const mirror = (): string =>
+      (h.db.prepare(`SELECT jackpot_seed_wei FROM competitions WHERE id = ?`).get(competitionId) as {
+        jackpot_seed_wei: string;
+      }).jackpot_seed_wei;
+
+    await h.orchestrator.seedPlaygroundJackpot(competitionId, '75000000000000000');
+    expect(mirror()).toBe('75000000000000000'); // a fresh season reads the same either way
+    await h.orchestrator.seedPlaygroundJackpot(competitionId, '25000000000000000');
+    expect(mirror()).toBe('100000000000000000');
+  });
+
   it('a free classic table makes NO escrow calls (D62 — the bug fix)', async () => {
     const h = boot();
     const competitionId = h.orchestrator.createCompetition('Playground'); // free classic
