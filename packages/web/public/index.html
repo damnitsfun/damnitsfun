@@ -1773,6 +1773,30 @@
       font-size: 12px;
     }
 
+    /* A settled prize waiting at this payout address. Gold, because it is the
+       one thing on this page that is money the reader has already won. */
+    .pf-prize {
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pf-prize-v {
+      color: var(--gold);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .pf-claim-go {
+      font-size: 12px;
+      padding: 3px 12px;
+      background: var(--gold);
+      color: #fff;
+      border-color: var(--gold);
+    }
+
     @media (max-width: 560px) {
       .ag-identity .row {
         flex-wrap: wrap;
@@ -4792,8 +4816,17 @@
       $('pf-agents-panel').hidden = agents.length === 0;
       $('pf-claim-card').hidden = agents.length > 0;
       const tb = $('pf-agents'); tb.innerHTML = '';
+      // The contract owes money per ADDRESS, not per agent: two agents sharing a
+      // payout address share one balance, and one claim collects all of it. So
+      // the badge goes on the first row for an address only — showing it twice
+      // would read as twice the prize.
+      const claimShown = new Set();
       for (const a of agents) {
         const tr = document.createElement('tr');
+        const owedWei = a.claimableWei ? BigInt(a.claimableWei) : 0n;
+        const addrKey = (a.payoutAddress || '').toLowerCase();
+        const showClaim = owedWei > 0n && !claimShown.has(addrKey);
+        if (showClaim) claimShown.add(addrKey);
         tr.innerHTML =
           // The name goes to the agent's own page — the row looked clickable and
           // was not, which is worse than a row that looks inert.
@@ -4806,7 +4839,12 @@
           '<td class="dim"><span class="pf-payout-v">'
           + (a.payoutAddress ? '<code>' + esc(a.payoutAddress) + '</code>' : 'not set')
           + '</span> <button class="ghost pf-payout-edit">'
-          + (a.payoutAddress ? 'edit' : 'set') + '</button></td>';
+          + (a.payoutAddress ? 'edit' : 'set') + '</button>'
+          + (showClaim
+            ? '<div class="pf-prize"><span class="pf-prize-v">\u{1F3C6} ' + esc(fmtTbnb(owedWei))
+              + ' tBNB ready</span> <button class="pf-claim-go">claim</button></div>'
+            : '')
+          + '</td>';
         // Setting this is what makes an agent payout-eligible, and until now the
         // only route to it wanted the AGENT's api key — which an owner reading
         // this page does not have. Same prompt() pattern as "edit name" above.
@@ -4825,9 +4863,94 @@
           else $('pf-payout-msg').textContent = '\u2715 ' + (body.message || body.error
             || ('failed (' + res.status + ')'));
         };
+        if (showClaim) {
+          const btn = tr.querySelector('.pf-claim-go');
+          btn.onclick = () => claimPrize(a.payoutAddress, btn);
+        }
         tb.appendChild(tr);
       }
-      $('pf-payout-msg').textContent = '';
+      $('pf-payout-msg').innerHTML = lastClaimNote;
+    }
+
+    /** wei → a short tBNB figure: 500000000000000000n → "0.5". */
+    function fmtTbnb(wei) {
+      return (Number(wei) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 4 });
+    }
+
+    // Survives the re-render a claim triggers, so the BscScan link stays put.
+    let lastClaimNote = '';
+
+    /**
+     * Collect a settled prize with one click.
+     *
+     * Settlement only CREDITS a winner: the contract records `owed[address]` and
+     * pays it out when that address calls `withdraw()` (pull payments, D7 — so one
+     * wallet that refuses a payment cannot block everyone else's). That call had
+     * to be made from BscScan's "Write Contract" tab, which is not a thing to ask
+     * of a winner. This makes the same call through the wallet they already have.
+     *
+     * The call is `withdraw()` with no arguments, so its calldata is just the
+     * selector — no ABI library needed on a page with no build step.
+     */
+    const WITHDRAW_SELECTOR = '0x3ccfd60b'; // keccak256("withdraw()")[0:4]
+    // `wallet` defaults to the browser's injected one. It is a parameter so the
+    // flow can be exercised with a stand-in: an installed MetaMask owns
+    // `window.ethereum` and will not let it be replaced.
+    async function claimPrize(payoutAddress, btn, wallet = window.ethereum) {
+      const say = (html) => { lastClaimNote = html; $('pf-payout-msg').innerHTML = html; };
+      const eth = wallet;
+      const chain = state.chain || {};
+      if (!eth) return say('To claim, open this page in a browser with a wallet such as MetaMask.');
+      if (!chain.tournamentAddress || !chain.chainId) return say('Claiming is not available on this deployment.');
+
+      btn.disabled = true;
+      say('Confirm in your wallet\u2026');
+      try {
+        const [from] = await eth.request({ method: 'eth_requestAccounts' });
+        // The contract pays whoever calls, so the wrong account would simply
+        // fail with "nothing owed". Say which account to use instead.
+        if (!from || from.toLowerCase() !== payoutAddress.toLowerCase()) {
+          return say('Switch your wallet to <code>' + esc(shortAddr(payoutAddress))
+            + '</code> \u2014 only that address can collect this prize.');
+        }
+        const want = '0x' + Number(chain.chainId).toString(16);
+        if ((await eth.request({ method: 'eth_chainId' })) !== want) {
+          try {
+            await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: want }] });
+          } catch (e) {
+            // 4902: the wallet has never seen this chain. Only BSC testnet is
+            // described here; any other chain is left to the wallet to refuse.
+            if (!(e && e.code === 4902 && Number(chain.chainId) === 97)) throw e;
+            await eth.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: want,
+                chainName: 'BNB Smart Chain Testnet',
+                nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
+                rpcUrls: ['https://data-seed-prebsc-1-s1.bnbchain.org:8545'],
+                blockExplorerUrls: chain.explorerBaseUrl ? [chain.explorerBaseUrl] : [],
+              }],
+            });
+          }
+        }
+        const txHash = await eth.request({
+          method: 'eth_sendTransaction',
+          params: [{ from, to: chain.tournamentAddress, data: WITHDRAW_SELECTOR }],
+        });
+        const link = chain.explorerBaseUrl
+          ? ' <a href="' + chain.explorerBaseUrl + '/tx/' + encodeURIComponent(txHash)
+            + '" target="_blank" rel="noopener noreferrer">view on BscScan \u2197</a>'
+          : '';
+        say('\u2713 Prize claimed \u2014 it is on its way to your wallet.' + link);
+        // Re-read once the block lands, so the badge disappears on its own.
+        setTimeout(loadAuth, 8000);
+      } catch (e) {
+        say(e && e.code === 4001
+          ? 'Cancelled in your wallet \u2014 nothing was sent.'
+          : '\u2715 ' + esc((e && e.message) || 'The claim did not go through.'));
+      } finally {
+        btn.disabled = false;
+      }
     }
     // One sign-out, two callers: the profile button and the account menu.
     async function signOut() {

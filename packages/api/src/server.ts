@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { createSettlementChain, readNativeBalance } from './chain';
+import { createSettlementChain, readClaimable, readNativeBalance } from './chain';
 import type { Config } from './config';
 import { loadConfig } from './config';
 import { openDatabase, type Db } from './db/index';
@@ -60,6 +60,12 @@ export interface BuildOptions {
    * accident.
    */
   registrar?: IdentityRegistrar | null;
+  /**
+   * Reads what an address can claim from the tournament contract. Injected by
+   * `start()` for the same reason as `registrar`: absent, the profile reports
+   * nothing claimable and no test can reach the network.
+   */
+  readClaimable?: ((address: string) => Promise<string | null>) | null;
 }
 
 export interface BuiltServer {
@@ -592,7 +598,23 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // The logged-in account (or null), its linked X, and its claimed agents. Always 200.
     scope.get('/auth/session', async (request) => {
       const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
-      return orchestrator.sessionInfo(token);
+      const info = orchestrator.sessionInfo(token);
+      // What each payout address can collect, read once per ADDRESS — the
+      // contract's ledger is per address, so two agents sharing one payout
+      // address share one balance, and reading it twice would invite the page
+      // to show the same prize twice.
+      const read = options.readClaimable;
+      const addresses = [...new Set(info.agents.map((a) => a.payoutAddress).filter(Boolean))] as string[];
+      const owed = new Map(
+        await Promise.all(addresses.map(async (a) => [a, read ? await read(a) : null] as const)),
+      );
+      return {
+        ...info,
+        agents: info.agents.map((a) => ({
+          ...a,
+          claimableWei: a.payoutAddress ? (owed.get(a.payoutAddress) ?? null) : null,
+        })),
+      };
     });
 
     scope.post('/auth/logout', async (request, reply) => {
@@ -827,7 +849,14 @@ export async function start(): Promise<void> {
     rpcUrl: config.bscTestnetRpcUrl,
   });
 
-  const { app } = buildServer({ db, config, orchestrator, logger: true, registrar });
+  const { app } = buildServer({
+    db,
+    config,
+    orchestrator,
+    logger: true,
+    registrar,
+    readClaimable: (address) => readClaimable(config, address),
+  });
 
   // Catch up on anything a previous process left unregistered, then keep going.
   // Not awaited: a slow or unreachable registry must not delay accepting traffic,

@@ -53,13 +53,13 @@ interface Harness {
   orchestrator: Orchestrator;
 }
 
-function boot(): Harness {
+function boot(readClaimable?: (address: string) => Promise<string | null>): Harness {
   const config = loadConfig({ env: { PUBLIC_BASE_URL: 'https://arena.test', MIN_RANKED_SESSIONS: '0' } });
   const db = openDatabase(':memory:');
   const google = new FakeGoogle();
   const xoauth = new FakeX();
   const orchestrator = new Orchestrator(db, config, { googleoauth: google, xoauth });
-  const { app } = buildServer({ db, config, orchestrator });
+  const { app } = buildServer({ db, config, orchestrator, readClaimable });
   return { app, google, xoauth, orchestrator };
 }
 
@@ -174,6 +174,61 @@ describe('sub-spec 11 — web accounts', () => {
       payload: { payoutAddress: addr },
     });
     expect(anon.statusCode).toBe(401);
+  });
+
+  it('reports what each payout address can claim, so the profile can offer a Claim button', async () => {
+    const addr = '0xF977F34dB8a986A0A9edec3E744092c715EF793c';
+    const asked: string[] = [];
+    const h = boot(async (a) => {
+      asked.push(a);
+      return a === addr ? '500000000000000000' : '0';
+    });
+    const cookie = await signInWithGoogle(h);
+    await connectX(h, cookie);
+    const token = await registerAgentWithClaim(h, 'Winner');
+    const { agentId } = (
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/arena/auth/claim-agent',
+        headers: { cookie },
+        payload: { claimToken: token },
+      })
+    ).json();
+
+    // No payout address yet: nothing to read, nothing claimable.
+    expect((await session(h, cookie)).agents[0].claimableWei).toBeNull();
+    expect(asked).toEqual([]);
+
+    await h.app.inject({
+      method: 'PATCH',
+      url: `/api/arena/auth/agent/${agentId}`,
+      headers: { cookie },
+      payload: { payoutAddress: addr },
+    });
+    expect((await session(h, cookie)).agents[0].claimableWei).toBe('500000000000000000');
+    expect(asked).toEqual([addr]);
+  });
+
+  it('reports nothing claimable when no chain reader is wired, rather than guessing', async () => {
+    const h = boot(); // what every chainless box and every other test gets
+    const cookie = await signInWithGoogle(h);
+    await connectX(h, cookie);
+    const token = await registerAgentWithClaim(h, 'NoChain');
+    const { agentId } = (
+      await h.app.inject({
+        method: 'POST',
+        url: '/api/arena/auth/claim-agent',
+        headers: { cookie },
+        payload: { claimToken: token },
+      })
+    ).json();
+    await h.app.inject({
+      method: 'PATCH',
+      url: `/api/arena/auth/agent/${agentId}`,
+      headers: { cookie },
+      payload: { payoutAddress: '0xF977F34dB8a986A0A9edec3E744092c715EF793c' },
+    });
+    expect((await session(h, cookie)).agents[0].claimableWei).toBeNull();
   });
 
   it('claims one agent to the account; enforces the 1:1 rule', async () => {
