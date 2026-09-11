@@ -76,6 +76,12 @@ function backfillAddedColumns(db: Db): void {
   addColumnIfMissing(db, 'competitions', 'settled_at', 'TEXT');
   addColumnIfMissing(db, 'competitions', 'settle_tx_hash', 'TEXT');
 
+  // A tournament's payouts, one `payments` row per winner, keyed by the season
+  // they were paid from. The table predates tournaments and was keyed by session
+  // only, so a season's winners were recorded nowhere but in the call data of
+  // its settlement transaction — and the page could not say who had been paid.
+  addColumnIfMissing(db, 'payments', 'competition_id', 'TEXT');
+
   // Sub-spec 23: the agent's ERC-8004 on-chain identity. Nullable and filled in
   // AFTER registration by a reconciler (D175) — an agent registers, plays and is
   // paid whether or not the registry ever answered, so every existing row and

@@ -132,6 +132,28 @@ describe('previewSettlement', () => {
     expect(() => previewSettlement(h.db, h.o, h.config, 'comp_nope')).toThrow(/No such competition/);
   });
 
+  it('records who a settled season paid, so the site can name them', async () => {
+    // The board ranks every agent by coins, eligible or not, so its top rows can
+    // be agents that could never be paid. Before this, a season's winners were
+    // written nowhere but the settlement transaction's call data.
+    const h = boot();
+    const [unclaimed, winner] = await seatThree(h, ['top-but-unclaimed', 'the-winner', 'third']);
+    h.o.devClaimAgent(winner!, 'x_w', 'winner');
+    h.o.setPayoutAddress(winner!, `0x${'b'.repeat(40)}`);
+    fund(h, '500000000000000000');
+
+    await h.o.settleTournament(h.comp);
+
+    const season = h.o.publicCompetitions('all').find((c) => c.id === h.comp)!;
+    expect(season.status).toBe('settled');
+    expect(season.payouts).toEqual([
+      { agentId: winner, displayName: 'the-winner', amountWei: '500000000000000000' },
+    ]);
+    expect(season.payouts.map((p) => p.agentId)).not.toContain(unclaimed);
+    // A live season has paid nobody yet.
+    expect(h.o.publicCompetitions('all').filter((c) => c.status === 'active').every((c) => c.payouts.length === 0)).toBe(true);
+  });
+
   it('flags a season that has already been settled', async () => {
     const h = boot();
     await seatThree(h, ['a', 'b', 'c']);

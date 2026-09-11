@@ -4020,9 +4020,24 @@
         return;
       }
       if (sel.options.length !== tourns.length) {
-        sel.innerHTML = tourns.map((c) => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+        sel.innerHTML = tourns.map((c) => '<option value="' + esc(c.id) + '">' + esc(c.name)
+          + (c.status === 'settled' ? ' (settled)' : c.status === 'archived' ? ' (ended)' : '')
+          + '</option>').join('');
       }
-      const competitionId = sel.value || tourns[0].id;
+      // ONE season for the whole tournament view. This dropdown used to steer the
+      // board alone, so picking S1 here showed S1's board under S2's prize header.
+      // The board now follows the season the header shows, and this dropdown moves
+      // both (see its onchange below).
+      const competitionId = (state.tournament && state.tournament.id) || tourns[0].id;
+      sel.value = competitionId;
+      const season = tourns.find((c) => c.id === competitionId);
+      const settled = Boolean(season && season.status === 'settled');
+      // Who a settled season actually PAID. The board ranks every agent by coins,
+      // eligible or not, so its top rows can be agents that were never payable.
+      const paid = new Map(((settled && season.payouts) || []).map((p) => [p.agentId, p]));
+      const paidChip = (agentId) => paid.has(agentId)
+        ? ' <span class="chip">\u{1F3C6} paid ' + esc(fmtBnb(paid.get(agentId).amountWei)) + '</span>'
+        : '';
 
       // Read the SERVER's board (spec 15: both game types score by coins).
       // This used to be rebuilt here out of the spectate feed and sorted by
@@ -4042,13 +4057,26 @@
       // Says what this board is ORDERED by, and nothing the server would have
       // to keep in sync — the economy itself is explained once, on the
       // playground standings, and it is the same economy.
-      $('lb-sub').textContent =
-        'ranked by net coins — the same order the on-chain prize is split by. '
-        + 'a rebuy is subtracted again here, so it buys time, never rank.';
+      if (settled) {
+        const list = [...paid.values()];
+        $('lb-sub').innerHTML = (list.length
+          ? '\u{1F3C6} prize paid to ' + list.map((p) => '<b>' + esc(p.displayName) + '</b> ('
+            + esc(fmtBnb(p.amountWei)) + ')').join(', ') + '. '
+          : 'this season settled with nobody eligible to be paid. ')
+          + 'the board ranks every agent by net coins, but only an agent with a verified owner, '
+          + 'a payout address and enough tables here could be paid.';
+      } else {
+        $('lb-sub').textContent =
+          'ranked by net coins — the same order the on-chain prize is split by. '
+          + 'a rebuy is subtracted again here, so it buys time, never rank.';
+      }
 
       // The podium and the rows are the playground's, field for field — one
       // coin economy, so one board treatment (D78: same face, same gold).
-      const PODIUM = ['current leader', 'chasing', 'in the mix'];
+      // "current leader" on a finished season says the race is still on.
+      const PODIUM = settled
+        ? ['finished 1st', 'finished 2nd', 'finished 3rd']
+        : ['current leader', 'chasing', 'in the mix'];
       const labelPodium = nameLabeller(rows);
       $('podium').innerHTML = rows.slice(0, 3).map((r, i) =>
         '<div class="panel pad">' +
@@ -4059,6 +4087,7 @@
         '<div style="display:flex; align-items:center; gap:9px; margin-top:6px">' +
         faceMarkup(r.agentId, r.displayName, 'lg') +
         '<span style="font-size:16px; font-weight:700">' + agentLink(r.agentId, labelPodium(r)) + '</span>' +
+        paidChip(r.agentId) +
         '</div>' +
         '<div class="dim" style="font-size:11px">' + r.agentId + '</div>' +
         '<div class="dotted" style="margin-top:12px; padding-top:10px">' +
@@ -4089,7 +4118,7 @@
         return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
           '<td class="rank">' + (i + 1) + '</td>' +
           '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
-          + agentLink(r.agentId, labelOf(r)) + '</span></td>' +
+          + agentLink(r.agentId, labelOf(r)) + paidChip(r.agentId) + '</span></td>' +
           ownerCell(r.ownerHandle) +
           '<td class="num coins">' + num(net) + held + '</td>' +
           '<td class="num">' + r.tablesWon + '</td>' +
@@ -4097,7 +4126,18 @@
           '</tr>';
       }).join('');
     }
-    $('lb-competition').onchange = loadLeaderboard;
+    $('lb-competition').onchange = (e) => {
+      // Same effect as the season picker at the top: move the whole view, header
+      // and replays included, not the board on its own.
+      state.season.tournament = e.target.value;
+      state.tournament = (state.comps || []).find((c) => c.id === e.target.value) || state.tournament;
+      state.airedId = null;
+      state.sessionsSignature = null;
+      renderSeasons();
+      renderTournEcon();
+      loadLeaderboard();
+      loadSessions().catch(() => { });
+    };
 
     // ---- playground standings (ranked by coins, sub-spec 12) -------------
     async function loadCoins() {
