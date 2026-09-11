@@ -51,6 +51,7 @@ Do not reorder this. The backend can't derive legal moves without the adapter (0
 - `open-season.js --name "..." --archive comp_x` — roll a season. Since spec 22 a new competition starts empty on its own, so **`--reset-coins` is no longer needed** and now only erases lifetime totals.
 - `create-tournament.js --name "..." [--seed-pool-wei N --confirm-spend]` — creating costs gas only; seeding moves real funds and is gated separately.
 - `settle-season.js --competition comp_x [--close] [--confirm]` — closes entries and pays the pool. Refuses outright when the pool is funded and **no agent is eligible** (an agent needs an X-verified owner, a payout address, and `MIN_RANKED_SESSIONS` settled games there), because settling into an empty field strands the pool permanently.
+- `rollover-jackpot.js --from comp_s1 --to comp_s2 [--confirm]` — carries a settled tournament's unpaid jackpot into an open one. A season allows one storm claim, so a jackpot whose claim went to an agent that can't be paid is otherwise stranded on the settled season. Refuses unless `--from` is settled and `--to` is an active tournament.
 - `scripts/soak/soak.mjs --smoke` — plays real tables over the public contract and fails on any contract deviation. See `scripts/soak/README.md`; it is what found the spec 22 defects.
 
 ## Non-negotiable global rules (apply to every sub-spec)

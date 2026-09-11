@@ -31,7 +31,7 @@ import { distributePool } from './payout';
 import { compareRank, placementsFrom } from './ranking';
 import { computeCoinSettlement } from './coins';
 import { createWalletStore, type WalletStore } from './agent-wallet';
-import { DISABLED_TOURNAMENT_CHAIN, type TournamentChain } from './tournament-chain';
+import { DISABLED_TOURNAMENT_CHAIN, type ChainResult, type TournamentChain } from './tournament-chain';
 import {
   DISABLED_XOAUTH,
   codeChallengeOf,
@@ -936,6 +936,28 @@ export class Orchestrator {
    * settle} reads to size the immediate storm award. Chain-off ⇒ DB-only, so a
    * storm records but does not pay (D67). Operator tooling (seed/CLI), not an API.
    */
+  /**
+   * Refuse to record a chain write the chain did not make.
+   *
+   * The tournament client never throws: a revert or an RPC failure comes back as
+   * `{ ok: false }`. Every caller here used to ignore that and update the
+   * database anyway, so a failed write was recorded as a successful one — a
+   * season marked `settled` while the contract still held its pool, a jackpot
+   * mirrored into a season it never reached. `settle-season` then refused to
+   * retry, because the database said the work was done.
+   *
+   * Throwing leaves the row exactly as it was, so the operator tool exits
+   * non-zero and can simply be run again. A DISABLED chain (a local box with no
+   * contracts) is mirror-only by design and passes straight through. The storm
+   * jackpot award already followed this rule; it is the model the rest now match.
+   */
+  private requireChain(result: ChainResult, what: string): ChainResult {
+    if (this.tournament.enabled && !result.ok) {
+      throw new ApiError(502, 'CHAIN_WRITE_FAILED', `${what} failed on chain: ${result.error ?? 'no error given'}`);
+    }
+    return result;
+  }
+
   async seedPlaygroundJackpot(competitionId: string, jackpotWei: string): Promise<void> {
     const c = this.getCompetition(competitionId);
     if (c.kind !== 'classic') {
@@ -943,8 +965,10 @@ export class Orchestrator {
     }
     if (BigInt(jackpotWei) > 0n && this.tournament.enabled) {
       // A free season on-chain (fee 0): the pool holds only the jackpot side-pool.
+      // Not gated: on a top-up the season is already open and this reverts with
+      // CompetitionExists. If it is genuinely not open, seedJackpot below fails.
       await this.tournament.openCompetition(competitionId, '0');
-      await this.tournament.seedJackpot(competitionId, jackpotWei);
+      this.requireChain(await this.tournament.seedJackpot(competitionId, jackpotWei), 'seedJackpot');
     }
     // ADD to the mirror, because the contract adds (`jackpotPool += msg.value`).
     // This used to SET it, which only agreed with the chain while every seed
@@ -1151,7 +1175,7 @@ export class Orchestrator {
       throw new ApiError(400, 'NOT_A_TOURNAMENT', `${competitionId} is not a tournament`);
     }
     if (BigInt(poolWei) > 0n) {
-      await this.tournament.seedPool(competitionId, poolWei);
+      this.requireChain(await this.tournament.seedPool(competitionId, poolWei), 'seedPool');
       this.addToPool(competitionId, poolWei);
       this.db
         .prepare(
@@ -1160,7 +1184,7 @@ export class Orchestrator {
         .run(poolWei, competitionId);
     }
     if (BigInt(jackpotWei) > 0n) {
-      await this.tournament.seedJackpot(competitionId, jackpotWei);
+      this.requireChain(await this.tournament.seedJackpot(competitionId, jackpotWei), 'seedJackpot');
       this.db
         .prepare(
           `UPDATE competitions SET jackpot_seed_wei = CAST(CAST(jackpot_seed_wei AS INTEGER) + ? AS TEXT) WHERE id = ?`,
@@ -1302,7 +1326,7 @@ export class Orchestrator {
     if (c.kind !== 'tournament') {
       throw new ApiError(400, 'NOT_A_TOURNAMENT', `${competitionId} is not a tournament`);
     }
-    await this.tournament.closeEntries(competitionId);
+    this.requireChain(await this.tournament.closeEntries(competitionId), 'closeEntries');
     this.db
       .prepare(`UPDATE competitions SET entries_closed_at = datetime('now') WHERE id = ?`)
       .run(competitionId);
@@ -1342,13 +1366,16 @@ export class Orchestrator {
     const jackpot = this.resolveJackpotWinner(competitionId, BigInt(c.jackpot_seed_wei));
     const resultRoot = this.leaderboardRoot(competitionId, ranked);
 
-    const result = await this.tournament.settleCompetition(
-      competitionId,
-      winners.map((w) => w.payoutAddress),
-      amounts,
-      jackpot?.payoutAddress ?? null,
-      jackpot ? BigInt(jackpot.amountWei) : 0n,
-      resultRoot,
+    const result = this.requireChain(
+      await this.tournament.settleCompetition(
+        competitionId,
+        winners.map((w) => w.payoutAddress),
+        amounts,
+        jackpot?.payoutAddress ?? null,
+        jackpot ? BigInt(jackpot.amountWei) : 0n,
+        resultRoot,
+      ),
+      'settleCompetition',
     );
 
     this.db
@@ -1369,7 +1396,10 @@ export class Orchestrator {
     if (from.kind !== 'tournament' || to.kind !== 'tournament') {
       throw new ApiError(400, 'NOT_A_TOURNAMENT', 'Both competitions must be tournaments');
     }
-    const result = await this.tournament.rolloverJackpot(fromCompetitionId, toCompetitionId);
+    const result = this.requireChain(
+      await this.tournament.rolloverJackpot(fromCompetitionId, toCompetitionId),
+      'rolloverJackpot',
+    );
     // Mirror the carry in the DB.
     const carried = from.jackpot_seed_wei;
     this.db.prepare(`UPDATE competitions SET jackpot_seed_wei = '0' WHERE id = ?`).run(fromCompetitionId);
