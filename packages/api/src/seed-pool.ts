@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   log(`competition    ${competitionId}  ${before.name}  [${before.status}]`);
   log(`pool now       ${fmt(before.pool_wei)}`);
   log(`jackpot now    ${fmt(before.jackpot_seed_wei)}`);
-  log(`${classic ? 'setting jackpot' : 'adding pool   '} ${fmt(classic ? jackpotWei : poolWei)}`);
+  log(`${classic ? 'adding jackpot' : 'adding pool   '} ${fmt(classic ? jackpotWei : poolWei)}`);
   if (!classic) log(`adding jackpot ${fmt(jackpotWei)}`);
   log('');
 
@@ -137,10 +137,11 @@ async function main(): Promise<void> {
 
   log('seeding (this moves funds)…');
   if (classic) {
-    // NOTE: `seedPlaygroundJackpot` SETS the mirror rather than adding to it, so
-    // this is "make the jackpot N", not "add N". It is printed as such above.
     await orchestrator.seedPlaygroundJackpot(competitionId, jackpotWei);
-    log(`  jackpot now ${fmt(jackpotWei)}`);
+    const after = db
+      .prepare(`SELECT jackpot_seed_wei FROM competitions WHERE id = ?`)
+      .get(competitionId) as { jackpot_seed_wei: string };
+    log(`  jackpot now ${fmt(after.jackpot_seed_wei)}`);
   } else {
     const seeded = await orchestrator.seedTournament(competitionId, poolWei, jackpotWei);
     log(`  pool now ${fmt(seeded.pool)}`);

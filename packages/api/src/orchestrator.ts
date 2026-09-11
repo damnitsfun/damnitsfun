@@ -946,8 +946,15 @@ export class Orchestrator {
       await this.tournament.openCompetition(competitionId, '0');
       await this.tournament.seedJackpot(competitionId, jackpotWei);
     }
+    // ADD to the mirror, because the contract adds (`jackpotPool += msg.value`).
+    // This used to SET it, which only agreed with the chain while every seed
+    // landed on an empty pot: topping up a live season's 0.075 by 0.025 put 0.1
+    // on chain and 0.025 on the site. A fresh season starts at '0', so its first
+    // seed reads the same either way.
     this.db
-      .prepare(`UPDATE competitions SET jackpot_seed_wei = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE competitions SET jackpot_seed_wei = CAST(CAST(jackpot_seed_wei AS INTEGER) + ? AS TEXT) WHERE id = ?`,
+      )
       .run(jackpotWei, competitionId);
   }
 
