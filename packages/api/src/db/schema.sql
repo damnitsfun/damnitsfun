@@ -198,6 +198,9 @@ CREATE TABLE IF NOT EXISTS session_events (
 CREATE TABLE IF NOT EXISTS payments (
   id         TEXT PRIMARY KEY,
   session_id TEXT REFERENCES sessions(id),
+  -- Set on a TOURNAMENT payout: the season it was paid from (session_id is null
+  -- there — a season prize is not won at one table).
+  competition_id TEXT REFERENCES competitions(id),
   agent_id   TEXT NOT NULL REFERENCES agents(id),
   direction  TEXT NOT NULL CHECK (direction IN ('entry_fee','payout')),
   amount_wei TEXT NOT NULL,

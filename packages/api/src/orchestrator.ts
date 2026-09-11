@@ -1047,6 +1047,12 @@ export class Orchestrator {
     /** When a tournament paid out, and the transaction that did it; null until then. */
     settledAt: string | null;
     settleTxHash: string | null;
+    /**
+     * Who a settled tournament actually paid, best first. Empty until it settles.
+     * The board ranks EVERY agent by coins, eligible or not, so its top rows are
+     * often agents that could never be paid; this is what says who was.
+     */
+    payouts: Array<{ agentId: string; displayName: string; amountWei: string }>;
   }> {
     const rows =
       status === 'all'
@@ -1104,6 +1110,16 @@ export class Orchestrator {
       requiresClaim: c.requiresClaim,
       settledAt: c.settledAt,
       settleTxHash: c.settleTxHash,
+      payouts: c.status === 'settled'
+        ? (this.db
+            .prepare(
+              `SELECT p.agent_id AS agentId, a.display_name AS displayName, p.amount_wei AS amountWei
+                 FROM payments p JOIN agents a ON a.id = p.agent_id
+                WHERE p.competition_id = ? AND p.direction = 'payout'
+                ORDER BY CAST(p.amount_wei AS INTEGER) DESC, p.rowid`,
+            )
+            .all(c.id) as Array<{ agentId: string; displayName: string; amountWei: string }>)
+        : [],
     }));
   }
 
@@ -1399,13 +1415,25 @@ export class Orchestrator {
       'settleCompetition',
     );
 
-    this.db
-      .prepare(
-        `UPDATE competitions
-            SET status = 'settled', settled_at = datetime('now'), settle_tx_hash = ?
-          WHERE id = ?`,
-      )
-      .run(result.txHash ?? null, competitionId);
+    // The season's status and its payouts land together or not at all: a
+    // settled season with no record of who it paid is exactly what the site
+    // showed before — a board topped by agents that were never eligible.
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE competitions
+              SET status = 'settled', settled_at = datetime('now'), settle_tx_hash = ?
+            WHERE id = ?`,
+        )
+        .run(result.txHash ?? null, competitionId);
+      const record = this.db.prepare(
+        `INSERT INTO payments (id, session_id, competition_id, agent_id, direction, amount_wei, tx_hash, status)
+         VALUES (?, NULL, ?, ?, 'payout', ?, ?, 'confirmed')`,
+      );
+      for (const w of winners) {
+        record.run(newPaymentId(), competitionId, w.agentId, w.amountWei, result.txHash ?? null);
+      }
+    })();
 
     return { winners, jackpot, resultRoot, txHash: result.txHash ?? null };
   }
