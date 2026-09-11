@@ -186,6 +186,22 @@ describe('two seasons of a kind (D145–D147)', () => {
     expect(all.find((c) => c.id === h.comp)!.status).toBe('archived');
   });
 
+  it('keeps a SETTLED season on the site — the status a tournament ends in', () => {
+    // The listing named ('active','archived') and left settled out, so the
+    // first tournament ever to settle disappeared from the site the moment it
+    // paid, and the Tournament tab had no season to show.
+    const h = boot();
+    const t = h.o.createCompetition('damnits.fun Tournament S1');
+    h.db.prepare(`UPDATE competitions SET kind = 'tournament', status = 'settled' WHERE id = ?`).run(t);
+
+    expect(h.o.publicCompetitions().map((c) => c.id)).not.toContain(t); // agents still see only live seasons
+    const all = h.o.publicCompetitions('all');
+    expect(all.find((c) => c.id === t)?.status).toBe('settled');
+    // With no active tournament, the page falls back to the newest tournament of
+    // any status — which must now be this one, not nothing.
+    expect(all.find((c) => c.kind === 'tournament')?.id).toBe(t);
+  });
+
   it('serves archived seasons through ?status=all only', async () => {
     const h = boot();
     h.db.prepare(`UPDATE competitions SET status = 'archived' WHERE id = ?`).run(h.comp);

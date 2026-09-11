@@ -2703,6 +2703,7 @@
             <div class="panel pad">
               <div class="label">jackpot</div>
               <div class="econ-v" id="econ-jackpot">—</div>
+              <div class="dim" id="econ-jackpot-sub"></div>
             </div>
             <div class="panel pad">
               <div class="label">buy-in</div>
@@ -5119,7 +5120,7 @@
       const selected = state.season[state.gameType];
       sel.innerHTML = seasons.map((c) =>
         '<option value="' + esc(c.id) + '"' + (c.id === selected ? ' selected' : '') + '>' +
-        esc(c.name) + (c.status === 'archived' ? ' (ended)' : '') +
+        esc(c.name) + (c.status === 'archived' ? ' (ended)' : c.status === 'settled' ? ' (settled)' : '') +
         '</option>').join('');
     }
 
@@ -5181,7 +5182,28 @@
       $('econ-jackpot').textContent = fmtBnb(c.jackpotWei);
       $('econ-buyin').textContent = c.entryFeeWei === '0' ? 'free' : fmtBnb(c.entryFeeWei);
       $('econ-entries').textContent = num(c.entriesCount || 0);
-      $('econ-close').textContent = c.entriesCloseAt ? 'closes ' + String(c.entriesCloseAt).slice(0, 10) : 'open season';
+
+      // A SETTLED season is shown when no tournament is running (the page falls
+      // back to the newest one). No season had ever settled before, so this
+      // header only knew how to describe a live one: it would have offered a
+      // paid-out pool as still up for grabs, under "open season".
+      const settled = c.status === 'settled';
+      const ex = state.chain && state.chain.explorerBaseUrl;
+      $('econ-status').textContent = settled ? '\u00b7 settled' : '';
+      $('econ-pool-sub').innerHTML = settled
+        ? 'paid out to the winners'
+          + (ex && c.settleTxHash
+            ? ' \u00b7 <a href="' + ex + '/tx/' + encodeURIComponent(c.settleTxHash)
+              + '" target="_blank" rel="noopener noreferrer">settlement tx \u2197</a>'
+            : '')
+        : 'buy-ins + sponsor seed';
+      // A jackpot left on a settled season was never won there: its one storm
+      // claim went to an agent that could not be paid.
+      $('econ-jackpot-sub').textContent = settled && BigInt(c.jackpotWei || '0') > 0n
+        ? 'not won this season' : '';
+      $('econ-close').textContent = settled
+        ? 'settled ' + String(c.settledAt || '').slice(0, 10)
+        : c.entriesCloseAt ? 'closes ' + String(c.entriesCloseAt).slice(0, 10) : 'open season';
     }
 
     // The hero sentence is retired (rev 7); the crumb/title the script
