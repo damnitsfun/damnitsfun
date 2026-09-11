@@ -3,7 +3,7 @@ name: CI
 # Reusable: deploy.yml calls this so a production deploy can never outrun a
 # green build. Note there is deliberately no `push: branches: [main]` trigger —
 # deploy.yml already calls this on every push to main, and a standalone trigger
-# would run the ~12-minute soak twice for the same commit.
+# would run every job, the soak included, twice for the same commit.
 on:
   pull_request:
   workflow_call:
@@ -56,14 +56,29 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # The T6 real-delay integration test uses real setTimeout delays (hundreds of
-  # ms), so it is the one place flakiness can hide. Global rule #4: run it
-  # repeatedly. Kept in its own job so a flake is instantly attributable and
-  # does not mask an ordinary test failure.
+  # ms), so it is the one place flakiness can hide. Global rule #4: run it 10x.
+  # Kept apart from the other jobs so a flake is instantly attributable and does
+  # not mask an ordinary test failure.
+  #
+  # The ten runs are a MATRIX, not a loop. Back to back they took ~11 minutes,
+  # and a deploy paid that twice — once on the PR and again on the merged
+  # commit. Side by side they finish in about the time of one run, and the
+  # repetition count the rule asks for is unchanged. Each run is already its own
+  # jest process, so separate machines lose nothing the loop was catching.
+  #
+  # fail-fast is off so a flake reports as "3 of 10 failed" rather than
+  # cancelling the rest at the first one: the point of repeating is to measure
+  # how flaky, not merely whether. Any failed run still fails the workflow, and
+  # deploy-target.yml deploys only on a fully green run.
   # ---------------------------------------------------------------------------
   timing:
-    name: real-delay soak (10x)
+    name: real-delay soak (${{ matrix.run }}/10)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v5
 
@@ -74,13 +89,8 @@ jobs:
 
       - run: yarn install --frozen-lockfile
 
-      - name: Run adapter-realdelay.test.ts 10 times
-        run: |
-          for i in $(seq 1 10); do
-            echo "::group::run $i/10"
-            yarn workspace engine test --runInBand adapter-realdelay || exit 1
-            echo "::endgroup::"
-          done
+      - name: Run adapter-realdelay.test.ts (run ${{ matrix.run }}/10)
+        run: yarn workspace engine test --runInBand adapter-realdelay
 
   # ---------------------------------------------------------------------------
   # Foundry. Not required for the app deploy (contracts ship via `forge script`,
