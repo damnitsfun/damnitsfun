@@ -1,5 +1,12 @@
 # Two versions of sub-spec 24 — a side-by-side
 
+> **Settled — this page is kept as the reasoning, not as an open question.** The recommendation
+> at the bottom was taken: the merge of A's structure and B's evidence was written up and is now
+> [`specs/24-economic-model.md`](../specs/24-economic-model.md), which supersedes both drafts.
+> Neither draft file exists on `main` any more; the two branches are kept read-only so the file
+> paths cited below still resolve. Read this to understand *why* spec 24 says what it says —
+> then read the spec, which is the only one that governs.
+
 There are **two specs numbered 24**, written separately, answering the same issue
 ([#30](https://github.com/damnitsfun/damnitsfun/issues/30)). Only one can be merged, because
 both renumber the decision list and the task list from the same starting point.
