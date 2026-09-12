@@ -952,6 +952,24 @@ export class Orchestrator {
    * contracts) is mirror-only by design and passes straight through. The storm
    * jackpot award already followed this rule; it is the model the rest now match.
    */
+  /**
+   * Make sure the contract has heard of this season before money is sent to it.
+   *
+   * `createTournament` fires `openCompetition` and does NOT wait for it — a chain
+   * outage must not block local bookkeeping — so a season can exist here while
+   * the contract has never opened it. Seeding one then reverts
+   * `CompetitionNotOpen`, which is what happened the first time Tournament S2
+   * was created and seeded in one command: the seed raced the open and lost.
+   *
+   * Deliberately NOT guarded. Opening a season that is already open reverts with
+   * `CompetitionExists`, the expected case on every top-up; it is the caller's
+   * own guarded write that decides whether the operation succeeded.
+   */
+  private async ensureOpenOnChain(competitionId: string, entryFeeWei: string): Promise<void> {
+    if (!this.tournament.enabled) return;
+    await this.tournament.openCompetition(competitionId, entryFeeWei);
+  }
+
   private requireChain(result: ChainResult, what: string): ChainResult {
     if (this.tournament.enabled && !result.ok) {
       throw new ApiError(502, 'CHAIN_WRITE_FAILED', `${what} failed on chain: ${result.error ?? 'no error given'}`);
@@ -966,9 +984,8 @@ export class Orchestrator {
     }
     if (BigInt(jackpotWei) > 0n && this.tournament.enabled) {
       // A free season on-chain (fee 0): the pool holds only the jackpot side-pool.
-      // Not gated: on a top-up the season is already open and this reverts with
-      // CompetitionExists. If it is genuinely not open, seedJackpot below fails.
-      await this.tournament.openCompetition(competitionId, '0');
+      // A free season on-chain (fee 0): the pool holds only the jackpot side-pool.
+      await this.ensureOpenOnChain(competitionId, '0');
       this.requireChain(await this.tournament.seedJackpot(competitionId, jackpotWei), 'seedJackpot');
     }
     // ADD to the mirror, because the contract adds (`jackpotPool += msg.value`).
@@ -1211,6 +1228,9 @@ export class Orchestrator {
     if (c.kind !== 'tournament') {
       throw new ApiError(400, 'NOT_A_TOURNAMENT', `${competitionId} is not a tournament`);
     }
+    if (BigInt(poolWei) > 0n || BigInt(jackpotWei) > 0n) {
+      await this.ensureOpenOnChain(competitionId, c.entry_fee_wei);
+    }
     if (BigInt(poolWei) > 0n) {
       this.requireChain(await this.tournament.seedPool(competitionId, poolWei), 'seedPool');
       this.addToPool(competitionId, poolWei);
@@ -1445,6 +1465,9 @@ export class Orchestrator {
     if (from.kind !== 'tournament' || to.kind !== 'tournament') {
       throw new ApiError(400, 'NOT_A_TOURNAMENT', 'Both competitions must be tournaments');
     }
+    // The contract carries a jackpot only INTO an open season, and a season the
+    // operator just created may not be open yet.
+    await this.ensureOpenOnChain(toCompetitionId, to.entry_fee_wei);
     const result = this.requireChain(
       await this.tournament.rolloverJackpot(fromCompetitionId, toCompetitionId),
       'rolloverJackpot',

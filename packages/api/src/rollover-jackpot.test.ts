@@ -17,23 +17,27 @@ import type { ChainResult, TournamentChain } from './tournament-chain';
  */
 
 /** A chain that succeeds until told to fail. */
-function switchableChain(): TournamentChain & { failing: boolean } {
+function switchableChain(): TournamentChain & { failing: boolean; calls: string[] } {
   const chain = {
     enabled: true,
     contractAddress: '0xTOURNEY',
     failing: false,
-  } as TournamentChain & { failing: boolean };
-  const result = async (): Promise<ChainResult> =>
-    chain.failing ? { ok: false, error: 'execution reverted' } : { ok: true, txHash: `0x${'b'.repeat(64)}` };
+  } as TournamentChain & { failing: boolean; calls: string[] };
+  const calls: string[] = [];
+  (chain as unknown as { calls: string[] }).calls = calls;
+  const result = (name: string) => async (): Promise<ChainResult> => {
+    calls.push(name);
+    return chain.failing ? { ok: false, error: 'execution reverted' } : { ok: true, txHash: `0x${'b'.repeat(64)}` };
+  };
   Object.assign(chain, {
-    openCompetition: result,
+    openCompetition: result('openCompetition'),
     verifyEntry: async () => ({ ok: false, error: 'not used' }),
-    seedPool: result,
-    seedJackpot: result,
-    closeEntries: result,
-    settleCompetition: result,
-    awardJackpot: result,
-    rolloverJackpot: result,
+    seedPool: result('seedPool'),
+    seedJackpot: result('seedJackpot'),
+    closeEntries: result('closeEntries'),
+    settleCompetition: result('settleCompetition'),
+    awardJackpot: result('awardJackpot'),
+    rolloverJackpot: result('rolloverJackpot'),
   });
   return chain;
 }
@@ -100,6 +104,38 @@ describe('rollover-jackpot', () => {
     expect(planRollover(h.db, live, playground).refusals.join(' ')).toMatch(/not a tournament/);
     expect(planRollover(h.db, settledEmpty, h.tournament('S3')).refusals.join(' ')).toMatch(/no jackpot/);
     expect(planRollover(h.db, live, live).refusals.join(' ')).toMatch(/same season/);
+  });
+});
+
+describe('money paths open the season on chain first', () => {
+  /**
+   * `createTournament` fires openCompetition without waiting, so a season can
+   * exist locally while the contract has never opened it. Creating and seeding
+   * Tournament S2 in one command reverted with CompetitionNotOpen: the seed
+   * raced the open and lost.
+   */
+  it('seeding opens the season before it sends the pool', async () => {
+    const h = boot();
+    const s2 = h.tournament('Tournament S2');
+    h.chain.calls.length = 0;
+
+    await h.o.seedTournament(s2, '100000000000000000', '0');
+
+    expect(h.chain.calls).toEqual(['openCompetition', 'seedPool']);
+    expect(h.row(s2).pool_wei).toBe('100000000000000000');
+  });
+
+  it('a rollover opens the season it is carrying the jackpot into', async () => {
+    const h = boot();
+    const s1 = h.tournament('Tournament S1');
+    const s2 = h.tournament('Tournament S2');
+    settle(h.db, s1, '100000000000000000');
+    h.chain.calls.length = 0;
+
+    await h.o.rolloverJackpot(s1, s2);
+
+    expect(h.chain.calls).toEqual(['openCompetition', 'rolloverJackpot']);
+    expect(h.row(s2).jackpot_seed_wei).toBe('100000000000000000');
   });
 });
 
