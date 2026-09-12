@@ -111,6 +111,44 @@ the agent being created, but it is asynchronous by design — if it has not arri
 yet, say so and carry on rather than waiting on camera; the whole point of D176 is
 that nothing depends on it.
 
+## Answering "why this DeFi protocol?" on stage (sub-spec 24)
+
+The staked season parks deposits in a yield protocol while a season runs. Expect
+one question about that choice, and answer it with the criterion rather than the
+name — the architecture is the answer:
+
+> "The yield source is a plug. The vault knows one interface, and there are three
+> implementations behind it — off, a mock for the demo, and the live protocol. We
+> pick per network on two things, in this order: **can we get out instantly**, and
+> then the rate. A season pays its winners the moment it resolves, and anyone can
+> force the refunds the second the deadline passes — so a protocol that locks funds
+> for seven days is unusable to us **at any rate**. On chain 97 the only thing that
+> survives that filter is Venus. Swapping it is a constructor argument."
+
+If they push — *"Lista pays 0.91%, seven times more, why not that?"* — that is the
+good question, and it has a measured answer:
+
+| | instant exit? | on chain 97 | rate |
+|---|---|---|---|
+| **Venus** | **yes** | deployed, deposits open | 0.13% |
+| Lista | no — **7-day** unstake | **not deployed at all** | 0.91% |
+| Ankr | n/a | deployed, but **frozen at zero — earns nothing, ever** | 0% |
+| BNB native staking | no — **3-day** wait, **1 BNB** minimum | n/a | — |
+
+Two things never to say, both of which cost more than they earn:
+
+- **"We use the best-yielding protocol."** We do not, deliberately — see the table.
+  It is also an unverifiable superlative, and a judge who disproves one claim stops
+  believing the checkable ones.
+- **Any percentage, projected yield or APY** (D193). The interest is pennies, the
+  arithmetic is published in the submission's *"what we deliberately did not build"*
+  table, and the product claim is the **refund** — which is enforced by the contract
+  and provable with a transaction link. Lead with that, not with the yield.
+
+The full staked-season shot list — compressed deadlines, interest climbing at the
+mock rate, and `exitStale` triggered live from a **non-operator** wallet — lands
+with sub-spec 24 (T141) and is not yet rehearsed.
+
 ## If something breaks
 
 Per the cut order in Requirements §5.2 — never cut escrow/payout, the agent API,

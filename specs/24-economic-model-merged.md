@@ -179,6 +179,42 @@ The vBNB address is a constructor argument, never a hard-coded constant. Lista s
 behind the same seam for the real-network slide, and the README says plainly that it has no test
 deployment — that costs one paragraph and is the kind of honesty judges reward.
 
+**How the protocol is chosen — and the answer to "so why not the one that pays more?"** The
+selection criterion is **not** the headline rate, and saying that it is invites a question with a
+bad answer. Two things decide it, in this order:
+
+1. **Can we get out instantly?** A season pays its winners the moment it resolves, and
+   `exitStale` must be able to return everyone's deposit the second `resolveBy` passes. A
+   protocol that locks funds for seven days cannot serve either, **at any rate.** This filter is
+   not a testnet artefact — it applies identically on mainnet.
+2. **Then, among what survives that, the best rate.**
+
+Run the filter against measured chain-97 facts and only one protocol is left, which is why the
+answer looks hard-coded but is not:
+
+| | instant exit? | chain 97 | rate |
+|---|---|---|---|
+| **Venus** | **yes** | deployed, deposits open, `mint()` simulated OK | 0.13% |
+| Lista | no — **7-day** unstake | **not deployed** (both addresses empty) | 0.91% |
+| Ankr | n/a | deployed, but **`ratio()` frozen at 1e18 — earns nothing, ever** | 0% |
+| BNB native staking | no — **3-day** wait, **1 BNB** minimum | n/a | — |
+
+So Lista's 0.91% — seven times Venus's rate, and the reason a reader assumes we picked wrong —
+is **unusable to this product on any network**, because a seven-day unstake cannot settle a
+season on demand. That is the sentence to say out loud when someone asks.
+
+**What this means for the pitch.** The claim we make is *"the yield source is a plug — we pick
+per network on exit speed first, then rate; on chain 97 that is Venus"*, and it is a description
+of the code rather than a promise about the future: one interface, three implementations, the
+address passed at construction. Swapping providers is a constructor argument and a deploy, and
+touches no other layer. What we do **not** claim is "we use the best-yielding protocol" — an
+unverifiable superlative that contradicts the table above the moment anyone looks up Lista.
+
+**And it stays out of the product pages.** D193 keeps percentages, projected yields and APYs off
+every page in `packages/web`; this paragraph extends that to the superlative. Protocol selection
+belongs in the spoken pitch, the README and this spec, where it is reasoning a reader can check —
+never in site copy, where it reads as a yield promise.
+
 **D184 — Venus returns an error code instead of failing, and we check it every single time.**
 
 Venus is a Compound-style contract. When a withdrawal fails **it does not throw. It returns a
