@@ -23,12 +23,17 @@
  *   node dist/settle-season.js --competition comp_abc            # dry run
  *   node dist/settle-season.js --competition comp_abc --close    # close entries only
  *   node dist/settle-season.js --competition comp_abc --confirm  # close (if needed) + pay
+ *
+ * On a STAKED season (sub-spec 24) `--confirm` resolves instead: every depositor
+ * is refunded in full whether they played or not, and the sponsor pot goes to the
+ * eligible field.
  */
 import { distributePool } from './payout';
 import { loadConfig, type Config } from './config';
 import { openDatabase, type Db } from './db/index';
 import { Orchestrator } from './orchestrator';
 import { createTournamentChain } from './tournament-chain';
+import { createVaultChain } from './vault-chain';
 import { createWalletStore } from './agent-wallet';
 
 const log = (m = ''): void => {
@@ -172,12 +177,20 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const db = openDatabase(config.databasePath, { autoMigrate: false });
   const tournament = createTournamentChain(config, log);
+  const vault = createVaultChain(config, log);
   const orchestrator = new Orchestrator(db, config, {
     tournamentChain: tournament,
+    vaultChain: vault,
     walletStore: createWalletStore(config.walletEncryptionKey),
   });
 
   const p = previewSettlement(db, orchestrator, config, competitionId);
+  const season = db
+    .prepare(`SELECT entry_model, deposit_wei, resolve_by FROM competitions WHERE id = ?`)
+    .get(competitionId) as
+    | { entry_model: string; deposit_wei: string | null; resolve_by: string | null }
+    | undefined;
+  const isStaked = season?.entry_model === 'staked';
   const confirm = has('--confirm');
   const closeOnly = has('--close') && !confirm;
 
@@ -187,8 +200,22 @@ async function main(): Promise<void> {
   log(`  chain          ${tournament.enabled ? `ENABLED — ${tournament.contractAddress}` : 'DISABLED (no key/contract)'}`);
   log(`  competition    ${p.name} (${p.competitionId})`);
   log(`  entries        ${p.entriesClosed ? 'closed' : 'OPEN — settling will close them first'}`);
-  log(`  pool           ${fmtWei(p.poolWei)}`);
-  log(`  jackpot        ${fmtWei(p.jackpotWei)}`);
+  if (isStaked) {
+    const depositors = (
+      db
+        .prepare(`SELECT COUNT(*) AS n FROM competition_entries WHERE competition_id = ?`)
+        .get(competitionId) as { n: number }
+    ).n;
+    const held = BigInt(season?.deposit_wei ?? '0') * BigInt(depositors);
+    log(`  model          STAKED — resolving REFUNDS every depositor, eligible or not`);
+    log(`  vault          ${vault.enabled ? vault.contractAddress : 'DISABLED — refunds recorded, nothing sent'}`);
+    log(`  deposits held  ${fmtWei(held)} across ${depositors} wallet(s)`);
+    log(`  resolve by     ${season?.resolve_by ?? '(unset)'}   (after this, ANYONE may call exitStale)`);
+    log(`  prize pot      ${fmtWei(p.poolWei)}   (sponsor money — no deposit is part of it)`);
+  } else {
+    log(`  pool           ${fmtWei(p.poolWei)}`);
+    log(`  jackpot        ${fmtWei(p.jackpotWei)}`);
+  }
   log(
     `  payout depth   top ${Math.round(config.payoutFieldFraction * 100)}% of the field, ` +
       `capped at ${config.payoutSchedule.length} — ${p.amounts.length} of ${p.ranked.length} eligible get paid`,
@@ -229,7 +256,7 @@ async function main(): Promise<void> {
   // season settled and sends nothing, so the pool is stranded in the contract
   // with no second chance. Production sat at 0 eligible of 60 agents for months,
   // which is exactly how someone reaches this by accident.
-  if (p.ranked.length === 0 && p.poolWei > 0n) {
+  if (p.ranked.length === 0 && p.poolWei > 0n && !isStaked) {
     log('  ! REFUSING: the pool is funded but NOBODY is eligible to receive it.');
     log('    Settling now would mark the season settled and pay out nothing, and');
     log('    the pool would be stranded. Fix eligibility first — an agent needs an');
@@ -237,6 +264,43 @@ async function main(): Promise<void> {
     log(`    ${config.minRankedSessions} settled games in this competition.`);
     db.close();
     process.exit(3);
+  }
+
+  // The same trap, softer, because the vault does not have the hole that makes it
+  // fatal: resolving with no winners leaves the prize pot readable and payable
+  // later with awardPrizes, where DamnitsTournament would strand it forever. So
+  // this warns and asks for an explicit flag rather than refusing outright —
+  // deposits must still be able to come home.
+  if (p.ranked.length === 0 && p.poolWei > 0n && isStaked && !has('--refund-only')) {
+    log('  ! The prize pot is funded but NOBODY is eligible to receive it.');
+    log('    Resolving now refunds every deposit in full and pays no prize. The pot');
+    log('    is NOT lost — it stays attributed to this season and can be paid later');
+    log('    — but nothing will go out today. Fix eligibility first (an X-verified');
+    log(`    owner, a payout address, and ${config.minRankedSessions} settled games here),`);
+    log('    or re-run with --refund-only if returning the deposits is the intent.');
+    db.close();
+    process.exit(3);
+  }
+
+  if (isStaked) {
+    if (!confirm) {
+      log('  Nothing written. Re-run with --confirm to refund every depositor and');
+      log('  pay the prize pot to the eligible field.');
+      db.close();
+      return;
+    }
+    log('  resolving (this refunds deposits and pays prizes)…');
+    const out = await orchestrator.resolveStakedSeason(competitionId);
+    log('');
+    log(`  resolved. tx ${out.txHash ?? '(none — vault disabled)'}`);
+    log(`  resultRoot ${out.resultRoot}`);
+    log(`  refunded ${out.refunds.length} depositor(s) in full:`);
+    for (const r of out.refunds) log(`    ${r.agentId} -> ${r.walletAddress ?? '(no wallet)'}  ${fmtWei(r.amountWei)}`);
+    for (const w of out.winners) log(`    prize ${w.agentId} -> ${w.payoutAddress}  ${fmtWei(w.amountWei)}`);
+    log('');
+    log('  Everyone withdraws with vault.withdraw() — refunds and prizes alike.');
+    db.close();
+    return;
   }
 
   if (closeOnly) {

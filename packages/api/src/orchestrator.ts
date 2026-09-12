@@ -1083,6 +1083,19 @@ export class Orchestrator {
      * often agents that could never be paid; this is what says who was.
      */
     payouts: Array<{ agentId: string; displayName: string; amountWei: string }>;
+    /**
+     * The staked-season facts (sub-spec 24, D192). Null on every fee season.
+     *
+     * A deposit deadline is a promise a player checks BEFORE paying, so it is
+     * served from the deployment rather than a template — spec 22 shipped a
+     * payout fraction both boxes ignored for days because nobody outside could
+     * see the live value.
+     */
+    entryModel: 'fee' | 'staked';
+    vaultAddress: string | null;
+    depositWei: string | null;
+    registrationCloseAt: string | null;
+    resolveBy: string | null;
   }> {
     const rows =
       status === 'all'
@@ -1115,13 +1128,26 @@ export class Orchestrator {
             requiresClaim: Boolean(r.requires_claim),
             settledAt: r.settled_at,
             settleTxHash: r.settle_tx_hash,
+            entryModel: r.entry_model,
+            vaultAddress: r.vault_address,
+            depositWei: r.deposit_wei,
+            registrationCloseAt: r.registration_close_at,
+            resolveBy: r.resolve_by,
           }))
-        : this.listActiveCompetitions().map((c) => ({
-            ...c,
-            status: 'active',
-            settledAt: null,
-            settleTxHash: null,
-          }));
+        : this.listActiveCompetitions().map((c) => {
+            const r = this.getCompetition(c.id);
+            return {
+              ...c,
+              status: 'active',
+              settledAt: null,
+              settleTxHash: null,
+              entryModel: r.entry_model,
+              vaultAddress: r.vault_address,
+              depositWei: r.deposit_wei,
+              registrationCloseAt: r.registration_close_at,
+              resolveBy: r.resolve_by,
+            };
+          });
 
     return rows.map((c) => ({
       id: c.id,
@@ -1150,6 +1176,11 @@ export class Orchestrator {
             )
             .all(c.id) as Array<{ agentId: string; displayName: string; amountWei: string }>)
         : [],
+      entryModel: c.entryModel ?? 'fee',
+      vaultAddress: c.vaultAddress ?? null,
+      depositWei: c.depositWei ?? null,
+      registrationCloseAt: c.registrationCloseAt ?? null,
+      resolveBy: c.resolveBy ?? null,
     }));
   }
 

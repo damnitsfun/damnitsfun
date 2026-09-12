@@ -311,6 +311,18 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // must read it from the deployment rather than carry its own copy. Null
       // on a chain we have no registry address for, which renders no link.
       identityRegistryAddress: identityRegistryAddress(config.bscChainId),
+      // Sub-spec 24 (D192): the refundable season's deployment facts. Same reason
+      // again — a player checks where a deposit goes, and what earns on it, BEFORE
+      // paying, so both must come from the box rather than from our copy.
+      //
+      // `yieldSource` null means the vault holds deposits itself and earns nothing,
+      // which is a fully working deployment. Deliberately NO rate, projected yield
+      // or APY here or anywhere: the interest is pennies, and a number a judge can
+      // disprove in one click costs more than it earns (D193).
+      vaultAddress: config.vaultContractAddress,
+      yieldSource: config.yieldSourceAddress,
+      yieldSourceKind: config.yieldSourceAddress ? 'external' : 'none',
+      stakedDepositWei: config.stakedDepositWei,
     }));
 
     // ---- register (no auth) -------------------------------------------------
