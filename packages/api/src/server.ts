@@ -21,6 +21,7 @@ import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
 import { getPublicSession, listSessions, readEvents } from './routes/spectate';
 import { createTournamentChain } from './tournament-chain';
+import { createVaultChain } from './vault-chain';
 import { createXOAuth } from './xoauth';
 import { createGoogleOAuth } from './googleoauth';
 import { renderClaimError, renderClaimPage } from './routes/claim-page';
@@ -813,6 +814,7 @@ export async function start(): Promise<void> {
   const log = (message: string) => process.stdout.write(`${message}\n`);
   const chain = createSettlementChain(config, log);
   const tournamentChain = createTournamentChain(config, log);
+  const vaultChain = createVaultChain(config, log);
   const xoauth = createXOAuth(config);
   if (!xoauth.enabled) {
     log('X login not configured (X_CLIENT_ID unset) — agent claiming / connect-X is disabled.');
@@ -824,6 +826,7 @@ export async function start(): Promise<void> {
   const orchestrator = new Orchestrator(db, config, {
     chain,
     tournamentChain,
+    vaultChain,
     xoauth,
     googleoauth,
     hooks: createChainHooks(db, chain, log),

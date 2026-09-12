@@ -32,6 +32,7 @@ import { compareRank, placementsFrom } from './ranking';
 import { computeCoinSettlement } from './coins';
 import { createWalletStore, type WalletStore } from './agent-wallet';
 import { DISABLED_TOURNAMENT_CHAIN, type ChainResult, type TournamentChain } from './tournament-chain';
+import { DISABLED_VAULT_CHAIN, type VaultChain } from './vault-chain';
 import {
   DISABLED_XOAUTH,
   codeChallengeOf,
@@ -153,6 +154,14 @@ interface CompetitionRow {
   settled_at: string | null;
   settle_tx_hash: string | null;
   requires_claim: number;
+  /** Staked-season columns (sub-spec 24). Null on every fee-model row. */
+  entry_model: 'fee' | 'staked';
+  vault_address: string | null;
+  yield_source_address: string | null;
+  deposit_wei: string | null;
+  registration_close_at: string | null;
+  resolve_by: string | null;
+  resolved_tx_hash: string | null;
 }
 
 interface SessionRow {
@@ -274,6 +283,7 @@ export class Orchestrator {
   private readonly hooks: SessionLifecycleHooks;
   private readonly chain: SettlementChain;
   private readonly tournament: TournamentChain;
+  private readonly vault: VaultChain;
   private readonly xoauth: XOAuthProvider;
   private readonly googleoauth: GoogleOAuthProvider;
   private readonly wallets: WalletStore;
@@ -289,6 +299,8 @@ export class Orchestrator {
       chain?: SettlementChain;
       /** Used to verify buy-ins and settle pooled tournaments. Defaults to no chain. */
       tournamentChain?: TournamentChain;
+      /** Used to take deposits and resolve staked seasons (sub-spec 24). Defaults to no chain. */
+      vaultChain?: VaultChain;
       /** "Sign in with X" identity for agent claims (sub-spec 09). Defaults to disabled. */
       xoauth?: XOAuthProvider;
       /** "Sign in with Google" web login (sub-spec 11). Defaults to disabled. */
@@ -303,6 +315,7 @@ export class Orchestrator {
     this.hooks = options.hooks ?? {};
     this.chain = options.chain ?? DISABLED_CHAIN;
     this.tournament = options.tournamentChain ?? DISABLED_TOURNAMENT_CHAIN;
+    this.vault = options.vaultChain ?? DISABLED_VAULT_CHAIN;
     this.xoauth = options.xoauth ?? DISABLED_XOAUTH;
     this.googleoauth = options.googleoauth ?? DISABLED_GOOGLE_OAUTH;
     this.wallets = options.walletStore ?? createWalletStore(config.walletEncryptionKey);
@@ -1296,6 +1309,14 @@ export class Orchestrator {
 
     const warning = this.lateEntryWarning(competitionId);
 
+    // A staked season takes a refundable deposit into the vault instead of a fee
+    // into the tournament pool (D190). Checked before the fee branch because a
+    // staked season's `entry_fee_wei` is deliberately '0', which would otherwise
+    // look like a free season and seat the agent without taking anything.
+    if (c.entry_model === 'staked') {
+      return this.enterStakedSeason(agentId, c, txHash, warning);
+    }
+
     // Free entry (D13): record and return, no chain.
     if (BigInt(c.entry_fee_wei) === 0n) {
       this.recordEntry(competitionId, agentId, null, null, '0');
@@ -1330,6 +1351,60 @@ export class Orchestrator {
     this.addToPool(competitionId, check.amountWei ?? c.entry_fee_wei);
     // The paying wallet is the agent's on-chain identity; default the payout
     // address to it too, so a winner without an explicit payout address still gets paid.
+    if (check.payer) {
+      this.db
+        .prepare(
+          `UPDATE agents SET wallet_address = ?, payout_address = COALESCE(payout_address, ?) WHERE id = ?`,
+        )
+        .run(check.payer, check.payer, agentId);
+    }
+    return warning ? { entered: true, warning } : { entered: true };
+  }
+
+  /**
+   * Take a season deposit (D190). The shape mirrors the fee path exactly — 402
+   * naming where to pay, then the txHash verified against the chain rather than
+   * trusted — so an agent that can already enter a tournament needs no new code.
+   *
+   * The one difference worth stating to the player: this comes back. The 402 says
+   * so, and carries the on-chain deadline by which it must.
+   */
+  private async enterStakedSeason(
+    agentId: string,
+    c: CompetitionRow,
+    txHash: string | undefined,
+    warning: string | undefined,
+  ): Promise<{ entered: true; warning?: string }> {
+    const depositWei = c.deposit_wei ?? this.config.stakedDepositWei;
+    const paymentRequired = {
+      chainId: this.config.bscChainId,
+      contractAddress: c.vault_address ?? this.config.vaultContractAddress,
+      amountWei: depositWei,
+      competitionId: c.id,
+      /** The whole point: this is a stake, not a fee. */
+      refundable: true,
+      registrationCloseAt: c.registration_close_at,
+      resolveBy: c.resolve_by,
+      method: 'deposit(bytes32)',
+    };
+
+    if (!txHash) {
+      throw new ApiError(402, 'DEPOSIT_REQUIRED', 'Season deposit not paid', {
+        paymentRequired,
+        ...(warning ? { warning } : {}),
+      });
+    }
+
+    const check = await this.vault.verifyDeposit(c.id, txHash, depositWei);
+    if (!check.ok) {
+      throw new ApiError(402, 'DEPOSIT_NOT_VERIFIED', `Deposit not verified: ${check.error}`, {
+        paymentRequired,
+      });
+    }
+
+    // The deposit is NOT added to the pool: it is the player's money, held in the
+    // vault and returned at resolve. The pool is sponsor money only.
+    this.recordEntry(c.id, agentId, check.payer ?? null, txHash, check.amountWei ?? depositWei);
     if (check.payer) {
       this.db
         .prepare(
@@ -1456,6 +1531,235 @@ export class Orchestrator {
     })();
 
     return { winners, jackpot, resultRoot, txHash: result.txHash ?? null };
+  }
+
+  // ---- the refundable season (sub-spec 24) ---------------------------------
+
+  /**
+   * Create a staked season: the entry is a **deposit**, held in {DamnitsVault}
+   * while the season runs and returned in full at the end (D186/D187).
+   *
+   * `entry_fee_wei` stays `'0'` on purpose. A fee is money the competition keeps,
+   * and there is no such money here — the deposit belongs to the player and lives
+   * in a different contract. Leaving the fee at zero keeps every fee-model code
+   * path inert rather than subtly wrong.
+   *
+   * Both deadlines are written on chain before anyone can deposit, so "your money
+   * comes back by this date" is a checkpoint a player verifies on BscScan rather
+   * than a sentence in our copy.
+   */
+  createStakedSeason(
+    name: string,
+    depositWei: string,
+    registrationCloseAt: number,
+    resolveBy: number,
+    options: { requiresClaim?: boolean } = {},
+  ): string {
+    if (resolveBy <= registrationCloseAt) {
+      throw new ApiError(
+        400,
+        'DEADLINES_OUT_OF_ORDER',
+        'resolveBy must be after registrationCloseAt',
+      );
+    }
+    const id = this.createCompetition(name, '0', this.vault.contractAddress);
+    this.db
+      .prepare(
+        `UPDATE competitions
+            SET kind = 'tournament',
+                entry_model = 'staked',
+                payout_schedule_json = ?,
+                requires_claim = ?,
+                vault_address = ?,
+                yield_source_address = ?,
+                deposit_wei = ?,
+                registration_close_at = ?,
+                resolve_by = ?
+          WHERE id = ?`,
+      )
+      .run(
+        JSON.stringify(this.config.payoutSchedule),
+        options.requiresClaim ? 1 : 0,
+        this.vault.contractAddress,
+        this.config.yieldSourceAddress,
+        depositWei,
+        new Date(registrationCloseAt * 1000).toISOString(),
+        new Date(resolveBy * 1000).toISOString(),
+        id,
+      );
+
+    // Best-effort, exactly like `createTournament`: a chain outage must not block
+    // local bookkeeping. `ensureStakedOpenOnChain` covers the race before money moves.
+    void this.vault.openSeason(
+      id,
+      depositWei,
+      registrationCloseAt,
+      resolveBy,
+      this.config.yieldSourceAddress,
+    );
+    return id;
+  }
+
+  /**
+   * The vault's counterpart to {ensureOpenOnChain}. Same reasoning: the season may
+   * exist here while the contract has never opened it, and seeding or depositing
+   * into an unopened season reverts. Unguarded — re-opening reverts with
+   * `SeasonExists`, which is the expected case.
+   */
+  private async ensureStakedOpenOnChain(competitionId: string): Promise<void> {
+    if (!this.vault.enabled) return;
+    const c = this.getCompetition(competitionId);
+    if (!c.deposit_wei || !c.registration_close_at || !c.resolve_by) return;
+    await this.vault.openSeason(
+      competitionId,
+      c.deposit_wei,
+      Math.floor(Date.parse(c.registration_close_at) / 1000),
+      Math.floor(Date.parse(c.resolve_by) / 1000),
+      c.yield_source_address ?? null,
+    );
+  }
+
+  private requireVault(result: ChainResult, what: string): ChainResult {
+    if (this.vault.enabled && !result.ok) {
+      throw new ApiError(
+        502,
+        'CHAIN_WRITE_FAILED',
+        `${what} failed on chain: ${result.error ?? 'no error given'}`,
+      );
+    }
+    return result;
+  }
+
+  /**
+   * Sponsor money into a staked season's prize pot. This is the **entire** prize:
+   * a player's deposit earns nothing for that player, and the interest goes to the
+   * treasury (D182), so the pot is sponsor-funded end to end.
+   */
+  async seedStakedPot(competitionId: string, amountWei: string): Promise<{ pool: string }> {
+    const c = this.requireStaked(competitionId);
+    if (BigInt(amountWei) > 0n) {
+      await this.ensureStakedOpenOnChain(competitionId);
+      this.requireVault(await this.vault.seedPot(competitionId, amountWei), 'seedPot');
+      this.addToPool(competitionId, amountWei);
+      this.db
+        .prepare(
+          `UPDATE competitions SET sponsor_seed_wei = CAST(CAST(sponsor_seed_wei AS INTEGER) + ? AS TEXT) WHERE id = ?`,
+        )
+        .run(amountWei, competitionId);
+    }
+    return { pool: this.getCompetition(competitionId).pool_wei };
+  }
+
+  /** Close registration and park the deposits in the yield source, in one transaction. */
+  async closeStakedRegistration(competitionId: string): Promise<{ txHash: string | null }> {
+    this.requireStaked(competitionId);
+    const result = this.requireVault(
+      await this.vault.closeRegistration(competitionId),
+      'closeRegistration',
+    );
+    this.db
+      .prepare(`UPDATE competitions SET entries_closed_at = datetime('now') WHERE id = ?`)
+      .run(competitionId);
+    return { txHash: result.txHash ?? null };
+  }
+
+  /**
+   * End a staked season: refund every depositor in full, pay the winners from the
+   * sponsor pot, and sweep the interest to the treasury — one transaction, four
+   * effects (D188).
+   *
+   * Eligibility gates **prizes only, never refunds**. An agent that deposited and
+   * played nothing gets 100% of its deposit back and cannot touch the prize, which
+   * is why the refund rows below are written for every entry rather than for the
+   * ranked field.
+   */
+  async resolveStakedSeason(competitionId: string): Promise<{
+    winners: Array<{ agentId: string; payoutAddress: string; amountWei: string }>;
+    refunds: Array<{ agentId: string; walletAddress: string | null; amountWei: string }>;
+    resultRoot: string;
+    txHash: string | null;
+  }> {
+    const c = this.requireStaked(competitionId);
+
+    // The prize comes from the sponsor pot. `eligibleRanked` and `distributePool`
+    // are reused verbatim — plain integer maths that does not care what it counts.
+    const ranked = this.eligibleRanked(competitionId);
+    const amounts = distributePool(
+      BigInt(c.pool_wei),
+      ranked.length,
+      this.config.payoutSchedule,
+      this.config.payoutFieldFraction,
+    );
+    const winners = amounts.map((amountWei, i) => ({
+      agentId: ranked[i]!.agentId,
+      payoutAddress: ranked[i]!.payoutAddress,
+      amountWei: amountWei.toString(),
+    }));
+
+    const entries = this.db
+      .prepare(
+        `SELECT agent_id, wallet_address, amount_wei
+           FROM competition_entries WHERE competition_id = ?`,
+      )
+      .all(competitionId) as Array<{
+      agent_id: string;
+      wallet_address: string | null;
+      amount_wei: string;
+    }>;
+    const refunds = entries.map((e) => ({
+      agentId: e.agent_id,
+      walletAddress: e.wallet_address,
+      amountWei: e.amount_wei,
+    }));
+
+    const resultRoot = this.leaderboardRoot(competitionId, ranked);
+    const result = this.requireVault(
+      await this.vault.resolve(
+        competitionId,
+        winners.map((w) => w.payoutAddress),
+        amounts,
+        resultRoot,
+      ),
+      'resolve',
+    );
+
+    // Status, prize rows and refund rows land together or not at all.
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE competitions
+              SET status = 'settled', settled_at = datetime('now'),
+                  settle_tx_hash = ?, resolved_tx_hash = ?
+            WHERE id = ?`,
+        )
+        .run(result.txHash ?? null, result.txHash ?? null, competitionId);
+
+      const recordPayout = this.db.prepare(
+        `INSERT INTO payments (id, session_id, competition_id, agent_id, direction, amount_wei, tx_hash, status)
+         VALUES (?, NULL, ?, ?, 'payout', ?, ?, 'confirmed')`,
+      );
+      for (const w of winners) {
+        recordPayout.run(newPaymentId(), competitionId, w.agentId, w.amountWei, result.txHash ?? null);
+      }
+
+      const recordRefund = this.db.prepare(
+        `UPDATE competition_entries SET refund_wei = ?, refund_tx_hash = ?
+          WHERE competition_id = ? AND agent_id = ?`,
+      );
+      for (const r of refunds) {
+        recordRefund.run(r.amountWei, result.txHash ?? null, competitionId, r.agentId);
+      }
+    })();
+
+    return { winners, refunds, resultRoot, txHash: result.txHash ?? null };
+  }
+
+  private requireStaked(competitionId: string): CompetitionRow {
+    const c = this.getCompetition(competitionId);
+    if (c.entry_model !== 'staked') {
+      throw new ApiError(400, 'NOT_A_STAKED_SEASON', `${competitionId} is not a staked season`);
+    }
+    return c;
   }
 
   /** Carry a residual/untriggered jackpot from one settled tournament into an open one (D15). */
