@@ -9,10 +9,10 @@ tournament, which keeps working untouched.
 
 **This is the adopted spec 24.** Two versions were written separately against issue #30 and both
 claimed the number — Draft A on `spec-24-adjust-improvement-economy-model`, Draft B on
-`e/economic-model`. [`docs/spec-24-comparison.md`](../docs/spec-24-comparison.md) compared them
-and recommended neither as-is: A's structure carrying B's evidence. This document is that merge,
-and it now **supersedes both**. Neither draft survives on `main`; both branches are kept
-read-only so the comparison's citations still resolve.
+`e/economic-model`. A side-by-side compared them and recommended neither as-is: A's structure
+carrying B's evidence. This document is that merge, and it **supersedes both** — the drafts and
+the comparison are gone from `main`, kept only in the branches and in git history, because three
+documents answering one settled question is how the wrong one gets read six months from now.
 
 Where the drafts disagreed, the reason the winner won is written into the decision rather than
 left behind in a branch. Two questions neither draft settled are decided here on purpose and
@@ -380,6 +380,7 @@ on failure, never throwing on the onboarding path.
 | Not building | Why |
 |---|---|
 | **Any claim that the interest is revenue** | $1.32 a week at 1,000 players; $5.8M locked to fund a $1,000 prize. Building the vault and *claiming it earns* are two different things, and only one survives a judge with a calculator. The arithmetic goes in the submission instead. |
+| **Any claim that the deposits are large** | 54 agents at 0.01 tBNB is about $400 at the very best, and $16 today. This is real machinery around an amount that does not matter yet — which is fine, and is exactly why it is built now rather than when it does. The submission must not imply otherwise. |
 | **Ankr as the yield source** | Its tokens are deployed on chain 97, but `ratio()` is frozen at 1e18 — it earns exactly nothing, forever. An earlier draft chose it before measuring. |
 | **A Lista adapter** | Named by #30. Not deployed on chain 97 at all; both addresses return empty. Mocked behind the same seam for the mainnet slide, and the README says so. |
 | **MockUSDT prizes** | A prize a judge can watch move on BscScan beats a prize we can mint for free. Also deletes a contract and a task. |
