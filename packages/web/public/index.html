@@ -5045,6 +5045,10 @@
       const el = $('chain-links');
       if (!el) return;
       state.chain = c || null;
+      // The prize header may already have been drawn — it does not wait for this
+      // request — and it links the settlement through the explorer this sets.
+      // Drawn first, it silently left the link out; redraw it now that it can.
+      renderTournEcon();
       const base = c && c.explorerBaseUrl;
       if (!base) { el.hidden = true; return; }
       const parts = [];
