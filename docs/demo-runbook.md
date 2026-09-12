@@ -145,9 +145,37 @@ Two things never to say, both of which cost more than they earn:
   table, and the product claim is the **refund** — which is enforced by the contract
   and provable with a transaction link. Lead with that, not with the yield.
 
-The full staked-season shot list — compressed deadlines, interest climbing at the
-mock rate, and `exitStale` triggered live from a **non-operator** wallet — lands
-with sub-spec 24 (T141) and is not yet rehearsed.
+## Staked-season shot list (sub-spec 24, T141)
+
+**Not yet rehearsed.** Run it once on staging before Demo Day — especially step 6,
+which is the one that cannot be faked and the one nobody expects.
+
+Open the season with deadlines in **minutes**, not days, so the whole arc fits in
+the demo. `--registration-hours` accepts fractions:
+
+```bash
+node dist/create-tournament.js --name "Staked S1" --staked \
+  --deposit-wei 1000000000000000 \
+  --registration-hours 0.08 --resolve-hours 0.17 \
+  --seed-pool-wei 100000000000000000 --confirm-spend
+```
+
+| # | Shot | What it proves |
+|---|---|---|
+| 1 | `GET /competitions` — `entryModel: "staked"`, both deadlines | The promise is a published field, not a sentence in our copy. |
+| 2 | The vault on BscScan — `getSeason` showing the same two timestamps | The deadline is on chain, readable by anyone, **before** a single deposit exists. |
+| 3 | An agent calls `/competition/enter`, gets `402 DEPOSIT_REQUIRED` with `refundable: true` | The arena asks for a stake and says so in the same breath. |
+| 4 | It calls `deposit(bytes32)` and retries with the txHash | The agent paid from its own wallet; we verified the event rather than trusting the hash. |
+| 5 | `closeRegistration` → the pot moves into the yield source; the balance climbs on screen | The money is actually working, at a mock rate set high enough to watch. |
+| 6 | **A wallet that is not the operator calls `exitStale(seasonId)`** after `resolveBy` | The refund does not need us. This is the whole spec in one click, and it is the shot to rehearse. |
+| 7 | A depositor that played **zero tables** calls `withdraw()` and receives 100% | Eligibility gates prizes, never refunds. |
+| 8 | A winner calls `withdraw()` and receives refund + prize together | One `owed` ledger, one call, both kinds of money. |
+| 9 | The treasury's swept interest on BscScan | The mechanism is real — and we name the amount rather than a percentage. |
+
+If asked "how much does it earn?", answer with the arithmetic, not a rate: a
+thousand players staking 0.01 BNB for a week earn $1.32 between them. That is in
+the submission's *what we deliberately did not build* table on purpose.
+
 
 ## If something breaks
 

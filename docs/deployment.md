@@ -100,6 +100,33 @@ Both contracts share one operator, `0xF977F34dB8a986A0A9edec3E744092c715EF793c`
 | BscScan (contract) | <https://testnet.bscscan.com/address/0x9B03Ae8dbda61f5FA7933cc7329021F533727e90> |
 | BscScan (deploy tx) | <https://testnet.bscscan.com/tx/0xea6cc9581b89ada5e8823c120a2134dbaa00288309b7804aba0bc6ee4163dbce> |
 
+## DamnitsVault + yield source (sub-spec 24, T132)
+
+New contracts, deployed separately on purpose: the escrow and tournament
+addresses above have tens of thousands of settled tables pointing at them, cannot
+be upgraded, and must come out of this byte-identical (D185).
+
+```bash
+cd packages/contracts
+# Optional: also deploy a MockYieldSource so a demo can show interest accruing.
+export DEPLOY_MOCK_YIELD=true
+export MOCK_YIELD_BUDGET_WEI=10000000000000000   # 0.01 tBNB — bounds the whole demo
+forge script script/DeployVault.s.sol:DeployVault \
+  --rpc-url "$BSC_TESTNET_RPC_URL" --broadcast --verify
+```
+
+Then put the printed addresses in `.env` as `VAULT_CONTRACT_ADDRESS` and (if
+deployed) `YIELD_SOURCE_ADDRESS`, and restart the API.
+
+| | |
+|---|---|
+| `DamnitsVault` | _not yet deployed_ |
+| yield source | _not yet deployed_ |
+| treasury | defaults to the operator unless `TREASURY_ADDRESS` is set |
+
+**Leaving `YIELD_SOURCE_ADDRESS` unset is a working deployment**, not a gap: the
+vault holds the deposits itself, earns nothing, and still refunds in full.
+
 ## Source verification on BscScan (sub-spec 23, T110/D170)
 
 The hackathon submission portal turns the contract address into a BscScan link on
