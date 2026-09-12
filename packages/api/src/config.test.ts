@@ -19,6 +19,10 @@ describe('config loader (spec §9)', () => {
     expect(c.publicBaseUrl).toBe('http://localhost:8080');
     expect(c.xClientId).toBeNull();
     expect(c.xScopes).toBe('tweet.read users.read');
+    // Sub-spec 24: with no vault deployed, staked seasons still record and refund.
+    expect(c.vaultContractAddress).toBeNull();
+    expect(c.yieldSourceAddress).toBeNull();
+    expect(c.stakedDepositWei).toBe('1000000000000000'); // 0.001 tBNB (D187)
   });
 
   it('reads every §9 variable from the env source', () => {
@@ -38,6 +42,9 @@ describe('config loader (spec §9)', () => {
         PLAYGROUND_ENTRY_COINS: '25',
         PLAYGROUND_JACKPOT_SEED_WEI: '4200',
         WALLET_ENCRYPTION_KEY: 'test-wallet-key',
+        VAULT_CONTRACT_ADDRESS: '0xvault',
+        YIELD_SOURCE_ADDRESS: '0xyield',
+        STAKED_DEPOSIT_WEI: '999',
         TOURNAMENT_CONTRACT_ADDRESS: '0xtourney',
         TOURNAMENT_ENTRY_FEE_WEI: '123',
         SPONSOR_POOL_SEED_WEI: '456',
@@ -74,6 +81,9 @@ describe('config loader (spec §9)', () => {
       bscChainId: 56,
       operatorPrivateKey: '0xdeadbeef',
       escrowContractAddress: '0xabc',
+      vaultContractAddress: '0xvault',
+      yieldSourceAddress: '0xyield',
+      stakedDepositWei: '999',
       tournamentContractAddress: '0xtourney',
       tournamentEntryFeeWei: '123',
       sponsorPoolSeedWei: '456',
