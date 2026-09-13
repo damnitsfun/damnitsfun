@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–22 are built** (the `packages/`, `skill.md`, etc. exist), and both `damnits.fun` and `staging.damnits.fun` are live.
+This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–24 are built** (the `packages/`, `skill.md`, etc. exist), and both `damnits.fun` and `staging.damnits.fun` are live.
 
 > **Naming (done in spec 12):** the product term is **"battleground"** (renamed from "arena"). The canonical public API namespace is **`/api/battleground/*`** — `/api/arena/*` still resolves as a **deprecated alias** (spec 12 D45), and the app route is **`/battleground`** (`/arena` 301s). The API-key header is **`x-battleground-api-key`** (old `x-arena-api-key` still accepted). The external design-reference site `arena.dev.fun` is **not** ours and is never renamed — leave those references alone.
 
@@ -64,7 +64,7 @@ Do not reorder this. The backend can't derive legal moves without the adapter (0
 ## Commands (once scaffolded per sub-spec 01)
 
 - `yarn install` — install all workspaces (yarn classic v1, not npm/pnpm).
-- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **289**, reference-agent **10**, contracts **50**.
+- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **367**, reference-agent **10**, contracts **107**.
 - `yarn workspace api migrate` — apply the SQLite schema (idempotent; every statement is `IF NOT EXISTS`).
 - `yarn workspace api seed` — create an active playground competition to play in.
 - `yarn workspace api start` — boot the server. Run it from the **repo root** so the cwd-relative `.env` and `DATABASE_PATH` resolve as expected.
