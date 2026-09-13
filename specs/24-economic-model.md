@@ -75,8 +75,8 @@ article.
 
 | | |
 |---|---|
-| **Venus vBNB, chain 97** | `0x2E7222e51c0f6e98610A1543Aa3836E092CDe62c` — **real**, 39,686 characters of code |
-| ...and does it round-trip? | **Yes — measured, not read. See T126's result below.** |
+| **Venus vBNB, chain 97** | `0x2E7222e51c0f6e98610A1543Aa3836E092CDe62c` — **real**, 19,842 bytes of code (the "39,686" first recorded here was the hex string, two characters per byte; the fork test asserts the byte count) |
+| ...and does it round-trip? | **Yes — measured twice, not read. T126's live transactions, then T131's fork test driving the real contract.** |
 | ...are deposits open? | `Comptroller.actionPaused(vBNB, MINT)` = **false**, supply cap unlimited |
 | ...does a deposit work? | `mint()` simulated with 0.1 test-BNB — **succeeded** |
 | ...is the market alive? | holds 16.36 test-BNB, interest last updated ~9h before we looked |
@@ -458,6 +458,31 @@ percentage: we could not state one honestly even if we wanted to. What we can
 state is the two transactions above, which is stronger evidence anyway.
 
 The script that produced this was deleted, per T126.
+
+### T131's fork test found two more things (2026-09-13)
+
+Driving the real vBNB from `VenusYieldSource`, not a mock we wrote:
+
+**A pinned block is not available to us.** BNB Chain's public testnet RPCs are not
+archive nodes. Block 130,705,041 — the one holding T126's deposit above — was
+already unreachable hours later (`missing trie node`). So the fork test runs at
+the **head** by default and `VENUS_FORK_BLOCK` pins it for anyone with an archive
+endpoint. Stated rather than hidden: at the head this proves the adapter works
+against Venus *today*, and it can drift for reasons outside this repo.
+
+**The position reads about 2 parts per million light, immediately after staking.**
+0.003 tBNB in reads back as 0.002999996161744127. Two causes, both inherent to
+Compound-style markets: `mint` converts value to vTokens by integer division and
+loses dust, and `exchangeRateStored` does not accrue until someone touches the
+market. It recovers the moment any interest lands — the same test suite watches
+three real deposits come back **in full** after a day, with 582,659,660,639 wei
+swept to the treasury as interest.
+
+The narrow consequence is named rather than left to be discovered: a season that
+staked and resolved **inside one block** could record a rounding-sized shortfall.
+The vault already handles that correctly — pro-rata refunds, never blocked, and
+`topUp` open to anyone — so it is a documented edge, not a defect. A mock could
+never have surfaced it, which is the entire argument for T131.
 
 ---
 
