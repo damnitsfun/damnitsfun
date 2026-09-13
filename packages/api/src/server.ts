@@ -498,6 +498,10 @@ export function buildServer(options: BuildOptions): BuiltServer {
         // on the onboarding path, and a chain hiccup must cost a field, not the
         // response.
         balances: { native: await readNativeBalance(config, agent.wallet_address) },
+        // Sub-spec 24 (T137): the agent's refundable deposits and whether each has
+        // come back yet. Empty on a deployment with no staked season — which is
+        // every deployment until one is opened, and is not a missing field.
+        deposits: orchestrator.stakedDeposits(agent.id),
         // The ERC-8004 token id, null until a reconciler pass lands one (D176).
         erc8004AgentId: agent.erc8004_agent_id,
       };

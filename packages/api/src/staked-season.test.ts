@@ -268,6 +268,43 @@ describe('the refundable season (sub-spec 24)', () => {
     expect(row).toEqual({ entry_model: 'fee', deposit_wei: null, vault_address: null });
   });
 
+  /** T137: the agent can see its own deposit, and whether it has come back. */
+  it('reports a deposit as held, then refunded, on the agent itself', async () => {
+    const h = boot();
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const a = h.orchestrator.registerAgent('depositor');
+    await h.orchestrator.enterCompetition(a.agentId, id, '0xaaa1');
+
+    const held = h.orchestrator.stakedDeposits(a.agentId);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({
+      competitionId: id,
+      depositWei: '1000',
+      status: 'held',
+      refundWei: null,
+    });
+    expect(held[0]?.resolveBy).toBeTruthy();
+
+    await h.orchestrator.resolveStakedSeason(id);
+
+    const back = h.orchestrator.stakedDeposits(a.agentId);
+    expect(back[0]).toMatchObject({
+      status: 'refunded',
+      refundWei: '1000',
+      refundTxHash: '0xresolve',
+    });
+  });
+
+  /** A fee season never shows up here — there is nothing to refund. */
+  it('lists nothing for an agent that only played fee seasons', async () => {
+    const h = boot();
+    const fee = h.orchestrator.createTournament('fee season', '0');
+    const a = h.orchestrator.registerAgent('fee-player');
+    await h.orchestrator.enterCompetition(a.agentId, fee);
+
+    expect(h.orchestrator.stakedDeposits(a.agentId)).toEqual([]);
+  });
+
   /** DoD 9: a box with no vault still runs the season and still refunds. */
   it('records and refunds with no vault configured', async () => {
     const config = loadConfig({ env: { MIN_RANKED_SESSIONS: '1' } });

@@ -1785,6 +1785,55 @@ export class Orchestrator {
     return { winners, refunds, resultRoot, txHash: result.txHash ?? null };
   }
 
+  /**
+   * This agent's staked-season deposits and their refund status (sub-spec 24,
+   * D193 / T137). Empty for an agent that has never entered one, which is every
+   * agent on a deployment that runs only fee seasons.
+   *
+   * Read from the DB, not the chain: a refund is recorded when `resolve` lands,
+   * and this endpoint is on the onboarding path where a chain hiccup must cost a
+   * field rather than the response.
+   */
+  stakedDeposits(agentId: string): Array<{
+    competitionId: string;
+    name: string;
+    depositWei: string;
+    walletAddress: string | null;
+    /** 'held' while the season runs, 'refunded' once resolve credited it back. */
+    status: 'held' | 'refunded';
+    refundWei: string | null;
+    refundTxHash: string | null;
+    resolveBy: string | null;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT e.competition_id AS competitionId,
+                c.name           AS name,
+                e.amount_wei     AS depositWei,
+                e.wallet_address AS walletAddress,
+                e.refund_wei     AS refundWei,
+                e.refund_tx_hash AS refundTxHash,
+                c.resolve_by     AS resolveBy
+           FROM competition_entries e
+           JOIN competitions c ON c.id = e.competition_id
+          WHERE e.agent_id = ? AND c.entry_model = 'staked'
+          ORDER BY c.created_at DESC`,
+      )
+      .all(agentId)
+      .map((r) => {
+        const row = r as {
+          competitionId: string;
+          name: string;
+          depositWei: string;
+          walletAddress: string | null;
+          refundWei: string | null;
+          refundTxHash: string | null;
+          resolveBy: string | null;
+        };
+        return { ...row, status: row.refundWei ? ('refunded' as const) : ('held' as const) };
+      });
+  }
+
   private requireStaked(competitionId: string): CompetitionRow {
     const c = this.getCompetition(competitionId);
     if (c.entry_model !== 'staked') {

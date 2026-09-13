@@ -585,6 +585,195 @@ contract DamnitsVaultTest is Test {
         assertEq(v.owed(_agent(0)), DEPOSIT, "an over-set rate still refunds in full");
     }
 
+    // ---- every transition, in every wrong state (T130) -----------------------
+
+    /// Operator-only writes must reject a stranger, one by one.
+    function test_operatorOnlyWritesRejectStrangers() public {
+        _depositAll(2);
+        address[] memory winners = new address[](0);
+        uint256[] memory amounts = new uint256[](0);
+
+        vm.startPrank(stranger);
+        vm.expectRevert(DamnitsVault.NotOperator.selector);
+        v.closeRegistration(SEASON);
+
+        vm.expectRevert(DamnitsVault.NotOperator.selector);
+        v.resolve(SEASON, winners, amounts, ROOT);
+
+        vm.expectRevert(DamnitsVault.NotOperator.selector);
+        v.awardPrizes(SEASON, winners, amounts, ROOT);
+
+        vm.expectRevert(DamnitsVault.NotOperator.selector);
+        v.sweepUnaccounted();
+
+        vm.expectRevert(DamnitsVault.NotOperator.selector);
+        v.transferOperator(stranger);
+        vm.stopPrank();
+    }
+
+    function test_closeRegistration_rejectedTwiceAndAfterResolve() public {
+        _depositAll(2);
+        vm.startPrank(operator);
+        v.closeRegistration(SEASON);
+
+        vm.expectRevert(DamnitsVault.NotRegistering.selector);
+        v.closeRegistration(SEASON);
+
+        address[] memory winners = new address[](0);
+        uint256[] memory amounts = new uint256[](0);
+        v.resolve(SEASON, winners, amounts, ROOT);
+
+        vm.expectRevert(DamnitsVault.NotRegistering.selector);
+        v.closeRegistration(SEASON);
+        vm.stopPrank();
+    }
+
+    /// Sponsor money cannot arrive after the season has already paid out.
+    function test_seedPot_rejectedOnceResolved() public {
+        _depositAll(2);
+        address[] memory winners = new address[](0);
+        uint256[] memory amounts = new uint256[](0);
+        vm.prank(operator);
+        v.resolve(SEASON, winners, amounts, ROOT);
+
+        vm.prank(sponsor);
+        vm.expectRevert(DamnitsVault.NotRegistering.selector);
+        v.seedPot{value: 1 ether}(SEASON);
+    }
+
+    function test_seedPot_rejectsZero() public {
+        vm.prank(sponsor);
+        vm.expectRevert(DamnitsVault.ZeroValue.selector);
+        v.seedPot{value: 0}(SEASON);
+    }
+
+    /// awardPrizes is the post-exit path; it must not pre-empt a resolve.
+    function test_awardPrizes_rejectedBeforeResolve() public {
+        _depositAll(2);
+        vm.prank(sponsor);
+        v.seedPot{value: 1 ether}(SEASON);
+
+        address[] memory winners = new address[](1);
+        uint256[] memory amounts = new uint256[](1);
+        winners[0] = payoutA;
+        amounts[0] = 1 ether;
+
+        vm.prank(operator);
+        vm.expectRevert(DamnitsVault.NotResolved.selector);
+        v.awardPrizes(SEASON, winners, amounts, ROOT);
+    }
+
+    function test_awardPrizes_cannotOverDistributeEither() public {
+        _depositAll(2);
+        vm.prank(sponsor);
+        v.seedPot{value: 1 ether}(SEASON);
+        vm.warp(resolveBy);
+        vm.prank(stranger);
+        v.exitStale(SEASON);
+
+        address[] memory winners = new address[](1);
+        uint256[] memory amounts = new uint256[](1);
+        winners[0] = payoutA;
+        amounts[0] = 1 ether + 1;
+
+        vm.prank(operator);
+        vm.expectRevert(
+            abi.encodeWithSelector(DamnitsVault.OverDistribution.selector, 1 ether, 1 ether + 1)
+        );
+        v.awardPrizes(SEASON, winners, amounts, ROOT);
+    }
+
+    function test_resolve_rejectsMismatchedWinnersAndAmounts() public {
+        _depositAll(2);
+        address[] memory winners = new address[](2);
+        uint256[] memory amounts = new uint256[](1);
+        winners[0] = payoutA;
+        winners[1] = payoutB;
+
+        vm.prank(operator);
+        vm.expectRevert(DamnitsVault.LengthMismatch.selector);
+        v.resolve(SEASON, winners, amounts, ROOT);
+    }
+
+    function test_depositOnAnUnopenedSeasonReverts() public {
+        vm.prank(_agent(0));
+        vm.expectRevert(DamnitsVault.NotRegistering.selector);
+        v.deposit{value: DEPOSIT}(keccak256("never-opened"));
+    }
+
+    function test_exitStaleOnAnUnopenedSeasonReverts() public {
+        vm.warp(resolveBy);
+        vm.prank(stranger);
+        vm.expectRevert(DamnitsVault.NotResolvable.selector);
+        v.exitStale(keccak256("never-opened"));
+    }
+
+    function test_sweepUnaccounted_revertsWithNothingStray() public {
+        _depositAll(2);
+        vm.prank(operator);
+        vm.expectRevert(DamnitsVault.ZeroValue.selector);
+        v.sweepUnaccounted();
+    }
+
+    function test_transferOperator_movesControlAndRejectsZero() public {
+        vm.startPrank(operator);
+        vm.expectRevert(DamnitsVault.ZeroAddress.selector);
+        v.transferOperator(address(0));
+        v.transferOperator(stranger);
+        vm.stopPrank();
+
+        // The old operator is now a stranger, and vice versa.
+        vm.prank(operator);
+        vm.expectRevert(DamnitsVault.NotOperator.selector);
+        v.closeRegistration(SEASON);
+
+        vm.prank(stranger);
+        v.closeRegistration(SEASON);
+    }
+
+    // ---- the mock's accrual maths (T127) -------------------------------------
+
+    /**
+     * The rate is per wei of principal per second, scaled by 1e18. Asserted as a
+     * closed form rather than "it went up", because a demo that shows a number
+     * climbing should show the number we intended.
+     */
+    function test_mockAccrualIsLinearInPrincipalAndTime() public {
+        MockYieldSource m = new MockYieldSource{value: 5 ether}(1e12);
+        bytes32 a = keccak256("a");
+        m.stake{value: 1 ether}(a);
+
+        assertEq(m.accrued(a), 0, "nothing accrues in the staking instant");
+
+        vm.warp(block.timestamp + 100);
+        // 1e18 wei x 1e12 x 100s / 1e18 = 1e14
+        assertEq(m.accrued(a), 1e14, "linear in time");
+
+        bytes32 b = keccak256("b");
+        m.stake{value: 2 ether}(b);
+        vm.warp(block.timestamp + 100);
+        assertEq(m.accrued(b), 2e14, "and linear in principal");
+        assertEq(m.accrued(a), 2e14, "the older season kept accruing independently");
+    }
+
+    function test_mockRedeemPaysPrincipalPlusAccrualAndDrainsBudget() public {
+        MockYieldSource m = new MockYieldSource{value: 5 ether}(1e12);
+        bytes32 a = keccak256("a");
+        m.stake{value: 1 ether}(a);
+        vm.warp(block.timestamp + 100);
+
+        uint256 budgetBefore = m.budget();
+        uint256 before = address(this).balance;
+        uint256 returned = m.redeem(a);
+
+        assertEq(returned, 1 ether + 1e14, "principal plus accrual");
+        assertEq(address(this).balance - before, returned, "and it actually arrived");
+        assertEq(m.budget(), budgetBefore - 1e14, "interest came out of the funded budget");
+        assertEq(m.principalOf(a), 0, "position closed");
+    }
+
+    receive() external payable {}
+
     // ---- the invariant (T130) ------------------------------------------------
 
     /**
