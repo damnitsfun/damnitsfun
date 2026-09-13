@@ -76,6 +76,7 @@ article.
 | | |
 |---|---|
 | **Venus vBNB, chain 97** | `0x2E7222e51c0f6e98610A1543Aa3836E092CDe62c` — **real**, 39,686 characters of code |
+| ...and does it round-trip? | **Yes — measured, not read. See T126's result below.** |
 | ...are deposits open? | `Comptroller.actionPaused(vBNB, MINT)` = **false**, supply cap unlimited |
 | ...does a deposit work? | `mint()` simulated with 0.1 test-BNB — **succeeded** |
 | ...is the market alive? | holds 16.36 test-BNB, interest last updated ~9h before we looked |
@@ -399,7 +400,7 @@ on failure, never throwing on the onboarding path.
 
 | # | Task |
 |---|---|
-| **T126** | **RUN FIRST, before anything below exists.** A throwaway script deposits 0.1 tBNB into Venus vBNB on chain 97, waits, reads the balance back, and withdraws it all. Record in this spec: both transaction hashes, the interest earned, and **what `redeemUnderlying` returned**. If a real deposit does not round-trip, stop and rewrite § A. Delete the script; its result is a line here, not a file in the repo. (Same move as spec 23's T118 — ten minutes of measuring beats an afternoon of reading a README.) |
+| **T126** | ✅ **DONE (2026-09-13)** — ran first, as required. A throwaway script deposited 0.1 tBNB into Venus vBNB on chain 97, held it, and withdrew it all; both transaction hashes, the interest earned and **what `redeemUnderlying` returned** are recorded in *T126 — the measured Venus round-trip* below. It round-tripped, so § A stands unchanged. Script deleted. |
 | **T127** | `IYieldSource` + `MockYieldSource` (D183): configurable rate **including a fast demo rate**, accrual capped at the funded balance, `redeem` pays principal plus accrued. Forge tests: the accrual maths, the cap, and that a second season's stake cannot see the first season's interest. |
 | **T128** | `VenusYieldSource` over vBNB, address by constructor argument. **Every `redeem`/`redeemUnderlying` return value checked for `0` (D184)**, with a test that forces a non-zero code and asserts the revert. `receive()` required — Venus sends BNB back. |
 | **T129** | `DamnitsVault.sol` (D185–D189): `openSeason` / `deposit` / `closeRegistration` (closes **and** stakes in one transaction) / `seedPot` / `resolve` / `exitStale` / `topUp` / `withdraw`, one `owed` map (D181), `ReentrancyGuard`, and events mirroring the tournament contract's audit trail — `SeasonOpened`, `Deposited`, `SeasonStaked`, `PotSeeded`, `Resolved` (with `resultRoot`), `ShortfallRecorded`, `ToppedUp`, `Refunded`, `YieldSwept`, `Withdrawn`. Solidity `^0.8.24`, solc 0.8.36, `ReentrancyGuard` the only OpenZeppelin import — the same one the other two contracts use. |
@@ -415,6 +416,48 @@ on failure, never throwing on the onboarding path.
 | **T139** | Web (D193): phase banner with countdown, pot and entrant count; refund status on the agent profile; the one honesty sentence — all from D192's fields. Then grep `packages/web` for **any** restated money rule or percentage and delete it. |
 | **T140** | An end-to-end run against the **public contract**, soak-style: deposit → close and stake → tables play → resolve → **a depositor that played zero tables withdraws its full deposit**, a winner withdraws its prize, and the treasury received the interest. Three BscScan links in the test log. |
 | **T141** | Docs: `docs/deployment.md`; the `docs/demo-runbook.md` shot list (compressed deadlines, **`exitStale` triggered live on stage by a non-operator wallet**); the `docs/submission.md` amendment — tick **Finance & Commerce**, point the contract field at the vault, and add two rows to *"what we deliberately did not build"*: the interest arithmetic, and Lista's empty addresses. Then the CLAUDE.md paragraph and the `00-INDEX` row. |
+
+---
+
+## T126 — the measured Venus round-trip (2026-09-13)
+
+Run before any of this was built, exactly as the task demanded. **0.1 tBNB went in
+and came back**, and the result is here rather than in a script that outlives it.
+
+| | |
+|---|---|
+| deposited | **0.1 tBNB** |
+| `mint` tx | [`0xabb09a6e…26fc`](https://testnet.bscscan.com/tx/0xabb09a6eae6c8e0fdefe473cff9d9faab942cf3d9298f0dd62fe9d003cc626fc) — success, 195,302 gas |
+| vBNB received | 9,567,408 |
+| held for | 120 seconds |
+| interest earned | **0.00000017300375482 tBNB** |
+| **`redeemUnderlying` returned** | **`0`** — the answer T126 exists to get |
+| `redeem` returned | `0` |
+| `redeem` tx | [`0xf2fe6f51…6da3`](https://testnet.bscscan.com/tx/0xf2fe6f5178e39fd9b1cb3fc99c6a2a9a367dec3a2268612cf72b6527976f6da3) — success, 179,256 gas |
+| vBNB left over | **0** — clean, no dust |
+| net cost | 0.0000373 tBNB, all gas |
+
+**What this settles.** § A stands: Venus takes a deposit, pays interest on it, and
+gives it back on demand with no queue and no waiting period. The whole cycle took
+one transaction each way. D183's choice is now measured rather than argued, and
+T128 can be written against a contract whose behaviour we have seen.
+
+**The return code is the finding.** Both calls returned `0`. That is the success
+value, and it arrives as a **return value, not a revert** — exactly the Compound
+behaviour D184 is built around. A `VenusYieldSource` that ignores it would have
+looked like it worked. The adapter checks it on every call, and T128's test forces
+a non-zero code to prove the revert fires.
+
+**On the rate, deliberately: we are not quoting one.** Two honest measurements of
+the same market disagree. `supplyRatePerBlock` implied about **5.3% a year**;
+the 120-second sample, annualised naively, implies about **45%**. Both are
+artefacts of a testnet pool holding ~18 tBNB, where a single deposit moves
+utilisation, and neither resembles the ~0.13% a real instantly-redeemable BNB
+position pays. This is a second, independent reason for D193's ban on printing a
+percentage: we could not state one honestly even if we wanted to. What we can
+state is the two transactions above, which is stronger evidence anyway.
+
+The script that produced this was deleted, per T126.
 
 ---
 
