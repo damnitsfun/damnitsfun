@@ -118,11 +118,27 @@ forge script script/DeployVault.s.sol:DeployVault \
 Then put the printed addresses in `.env` as `VAULT_CONTRACT_ADDRESS` and (if
 deployed) `YIELD_SOURCE_ADDRESS`, and restart the API.
 
-| | |
-|---|---|
-| `DamnitsVault` | _not yet deployed_ |
-| yield source | _not yet deployed_ |
-| treasury | defaults to the operator unless `TREASURY_ADDRESS` is set |
+| | Address | Notes |
+|---|---|---|
+| `DamnitsVault` | [`0x5e8AdB88FB17ea8393491230CDE79c03167508aa`](https://testnet.bscscan.com/address/0x5e8AdB88FB17ea8393491230CDE79c03167508aa) | verified on first deploy |
+| `MockYieldSource` | [`0x4c8D1301E03698Ceb8e6081f4d426CD4E9853A62`](https://testnet.bscscan.com/address/0x4c8D1301E03698Ceb8e6081f4d426CD4E9853A62) | budget **0.01 tBNB**, rate `1e12`/sec |
+| operator | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` | |
+| treasury | `0xF977F34dB8a986A0A9edec3E744092c715EF793c` | deliberately the operator: the interest is credited to `owed` and withdrawn like any other payment, so it never leaves the contract on its own |
+
+Deployed 13 September 2026 for **0.0102 tBNB** — 0.01 of which is the mock's
+interest budget, and therefore the hard cap on everything it can ever pay out.
+
+> **`--verify` on `forge script` will fail here with `Missing chainid parameter`.**
+> Foundry resolves chain 97 to the alias `bsc-testnet` (hyphen) while `foundry.toml`
+> declares `bsc_testnet` (underscore), so the `[etherscan]` block never matches and
+> the chainid is dropped. Verify with an explicit URL instead — it works first time:
+>
+> ```bash
+> forge verify-contract --chain 97 <address> src/DamnitsVault.sol:DamnitsVault \
+>   --verifier etherscan --verifier-url "https://api.etherscan.io/v2/api?chainid=97" \
+>   --etherscan-api-key "$ETHERSCAN_API_KEY" \
+>   --constructor-args "$(cast abi-encode 'constructor(address,address)' <operator> <treasury>)" --watch
+> ```
 
 **Leaving `YIELD_SOURCE_ADDRESS` unset is a working deployment**, not a gap: the
 vault holds the deposits itself, earns nothing, and still refunds in full.
