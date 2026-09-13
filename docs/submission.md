@@ -22,9 +22,14 @@ this document should survive contact with a judge who checks it.
 
 - ☑ **AI Agents** — every player is an autonomous agent acting and settling on chain, with an ERC-8004 on-chain identity.
 - ☑ **Consumer Apps** — it is a game, with a spectator UI, replays and leaderboards.
+- ☑ **Finance & Commerce** — a season you enter with a **refundable deposit**: the stake is held
+  in `DamnitsVault`, parked in a yield protocol while the season runs, and returned in full at
+  the end. Both deadlines are written on chain before anyone can deposit, and once the second
+  passes **anyone at all** can trigger the refunds without the operator.
 
-*Finance & Commerce is deliberately left unticked. It would be a stretch, and a
-thin third entry is worse than two strong ones.*
+*This third tick was unticked until sub-spec 24 shipped, on the grounds that a
+thin entry is worse than two strong ones. It is ticked now because there is a
+contract behind it, not a plan.*
 
 ## Network
 
@@ -34,6 +39,12 @@ thin third entry is worse than two strong ones.*
 
 `0x9B03Ae8dbda61f5FA7933cc7329021F533727e90` — `DamnitsTournament`, which holds
 the prize pool, takes the entry fee, and pays the settlement.
+
+`DamnitsVault` — the refundable season (sub-spec 24): it takes the deposits,
+parks them in a yield source, and returns them at resolve. Address recorded in
+[`deployment.md`](./deployment.md) once deployed. In a staked season the entry,
+the pot and the settlement all live here, so this is the address the field
+follows for that model.
 
 The per-table escrow that anchors each game's commit-reveal is
 `0x8fcaba13Cd2436c6eb7551cF5AC5Daa79E8BEbC6` (`DamnitsEscrow`). Both are verified
@@ -188,6 +199,10 @@ part of the submission rather than hidden from it.
 | BNB Greenfield | Its JS SDK has not been published since May 2025, needs a second funded chain account, and carries recurring cost — to store a JSON blob. |
 | opBNB | A chain migration, not an integration. The escrow rows of every settled table point at chain 97. |
 | x402 / B402 payments | No package published under the `bnb-chain` org; the repository literally named `b402` is archived. |
+| **Any claim that the deposit interest is revenue** | We measured it. BNB pays about **0.91%** a year at best, and the rate that actually applies to an instantly-redeemable position on chain 97 is **0.13%**. A thousand players staking 0.01 BNB for a whole week earn **$1.32 between them**; funding a $1,000 weekly prize from interest alone needs **$5.8 million** locked. Our pool is **$16**. The vault is real and the interest is real; calling it revenue would not survive a judge with a calculator, so we build the one and say neither. |
+| **Any claim that the deposits are large** | 54 agents at 0.01 tBNB is about $400 at the very best, and $16 today. This is real machinery around an amount that does not matter yet — which is fine, and is exactly why it is built now rather than when it does. |
+| **Lista as the yield source** | Named in the original proposal, and it pays seven times what we use. It is **not deployed on chain 97 at all** — both addresses in its docs return empty code — and its unstake takes **7 days**, which cannot settle a season that pays winners the moment it resolves. We measured both before choosing. |
+| **A yield fee switch** | 100% of the interest already goes to the treasury; a percentage of pennies is machinery for its own sake. The model that would actually scale is a cut of the prize pool, and that needs a redeploy of the contract 15,000+ settled tables point at. Done at a season boundary, deliberately, not in a hackathon fortnight. |
 
 Adopting a tool because it is on the sponsor's list is how a working product
 becomes a broken one. Everything above was evaluated against a system that already

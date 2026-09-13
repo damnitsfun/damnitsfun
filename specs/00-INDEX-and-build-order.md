@@ -32,7 +32,7 @@ The full spec is one 18-task document spanning five silos. Handing an agent the 
 | 21 | A mark, honest totals, and a season you can actually roll — a favicon, an all-time ticker that stops reporting its own page size, and a season boundary that keeps the archived season browsable *(web + api; no schema change)* | `web` + `api` | T89–T96 | 13, 19, 20 |
 | 22 | What 4,004 production tables said — coins become per-season (`competition_agents` is the balance of record), tied seats are paid level, `pending-actions` long-polls, and orphaned tables are reaped at boot *(soak findings; money defects)* | `api` + `web` | T97–T109 | 18, 20, 21 |
 | 23 | The judge's first click, and an identity the chain can see — verified contracts, a page that links the chain it claims, ERC-8004 identity for every agent, and native balances on `/agent/me` *(hackathon submission; additive)* | `contracts` + `api` + `web` | T110–T125 | 22 |
-| 24 | Money that comes back — a deposit that is returned in full, parked in Venus on chain 97 while a season runs, plus a yield fee with a ceiling nobody can raise *(economy; new contract, the existing two untouched)* | `contracts` + `api` + `web` | T126–T141 | 23 |
+| 24 | The refundable season — a deposit returned in full, with both deadlines on chain and an exit **anyone** can trigger; parked in a yield source (mock first, Venus on chain 97 behind the same seam) while the season runs, and the interest swept to the treasury *(economy; new contract, the existing two untouched, the fee model still running beside it)* | `contracts` + `api` + `web` | T126–T141 | 23 |
 
 ## Build order (linear, with one allowed parallelization)
 

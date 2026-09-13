@@ -18,6 +18,32 @@ This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agen
 >
 > Also from spec 22: `GET /session/pending-actions?wait=<ms>` **long-polls** (D158 — 6.58 → 1.13 polls per move) and every response carries `pollAfterMs`; the orchestrator gained a per-turn waiter registry, and `afterMove` wakes **only the agent on move** while `settle` broadcasts; `reapOrphanedSessions()` archives tables abandoned by a restart, at boot and never from the constructor; and `GET /config` publishes `coinTieRule`, `payoutFieldFraction` and `payoutTiers`.
 
+> **Two entry models (spec 24):** competitions carry `entry_model = 'fee' | 'staked'`, defaulting
+> to `'fee'` — which is every row that existed before, behaving identically. A **staked** season
+> takes a **refundable deposit** into `DamnitsVault` instead of a buy-in into `DamnitsTournament`:
+> the deposit is returned in full at resolve whether the agent won, lost or never played, and the
+> prize is sponsor money that no deposit is ever part of. The fee model keeps running untouched
+> beside it (D191) and the two live contracts were not redeployed (D185).
+>
+> Three things about it are easy to get wrong:
+> 1. **A staked season's `entry_fee_wei` is `'0'`.** A fee is money the competition keeps and
+>    there is no such money here. So `enterCompetition` must check `entry_model` **before** the
+>    free-season branch, or a staked season seats agents without taking anything.
+> 2. **`exitStale(seasonId)` is callable by anyone**, once `resolveBy` passes with the season
+>    unresolved (D186). This deliberately reverses D9 for staked seasons, because a funded season
+>    once sat open and unwinnable in production for months, and "the operator will close it
+>    eventually" cannot sit next to the word *refundable*.
+> 3. **A shortfall never blocks a refund** (D189). If the yield source returns less than it took,
+>    refunds pay pro-rata of what arrived and `topUp()` is open to anyone, including after people
+>    have withdrawn their partial share. No state may have an exit that depends on goodwill.
+>
+> The yield source is one interface (`IYieldSource`) with three implementations — `address(0)`
+> (off, earns nothing, still refunds), `MockYieldSource` (fast demo rate, capped at its funded
+> budget), and a live adapter. **Selection is exit-speed first, rate second**: a season pays the
+> moment it resolves, so a multi-day unstake is unusable at any rate, which is why Venus and not
+> Lista despite Lista's higher rate. Never state an interest percentage, projected yield or APY
+> on any page (D193) — the interest is pennies and the product claim is the refund.
+
 Before writing any code, read:
 1. `specs/00-INDEX-and-build-order.md` — the build order and why it's fixed.
 2. `specs/technical-spec-damnits-fun.md` — the full technical spec (stack, schema, API contract, contract skeleton, task list T1–T18; **§0 lists the post-MVP amendments from sub-specs 08 onward**).

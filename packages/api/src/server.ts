@@ -21,6 +21,7 @@ import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
 import { getPublicSession, listSessions, readEvents } from './routes/spectate';
 import { createTournamentChain } from './tournament-chain';
+import { createVaultChain } from './vault-chain';
 import { createXOAuth } from './xoauth';
 import { createGoogleOAuth } from './googleoauth';
 import { renderClaimError, renderClaimPage } from './routes/claim-page';
@@ -310,6 +311,18 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // must read it from the deployment rather than carry its own copy. Null
       // on a chain we have no registry address for, which renders no link.
       identityRegistryAddress: identityRegistryAddress(config.bscChainId),
+      // Sub-spec 24 (D192): the refundable season's deployment facts. Same reason
+      // again — a player checks where a deposit goes, and what earns on it, BEFORE
+      // paying, so both must come from the box rather than from our copy.
+      //
+      // `yieldSource` null means the vault holds deposits itself and earns nothing,
+      // which is a fully working deployment. Deliberately NO rate, projected yield
+      // or APY here or anywhere: the interest is pennies, and a number a judge can
+      // disprove in one click costs more than it earns (D193).
+      vaultAddress: config.vaultContractAddress,
+      yieldSource: config.yieldSourceAddress,
+      yieldSourceKind: config.yieldSourceAddress ? 'external' : 'none',
+      stakedDepositWei: config.stakedDepositWei,
     }));
 
     // ---- register (no auth) -------------------------------------------------
@@ -813,6 +826,7 @@ export async function start(): Promise<void> {
   const log = (message: string) => process.stdout.write(`${message}\n`);
   const chain = createSettlementChain(config, log);
   const tournamentChain = createTournamentChain(config, log);
+  const vaultChain = createVaultChain(config, log);
   const xoauth = createXOAuth(config);
   if (!xoauth.enabled) {
     log('X login not configured (X_CLIENT_ID unset) — agent claiming / connect-X is disabled.');
@@ -824,6 +838,7 @@ export async function start(): Promise<void> {
   const orchestrator = new Orchestrator(db, config, {
     chain,
     tournamentChain,
+    vaultChain,
     xoauth,
     googleoauth,
     hooks: createChainHooks(db, chain, log),

@@ -90,6 +90,20 @@ function backfillAddedColumns(db: Db): void {
   addColumnIfMissing(db, 'agents', 'erc8004_tx_hash', 'TEXT');
   addColumnIfMissing(db, 'agents', 'erc8004_registered_at', 'TEXT');
 
+  // Sub-spec 24: the staked season. `entry_model` defaults to 'fee', so every
+  // pre-existing row reads exactly as it did before and every path that does not
+  // look at these columns is unchanged (D191). The rest are nullable because a fee
+  // season has no vault, no deadlines and no deposit.
+  addColumnIfMissing(db, 'competitions', 'entry_model', "TEXT NOT NULL DEFAULT 'fee'");
+  addColumnIfMissing(db, 'competitions', 'vault_address', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'yield_source_address', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'deposit_wei', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'registration_close_at', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'resolve_by', 'TEXT');
+  addColumnIfMissing(db, 'competitions', 'resolved_tx_hash', 'TEXT');
+  addColumnIfMissing(db, 'competition_entries', 'refund_wei', 'TEXT');
+  addColumnIfMissing(db, 'competition_entries', 'refund_tx_hash', 'TEXT');
+
   // Sub-spec 14: the playground Rainbow-Storm jackpot records its on-chain payout
   // on the (already-existing) jackpot_events row. The agent_wallets table is new,
   // so CREATE TABLE IF NOT EXISTS in schema.sql handles it on any database.

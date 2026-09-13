@@ -111,6 +111,72 @@ the agent being created, but it is asynchronous by design — if it has not arri
 yet, say so and carry on rather than waiting on camera; the whole point of D176 is
 that nothing depends on it.
 
+## Answering "why this DeFi protocol?" on stage (sub-spec 24)
+
+The staked season parks deposits in a yield protocol while a season runs. Expect
+one question about that choice, and answer it with the criterion rather than the
+name — the architecture is the answer:
+
+> "The yield source is a plug. The vault knows one interface, and there are three
+> implementations behind it — off, a mock for the demo, and the live protocol. We
+> pick per network on two things, in this order: **can we get out instantly**, and
+> then the rate. A season pays its winners the moment it resolves, and anyone can
+> force the refunds the second the deadline passes — so a protocol that locks funds
+> for seven days is unusable to us **at any rate**. On chain 97 the only thing that
+> survives that filter is Venus. Swapping it is a constructor argument."
+
+If they push — *"Lista pays 0.91%, seven times more, why not that?"* — that is the
+good question, and it has a measured answer:
+
+| | instant exit? | on chain 97 | rate |
+|---|---|---|---|
+| **Venus** | **yes** | deployed, deposits open | 0.13% |
+| Lista | no — **7-day** unstake | **not deployed at all** | 0.91% |
+| Ankr | n/a | deployed, but **frozen at zero — earns nothing, ever** | 0% |
+| BNB native staking | no — **3-day** wait, **1 BNB** minimum | n/a | — |
+
+Two things never to say, both of which cost more than they earn:
+
+- **"We use the best-yielding protocol."** We do not, deliberately — see the table.
+  It is also an unverifiable superlative, and a judge who disproves one claim stops
+  believing the checkable ones.
+- **Any percentage, projected yield or APY** (D193). The interest is pennies, the
+  arithmetic is published in the submission's *"what we deliberately did not build"*
+  table, and the product claim is the **refund** — which is enforced by the contract
+  and provable with a transaction link. Lead with that, not with the yield.
+
+## Staked-season shot list (sub-spec 24, T141)
+
+**Not yet rehearsed.** Run it once on staging before Demo Day — especially step 6,
+which is the one that cannot be faked and the one nobody expects.
+
+Open the season with deadlines in **minutes**, not days, so the whole arc fits in
+the demo. `--registration-hours` accepts fractions:
+
+```bash
+node dist/create-tournament.js --name "Staked S1" --staked \
+  --deposit-wei 1000000000000000 \
+  --registration-hours 0.08 --resolve-hours 0.17 \
+  --seed-pool-wei 100000000000000000 --confirm-spend
+```
+
+| # | Shot | What it proves |
+|---|---|---|
+| 1 | `GET /competitions` — `entryModel: "staked"`, both deadlines | The promise is a published field, not a sentence in our copy. |
+| 2 | The vault on BscScan — `getSeason` showing the same two timestamps | The deadline is on chain, readable by anyone, **before** a single deposit exists. |
+| 3 | An agent calls `/competition/enter`, gets `402 DEPOSIT_REQUIRED` with `refundable: true` | The arena asks for a stake and says so in the same breath. |
+| 4 | It calls `deposit(bytes32)` and retries with the txHash | The agent paid from its own wallet; we verified the event rather than trusting the hash. |
+| 5 | `closeRegistration` → the pot moves into the yield source; the balance climbs on screen | The money is actually working, at a mock rate set high enough to watch. |
+| 6 | **A wallet that is not the operator calls `exitStale(seasonId)`** after `resolveBy` | The refund does not need us. This is the whole spec in one click, and it is the shot to rehearse. |
+| 7 | A depositor that played **zero tables** calls `withdraw()` and receives 100% | Eligibility gates prizes, never refunds. |
+| 8 | A winner calls `withdraw()` and receives refund + prize together | One `owed` ledger, one call, both kinds of money. |
+| 9 | The treasury's swept interest on BscScan | The mechanism is real — and we name the amount rather than a percentage. |
+
+If asked "how much does it earn?", answer with the arithmetic, not a rate: a
+thousand players staking 0.01 BNB for a week earn $1.32 between them. That is in
+the submission's *what we deliberately did not build* table on purpose.
+
+
 ## If something breaks
 
 Per the cut order in Requirements §5.2 — never cut escrow/payout, the agent API,
