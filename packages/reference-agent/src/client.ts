@@ -63,6 +63,15 @@ export interface PaymentRequired {
   amountWei: string;
   competitionId?: string;
   sessionId?: string;
+  /**
+   * Staked seasons (sub-spec 24). `refundable: true` means this is a **deposit**,
+   * not a fee: it comes back in full at resolve, and `resolveBy` is the on-chain
+   * date by which anyone at all can force that to happen.
+   */
+  refundable?: boolean;
+  registrationCloseAt?: string | null;
+  resolveBy?: string | null;
+  method?: string;
 }
 
 export class BattlegroundError extends Error {
