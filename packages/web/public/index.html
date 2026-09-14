@@ -2701,13 +2701,14 @@
               <div class="dim" id="econ-pool-sub">buy-ins + sponsor seed</div>
             </div>
             <div class="panel pad">
-              <div class="label">jackpot</div>
+              <div class="label" id="econ-l2">jackpot</div>
               <div class="econ-v" id="econ-jackpot">—</div>
               <div class="dim" id="econ-jackpot-sub"></div>
             </div>
             <div class="panel pad">
-              <div class="label">buy-in</div>
+              <div class="label" id="econ-l3">buy-in</div>
               <div class="econ-v" id="econ-buyin">—</div>
+              <div class="dim" id="econ-buyin-sub"></div>
             </div>
             <div class="panel pad">
               <div class="label">entries</div>
@@ -2719,6 +2720,11 @@
                and until now the page said so without ever showing it. Rendered
                from /config; hidden entirely when no contract is configured. -->
           <div class="dim" id="chain-links" hidden style="margin-top:10px"></div>
+          <!-- Sub-spec 24 (D193): one sentence, rendered from the season's own
+               fields. No percentage, no projected yield, no APY — anywhere. The
+               claim is the refund, which is enforced by the contract and provable
+               with a transaction link. -->
+          <div class="dim" id="econ-honesty" hidden style="margin-top:10px"></div>
         </section>
 
         <div class="viewhead">
@@ -5248,6 +5254,72 @@
       $('econ-close').textContent = settled
         ? 'settled ' + String(c.settledAt || '').slice(0, 10)
         : c.entriesCloseAt ? 'closes ' + String(c.entriesCloseAt).slice(0, 10) : 'open season';
+
+      renderStakedEcon(c, settled, ex);
+    }
+
+    /**
+     * A staked season (sub-spec 24) reuses the same four panels rather than
+     * growing a second header: the jackpot slot becomes the deposit, and the
+     * buy-in slot becomes the phase. Everything here comes from the season's own
+     * fields, so a page can never disagree with the contract about a deadline.
+     */
+    function renderStakedEcon(c, settled, ex) {
+      const staked = c.entryModel === 'staked';
+      $('econ-l2').textContent = staked ? 'deposit' : 'jackpot';
+      $('econ-l3').textContent = staked ? 'phase' : 'buy-in';
+      $('econ-honesty').hidden = !staked;
+      if (!staked) {
+        $('econ-buyin-sub').textContent = '';
+        return;
+      }
+
+      $('econ-jackpot').textContent = c.depositWei ? fmtBnb(c.depositWei) : '—';
+      $('econ-jackpot-sub').textContent = 'refunded in full';
+      $('econ-pool-sub').innerHTML = settled
+        ? $('econ-pool-sub').innerHTML
+        : 'sponsored \u00b7 no deposit is part of it';
+
+      // Which deadline is live decides the phase, and both are on chain.
+      const now = Date.now();
+      const closeAt = c.registrationCloseAt ? Date.parse(c.registrationCloseAt) : 0;
+      const resolveBy = c.resolveBy ? Date.parse(c.resolveBy) : 0;
+      const phase = settled ? 'resolved' : (closeAt && now < closeAt ? 'taking deposits' : 'staked');
+      $('econ-buyin').textContent = phase;
+      $('econ-buyin-sub').textContent = settled
+        ? 'deposits returned'
+        : phase === 'taking deposits'
+          ? 'closes ' + countdown(closeAt - now)
+          : resolveBy
+            ? 'resolves in ' + countdown(resolveBy - now)
+            : '';
+      if (!settled && resolveBy) {
+        $('econ-close').textContent = 'refund guaranteed by ' + String(c.resolveBy).slice(0, 10);
+      }
+
+      // The claim is the refund. The mechanism is named; no rate is stated.
+      const vault = c.vaultAddress
+        && ex
+        ? ' \u00b7 <a href="' + ex + '/address/' + encodeURIComponent(c.vaultAddress)
+          + '" target="_blank" rel="noopener noreferrer">vault \u2197</a>'
+        : '';
+      $('econ-honesty').innerHTML =
+        'Your entry is a stake, not a fee \u2014 it is returned in full when the season'
+        + ' resolves, whether you win, lose or never play a hand. Both deadlines are'
+        + ' written on chain before anyone can deposit, and once the second one passes'
+        + ' <em>anyone at all</em> can trigger the refunds without us. What the deposits'
+        + ' earn while parked funds the project\u2019s development.' + vault;
+    }
+
+    /** "3d 4h" / "4h 12m" / "12m" — enough precision to trust, not enough to twitch. */
+    function countdown(ms) {
+      if (!(ms > 0)) return 'imminently';
+      const m = Math.floor(ms / 60000);
+      const d = Math.floor(m / 1440);
+      const h = Math.floor((m % 1440) / 60);
+      if (d > 0) return d + 'd ' + h + 'h';
+      if (h > 0) return h + 'h ' + (m % 60) + 'm';
+      return m + 'm';
     }
 
     // The hero sentence is retired (rev 7); the crumb/title the script

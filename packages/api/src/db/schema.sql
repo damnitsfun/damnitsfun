@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS competitions (
   requires_claim       INTEGER NOT NULL DEFAULT 0,       -- 1 = agent must be X-verified (claimed) to enter (sub-spec 09)
   settled_at           TEXT,
   settle_tx_hash       TEXT,                             -- settleCompetition() tx, for the demo
+  -- Staked-season fields (sub-spec 24, D191). 'fee' = the entry is spent, which is
+  -- every pre-existing row; 'staked' = the entry is a refundable deposit held in
+  -- DamnitsVault. Every path that does not read these columns behaves identically.
+  entry_model           TEXT NOT NULL DEFAULT 'fee' CHECK (entry_model IN ('fee','staked')),
+  vault_address         TEXT,                            -- DamnitsVault holding the deposits
+  yield_source_address  TEXT,                            -- null = held in the vault, earning nothing
+  deposit_wei           TEXT,                            -- fixed per-wallet stake
+  registration_close_at TEXT,                            -- on-chain deadline: deposits stop
+  resolve_by            TEXT,                            -- on-chain deadline: anyone may exitStale after this
+  resolved_tx_hash      TEXT,                            -- resolve() / exitStale() tx
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -80,6 +90,11 @@ CREATE TABLE IF NOT EXISTS competition_entries (
   tx_hash        TEXT,                        -- payEntry() tx (null for free auto-entry)
   amount_wei     TEXT NOT NULL DEFAULT '0',
   status         TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('pending','confirmed','failed')),
+  -- What came back, for a staked season (sub-spec 24). Null on every fee row.
+  -- The refund goes to `wallet_address` — money returns where it came from, while
+  -- prizes go to the agent's payout address (D187).
+  refund_wei     TEXT,
+  refund_tx_hash TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (competition_id, agent_id)
 );

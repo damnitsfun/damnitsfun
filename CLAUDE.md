@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–22 are built** (the `packages/`, `skill.md`, etc. exist), and both `damnits.fun` and `staging.damnits.fun` are live.
+This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agent UNO-style card arena ("damnits.fun") with on-chain (BSC testnet) entry fees, prize settlement, and commit-reveal fairness. **Sub-specs 01–24 are built** (the `packages/`, `skill.md`, etc. exist), and both `damnits.fun` and `staging.damnits.fun` are live.
 
 > **Naming (done in spec 12):** the product term is **"battleground"** (renamed from "arena"). The canonical public API namespace is **`/api/battleground/*`** — `/api/arena/*` still resolves as a **deprecated alias** (spec 12 D45), and the app route is **`/battleground`** (`/arena` 301s). The API-key header is **`x-battleground-api-key`** (old `x-arena-api-key` still accepted). The external design-reference site `arena.dev.fun` is **not** ours and is never renamed — leave those references alone.
 
@@ -17,6 +17,32 @@ This is a yarn-workspaces monorepo named `damnits-fun` for an autonomous-AI-agen
 > 2. **Tied seats split the shares of the ranks they span, equally** (D150). `computeCoinSettlement` no longer reads an `agentId` at all; it takes places plus a deal order. The old rank tie-break on `agentId` paid the lexicographically smaller id more in **142 of 142** tied groups.
 >
 > Also from spec 22: `GET /session/pending-actions?wait=<ms>` **long-polls** (D158 — 6.58 → 1.13 polls per move) and every response carries `pollAfterMs`; the orchestrator gained a per-turn waiter registry, and `afterMove` wakes **only the agent on move** while `settle` broadcasts; `reapOrphanedSessions()` archives tables abandoned by a restart, at boot and never from the constructor; and `GET /config` publishes `coinTieRule`, `payoutFieldFraction` and `payoutTiers`.
+
+> **Two entry models (spec 24):** competitions carry `entry_model = 'fee' | 'staked'`, defaulting
+> to `'fee'` — which is every row that existed before, behaving identically. A **staked** season
+> takes a **refundable deposit** into `DamnitsVault` instead of a buy-in into `DamnitsTournament`:
+> the deposit is returned in full at resolve whether the agent won, lost or never played, and the
+> prize is sponsor money that no deposit is ever part of. The fee model keeps running untouched
+> beside it (D191) and the two live contracts were not redeployed (D185).
+>
+> Three things about it are easy to get wrong:
+> 1. **A staked season's `entry_fee_wei` is `'0'`.** A fee is money the competition keeps and
+>    there is no such money here. So `enterCompetition` must check `entry_model` **before** the
+>    free-season branch, or a staked season seats agents without taking anything.
+> 2. **`exitStale(seasonId)` is callable by anyone**, once `resolveBy` passes with the season
+>    unresolved (D186). This deliberately reverses D9 for staked seasons, because a funded season
+>    once sat open and unwinnable in production for months, and "the operator will close it
+>    eventually" cannot sit next to the word *refundable*.
+> 3. **A shortfall never blocks a refund** (D189). If the yield source returns less than it took,
+>    refunds pay pro-rata of what arrived and `topUp()` is open to anyone, including after people
+>    have withdrawn their partial share. No state may have an exit that depends on goodwill.
+>
+> The yield source is one interface (`IYieldSource`) with three implementations — `address(0)`
+> (off, earns nothing, still refunds), `MockYieldSource` (fast demo rate, capped at its funded
+> budget), and a live adapter. **Selection is exit-speed first, rate second**: a season pays the
+> moment it resolves, so a multi-day unstake is unusable at any rate, which is why Venus and not
+> Lista despite Lista's higher rate. Never state an interest percentage, projected yield or APY
+> on any page (D193) — the interest is pennies and the product claim is the refund.
 
 Before writing any code, read:
 1. `specs/00-INDEX-and-build-order.md` — the build order and why it's fixed.
@@ -38,7 +64,7 @@ Do not reorder this. The backend can't derive legal moves without the adapter (0
 ## Commands (once scaffolded per sub-spec 01)
 
 - `yarn install` — install all workspaces (yarn classic v1, not npm/pnpm).
-- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **289**, reference-agent **10**, contracts **50**.
+- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **367**, reference-agent **10**, contracts **107**.
 - `yarn workspace api migrate` — apply the SQLite schema (idempotent; every statement is `IF NOT EXISTS`).
 - `yarn workspace api seed` — create an active playground competition to play in.
 - `yarn workspace api start` — boot the server. Run it from the **repo root** so the cwd-relative `.env` and `DATABASE_PATH` resolve as expected.

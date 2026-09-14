@@ -1,6 +1,6 @@
 import { BattlegroundClient, BattlegroundError, type Competition, type PaymentRequired } from './client';
 import { decide } from './decide';
-import { payTournamentEntry } from './wallet';
+import { depositSeasonStake, payTournamentEntry, walletAddress } from './wallet';
 
 /**
  * Reference autonomous agent (T17).
@@ -45,6 +45,8 @@ export interface AgentOptions {
   rpcUrl?: string;
   /** Authorise spending the buy-in. Off by default: money is never spent unbidden. */
   payEntry?: boolean;
+  /** Play only this season, by id. Without it the agent takes the first free one. */
+  competitionId?: string;
   log?: (message: string) => void;
 }
 
@@ -56,8 +58,16 @@ export interface TableResult {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function pickCompetition(competitions: Competition[], authorizedToPay: boolean): Competition | null {
+function pickCompetition(
+  competitions: Competition[],
+  authorizedToPay: boolean,
+  only?: string,
+): Competition | null {
   if (competitions.length === 0) return null;
+  // An operator can pin the season. Without this the choice is "the first free
+  // one", which is list order — fine for an agent that just wants a table, and
+  // not fine for a scripted run that must play one specific season.
+  if (only) return competitions.find((c) => c.id === only) ?? null;
   // skill.md's stated preference: free tables unless the operator authorised a
   // buy-in — in which case a paid tournament is a valid choice.
   if (authorizedToPay) {
@@ -109,15 +119,31 @@ async function ensureEntered(
       return false;
     }
 
-    log(`[${options.displayName}] paying buy-in ${pr.amountWei} wei into ${pr.contractAddress}`);
-    const txHash = await payTournamentEntry({
-      rpcUrl: options.rpcUrl ?? 'https://bsc-testnet-dataseed.bnbchain.org',
+    const rpcUrl = options.rpcUrl ?? 'https://bsc-testnet-dataseed.bnbchain.org';
+    const pay = {
+      rpcUrl,
       privateKey: options.walletPrivateKey,
       contractAddress: pr.contractAddress,
       competitionId: pr.competitionId ?? competition.id,
       amountWei: pr.amountWei,
-    });
-    log(`[${options.displayName}] buy-in tx ${txHash} — retrying entry`);
+    };
+
+    // A staked season asks for a DEPOSIT, and the difference is worth saying out
+    // loud rather than silently signing: this money comes back, and the date it
+    // comes back by is already on the blockchain.
+    let txHash: string;
+    if (pr.refundable) {
+      log(
+        `[${options.displayName}] staking a REFUNDABLE deposit of ${pr.amountWei} wei into vault ${pr.contractAddress}` +
+          (pr.resolveBy ? ` — returned in full by ${pr.resolveBy}` : ''),
+      );
+      txHash = await depositSeasonStake(pay);
+      log(`[${options.displayName}] deposit tx ${txHash} — retrying entry`);
+    } else {
+      log(`[${options.displayName}] paying buy-in ${pr.amountWei} wei into ${pr.contractAddress}`);
+      txHash = await payTournamentEntry(pay);
+      log(`[${options.displayName}] buy-in tx ${txHash} — retrying entry`);
+    }
     await client.enter(competition.id, txHash);
     return true;
   }
@@ -178,7 +204,11 @@ export async function runAgent(options: AgentOptions): Promise<TableResult[]> {
   for (let table = 0; table < tables; table++) {
     // 2. Choose a competition.
     const authorizedToPay = Boolean(options.payEntry && options.walletPrivateKey);
-    const competition = pickCompetition(await client.listActiveCompetitions(), authorizedToPay);
+    const competition = pickCompetition(
+      await client.listActiveCompetitions(),
+      authorizedToPay,
+      options.competitionId,
+    );
     if (!competition) {
       log(`[${options.displayName}] no active competition — stopping`);
       break;
@@ -331,6 +361,7 @@ function parseArgs(argv: string[]): AgentOptions {
     walletPrivateKey: get('--wallet-key', process.env.AGENT_WALLET_KEY),
     rpcUrl: get('--rpc', process.env.BSC_TESTNET_RPC_URL),
     payEntry,
+    competitionId: get('--competition'),
   };
 }
 

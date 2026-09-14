@@ -40,6 +40,12 @@ export interface Config {
   bscChainId: number;
   operatorPrivateKey: string | null;
   escrowContractAddress: string | null;
+  /** the refundable season (sub-spec 24, §9 additions) */
+  vaultContractAddress: string | null;
+  /** where deposits are parked while a season runs; null = held in the vault */
+  yieldSourceAddress: string | null;
+  /** default per-wallet stake for a new staked season (D187: 0.001 on staging) */
+  stakedDepositWei: string;
   /** pooled tournament + jackpot (sub-spec 08, §9 additions) */
   tournamentContractAddress: string | null;
   tournamentEntryFeeWei: string;
@@ -229,6 +235,11 @@ export function loadConfig(options: LoadConfigOptions = {}): Config {
       ? requireVar(env, 'OPERATOR_PRIVATE_KEY')
       : optional(env, 'OPERATOR_PRIVATE_KEY'),
     escrowContractAddress: optional(env, 'ESCROW_CONTRACT_ADDRESS'),
+    vaultContractAddress: optional(env, 'VAULT_CONTRACT_ADDRESS'),
+    yieldSourceAddress: optional(env, 'YIELD_SOURCE_ADDRESS'),
+    // 0.001 tBNB, not #30's 0.01: testnet faucets ration about 1 tBNB per address
+    // per day, so a bigger stake is hostile to an agent that also needs gas (D187).
+    stakedDepositWei: withDefault(env, 'STAKED_DEPOSIT_WEI', '1000000000000000'),
     tournamentContractAddress: optional(env, 'TOURNAMENT_CONTRACT_ADDRESS'),
     tournamentEntryFeeWei: withDefault(env, 'TOURNAMENT_ENTRY_FEE_WEI', '500000000000000'),
     sponsorPoolSeedWei: withDefault(env, 'SPONSOR_POOL_SEED_WEI', '0'),

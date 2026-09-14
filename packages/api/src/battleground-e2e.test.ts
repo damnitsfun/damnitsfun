@@ -123,6 +123,12 @@ describe('battleground end-to-end walkthrough (T43)', () => {
       tournamentAddress: null,
       explorerBaseUrl: 'https://testnet.bscscan.com',
       identityRegistryAddress: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+      // Sub-spec 24 (D192): the refundable season's deployment facts. Null here
+      // because this box has no vault — which is a working deployment, not a gap.
+      vaultAddress: null,
+      yieldSource: null,
+      yieldSourceKind: 'none',
+      stakedDepositWei: '1000000000000000',
     });
     const alias = await app.inject({ method: 'GET', url: '/api/arena/config' });
     expect(alias.statusCode).toBe(200);
