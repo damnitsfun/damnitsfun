@@ -274,7 +274,7 @@ describe('the refundable season (sub-spec 24)', () => {
    *
    * T140 caught this on a live run: the treasury swept zero. The contract was
    * right (an unstaked season refunds in full, by design); the operator tool was
-   * wrong to skip the staking step. Asserted here so the two states stay
+   * wrong to bypass the staking step. Asserted here so the two states stay
    * distinguishable rather than looking equally successful.
    */
   it('earns nothing if it resolves without ever staking', async () => {
