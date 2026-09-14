@@ -268,6 +268,31 @@ describe('the refundable season (sub-spec 24)', () => {
     expect(row).toEqual({ entry_model: 'fee', deposit_wei: null, vault_address: null });
   });
 
+  /**
+   * A season resolved straight out of Registration still refunds everyone — but
+   * it earned nothing, because the deposits never reached the yield source.
+   *
+   * T140 caught this on a live run: the treasury swept zero. The contract was
+   * right (an unstaked season refunds in full, by design); the operator tool was
+   * wrong to skip the staking step. Asserted here so the two states stay
+   * distinguishable rather than looking equally successful.
+   */
+  it('earns nothing if it resolves without ever staking', async () => {
+    const h = boot();
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const a = h.orchestrator.registerAgent('depositor');
+    await h.orchestrator.enterCompetition(a.agentId, id, '0xaaa1');
+
+    // No closeStakedRegistration — straight to resolve.
+    const out = await h.orchestrator.resolveStakedSeason(id);
+    expect(out.refunds[0]?.amountWei).toBe('1000');
+
+    const staked = await h.orchestrator.closeStakedRegistration(
+      h.orchestrator.createStakedSeason('S2', '1000', CLOSE_AT, RESOLVE_BY),
+    );
+    expect(staked.txHash).toBe('0xclose');
+  });
+
   /** T137: the agent can see its own deposit, and whether it has come back. */
   it('reports a deposit as held, then refunded, on the agent itself', async () => {
     const h = boot();

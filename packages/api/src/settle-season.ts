@@ -289,6 +289,17 @@ async function main(): Promise<void> {
       db.close();
       return;
     }
+    // Close registration FIRST, which is also what parks the deposits in the
+    // yield source. Without this the season resolves straight out of Registration:
+    // every deposit still comes back — the contract is explicit that an unstaked
+    // season refunds in full — but the money never earned anything, so the
+    // treasury sweeps zero. Found by T140, which asserted the interest arrived.
+    if (!p.entriesClosed) {
+      log('  closing registration and staking the deposits…');
+      const staked = await orchestrator.closeStakedRegistration(competitionId);
+      log(`  staked. tx ${staked.txHash ?? '(none — vault disabled)'}`);
+    }
+
     log('  resolving (this refunds deposits and pays prizes)…');
     const out = await orchestrator.resolveStakedSeason(competitionId);
     log('');
