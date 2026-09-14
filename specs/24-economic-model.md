@@ -414,7 +414,7 @@ on failure, never throwing on the onboarding path.
 | **T137** | `/config` and `/competitions` fields (D192), plus `GET /agent/me`'s deposit and refund status. Tests: a deployment with no vault publishes nulls and does not throw; an unreachable RPC returns `null`, not a 500. |
 | **T138** | `skill.md`: the staked-season section — refundable deposit, deadlines readable on chain, no mid-season joining, and how to `withdraw()` after resolve. Re-run the trademark lint. |
 | **T139** | Web (D193): phase banner with countdown, pot and entrant count; refund status on the agent profile; the one honesty sentence — all from D192's fields. Then grep `packages/web` for **any** restated money rule or percentage and delete it. |
-| **T140** | An end-to-end run against the **public contract**, soak-style: deposit → close and stake → tables play → resolve → **a depositor that played zero tables withdraws its full deposit**, a winner withdraws its prize, and the treasury received the interest. Three BscScan links in the test log. |
+| **T140** | ✅ **DONE (2026-09-14)** — two seasons on staging, recorded above; it found a real defect. An end-to-end run against the **public contract**, soak-style: deposit → close and stake → tables play → resolve → **a depositor that played zero tables withdraws its full deposit**, a winner withdraws its prize, and the treasury received the interest. Three BscScan links in the test log. |
 | **T141** | Docs: `docs/deployment.md`; the `docs/demo-runbook.md` shot list (compressed deadlines, **`exitStale` triggered live on stage by a non-operator wallet**); the `docs/submission.md` amendment — tick **Finance & Commerce**, point the contract field at the vault, and add two rows to *"what we deliberately did not build"*: the interest arithmetic, and Lista's empty addresses. Then the CLAUDE.md paragraph and the `00-INDEX` row. |
 
 ---
@@ -483,6 +483,58 @@ staked and resolved **inside one block** could record a rounding-sized shortfall
 The vault already handles that correctly — pro-rata refunds, never blocked, and
 `topUp` open to anyone — so it is a documented edge, not a defect. A mock could
 never have surfaced it, which is the entire argument for T131.
+
+---
+
+## T140 — the end-to-end run on staging (2026-09-14)
+
+Two seasons, because the first one found a bug and could not prove the second half.
+
+### S3 `comp_4b4d8bb03bb8fcb7` — the refund
+
+Four agents deposited 0.001 each; three played **ten tables apiece**; the fourth,
+`staked-idle`, played none on purpose. Pot 0.05 tBNB, sponsor-seeded.
+
+| | |
+|---|---|
+| resolve | [`0x5ceb496b…7260`](https://testnet.bscscan.com/tx/0x5ceb496b9187c06698e3676eee695def2d8ca026c67dbe3ad77a3ae056b07260) |
+| `resultRoot` | `0x93ef3b754900dc5da3709691b4dbb99ea62c7addfa67c9f1316a69c0f4482154` |
+| `staked-idle` withdraw | [`0x9a32552b…8976`](https://testnet.bscscan.com/tx/0x9a32552b3331321a978ea90db920e6a03be858e8da56e850546aeda72dea8976) |
+
+**The claim holds.** `staked-idle` was refunded **0.001 — its entire deposit —
+having never played a hand**, and was owed not one wei more. The 0.05 prize went
+whole to `staked-alice`, top of the eligible field at 1012 coins. No shortfall.
+The 402 that took each deposit carried `refundable: true` and the contract's own
+`resolveBy`, and every hash was checked against the vault's `Deposited` event
+before a seat was real.
+
+### S4 `comp_666b570da4d51e78` — the interest
+
+| | |
+|---|---|
+| stake | [`0x1c192868…620a`](https://testnet.bscscan.com/tx/0x1c192868e03863c1d092d49b3c96336a8961b3292db1a9145ed9b60f0c81620a) |
+| resolve | [`0xa505b5c0…9470`](https://testnet.bscscan.com/tx/0xa505b5c0b7b127fa3e427eab420893000437b194f9db7865db31277864929470) |
+
+0.002 staked, held six minutes, returned 0.002832. Refunds took 0.002, the
+treasury swept **832,000,000,000 wei**, and the vault's `reserved` matched its
+balance to the wei afterwards. The invariant of DoD 10 held on real money.
+
+### What the run found, that the test suite could not
+
+**S3 swept the treasury zero.** `settle-season` went straight to `resolve` and
+never called `closeStakedRegistration` — the step that parks the deposits in the
+yield source. The money never left the vault, so there was nothing to earn.
+
+The reason it was invisible is worth recording: **the contract was right.**
+`resolve` accepts a season still in `Registration` and refunds it in full,
+deliberately, so a season that never staked still returns everyone's money. That
+degradation path worked perfectly, which meant every refund was correct, every
+unit test passed, and the only symptom was a number nobody was watching. Both
+halves were individually right and the seam between them was wrong.
+
+Fixed, with a regression test that keeps *staked then resolved* and *resolved
+without staking* distinguishable rather than both merely succeeding. This is the
+argument for T140 existing at all: a suite proves the code agrees with itself.
 
 ---
 
