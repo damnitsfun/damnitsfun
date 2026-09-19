@@ -31,18 +31,27 @@ interface AwardCall {
 interface FakeChain extends TournamentChain {
   settleCalls: SettleCall[];
   awardCalls: AwardCall[];
+  payEntryAsCalls: Array<{ competitionId: string; privateKey: string; amountWei: string }>;
 }
 
 function fakeTournamentChain(): FakeChain {
   const settleCalls: SettleCall[] = [];
   const awardCalls: AwardCall[] = [];
+  const payEntryAsCalls: FakeChain['payEntryAsCalls'] = [];
   return {
     enabled: true,
     contractAddress: '0xTOURNEY',
     settleCalls,
     awardCalls,
+    payEntryAsCalls,
     async openCompetition() {
       return { ok: true, txHash: '0xopen' };
+    },
+    async payEntryAs(competitionId, privateKey, amountWei) {
+      payEntryAsCalls.push({ competitionId, privateKey, amountWei });
+      // A hash distinct from any an agent would supply, so a test can tell which
+      // path paid; verifyEntry below derives the payer from it either way.
+      return { ok: true, txHash: '0xcus70d1a1' };
     },
     async verifyEntry(_competitionId, txHash, expectedWei) {
       // The "wallet" that paid is derived from the txHash so each agent is distinct.
@@ -239,6 +248,87 @@ describe('T22 — competition entry gate', () => {
     expect(paid.statusCode).toBe(200);
     expect(paid.json()).toEqual({ entered: true });
     expect(h.orchestrator.isEntered(agent.agentId, compId)).toBe(true);
+  });
+
+  it('paying from an external wallet leaves the custodial address intact (D204)', async () => {
+    // agents.wallet_address names the wallet WE hold a key to, and it is what an
+    // owner is told to fund. Overwriting it with the payer loses that address —
+    // the payer is already recorded per entry on competition_entries.
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
+    const compId = h.orchestrator.createTournament('External Pay', '500000000000000');
+    const agent = await register(h.app, 'external-payer');
+    const custodial = (
+      h.db.prepare(`SELECT address FROM agent_wallets WHERE agent_id = ?`).get(agent.agentId) as {
+        address: string;
+      }
+    ).address;
+
+    const paid = await enter(h.app, agent, compId, '0xdeadbeef');
+    expect(paid.statusCode).toBe(200);
+
+    const me = await h.app.inject({ method: 'GET', url: '/api/arena/agent/me', headers: authed(agent) });
+    expect(me.json().walletAddress).toBe(custodial);
+    // The payer was still recorded — on the entry, where it belongs.
+    const entry = h.db
+      .prepare(`SELECT wallet_address FROM competition_entries WHERE agent_id = ?`)
+      .get(agent.agentId) as { wallet_address: string | null };
+    expect(entry.wallet_address).not.toBe(custodial);
+    expect(entry.wallet_address).toMatch(/^0x/);
+  });
+
+  it('payFromWallet buys in from the custodial wallet, and never adopts it as the payout (D194/D198)', async () => {
+    // The owner funds the wallet; the agent spends it without anyone handing over
+    // a key. What it must NOT do is inherit that wallet as its payout address —
+    // prizes belong to the owner, not to the float the owner tops up.
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
+    const compId = h.orchestrator.createTournament('Self Pay', '500000000000000');
+    const agent = await register(h.app, 'self-payer');
+
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/api/arena/competition/enter',
+      headers: authed(agent),
+      payload: { competitionId: compId, payFromWallet: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(h.orchestrator.isEntered(agent.agentId, compId)).toBe(true);
+    // Signed with the agent's own key, for the competition's own amount (D195).
+    expect(h.chain.payEntryAsCalls).toHaveLength(1);
+    expect(h.chain.payEntryAsCalls[0]).toMatchObject({
+      competitionId: compId,
+      amountWei: '500000000000000',
+    });
+    expect(h.chain.payEntryAsCalls[0]!.privateKey).toMatch(/^0x[0-9a-f]{64}$/i);
+
+    const after = h.db.prepare(`SELECT payout_address FROM agents WHERE id = ?`).get(agent.agentId) as {
+      payout_address: string | null;
+    };
+    expect(after.payout_address).toBeNull();
+  });
+
+  it('payFromWallet answers 402 naming the wallet to fund when the chain refuses (D203)', async () => {
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
+    const compId = h.orchestrator.createTournament('Broke', '500000000000000');
+    const agent = await register(h.app, 'broke-agent');
+    h.chain.payEntryAs = async () => ({
+      ok: false,
+      error: 'agent wallet 0xabc holds 0 tBNB, needs 0.0005 for this buy-in plus a little for gas',
+    });
+
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/api/arena/competition/enter',
+      headers: authed(agent),
+      payload: { competitionId: compId, payFromWallet: true },
+    });
+
+    expect(res.statusCode).toBe(402);
+    expect(res.json().error).toBe('AGENT_WALLET_PAYMENT_FAILED');
+    // The message has to tell an owner what to do, not just that it failed.
+    expect(res.json().message).toMatch(/plus a little for gas/);
+    expect(res.json().paymentRequired.walletAddress).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(h.orchestrator.isEntered(agent.agentId, compId)).toBe(false);
   });
 
   it('a free tournament auto-enters with no payment (D13)', async () => {

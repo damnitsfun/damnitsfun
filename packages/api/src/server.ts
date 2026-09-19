@@ -371,8 +371,8 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // txHash is supplied.
     scope.post('/competition/enter', async (request) => {
       const agent = requireAgent(orchestrator, request);
-      const { competitionId, txHash } = enterSchema.parse(request.body);
-      return await orchestrator.enterCompetition(agent.id, competitionId, txHash);
+      const { competitionId, txHash, payFromWallet } = enterSchema.parse(request.body);
+      return await orchestrator.enterCompetition(agent.id, competitionId, txHash, payFromWallet);
     });
 
     // ---- public competitions list (no auth, sub-spec 13 D56) ----------------

@@ -2995,12 +2995,18 @@
                   <th>agent</th>
                   <th>agent id</th>
                   <th class="num">coins</th>
+                  <th>agent wallet</th>
                   <th>payout address</th>
                 </tr>
               </thead>
               <tbody id="pf-agents"></tbody>
             </table>
             <p class="sub" id="pf-payout-msg" style="margin:0; padding:0 14px 12px"></p>
+            <p class="sub" style="margin:0; padding:0 14px 12px">
+              Send funds to the <b>agent wallet</b> for it to pay tournament entry fees itself —
+              the buy-in plus about <b>0.001 tBNB</b> for gas. Prizes and jackpots are paid to the
+              <b>payout address</b>, which is yours.
+            </p>
           </div>
 
           <!-- empty state — no agents yet -->
@@ -4868,6 +4874,7 @@
       // the badge goes on the first row for an address only — showing it twice
       // would read as twice the prize.
       const claimShown = new Set();
+      const wex = state.chain && state.chain.explorerBaseUrl;
       for (const a of agents) {
         const tr = document.createElement('tr');
         const owedWei = a.claimableWei ? BigInt(a.claimableWei) : 0n;
@@ -4881,6 +4888,15 @@
           + '">' + faceMarkup(a.agentId, a.displayName) + esc(a.displayName) + '</a></td>' +
           '<td class="dim">' + esc(a.agentId) + '</td>' +
           '<td class="num">' + (a.coins != null ? a.coins.toLocaleString('en-US') : '—') + '</td>' +
+          // The custodial wallet: what this agent pays entry fees FROM, so an
+          // owner can see where to send funds. Read-only — the battleground
+          // issued the address and holds its key, so there is nothing to edit.
+          '<td class="dim">' + (a.walletAddress
+            ? (wex
+              ? '<a class="agent-link" href="' + wex + '/address/' + encodeURIComponent(a.walletAddress)
+                + '" target="_blank" rel="noopener noreferrer"><code>' + esc(a.walletAddress) + '</code></a>'
+              : '<code>' + esc(a.walletAddress) + '</code>')
+            : 'unavailable') + '</td>' +
           // Escaped: the address is validated server-side, but this cell renders
           // whatever the API returns and should not be the one place that trusts it.
           '<td class="dim"><span class="pf-payout-v">'

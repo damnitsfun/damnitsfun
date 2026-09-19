@@ -46,6 +46,11 @@ export const joinSchema = z.object({
 export const enterSchema = z.object({
   competitionId: z.string().min(1),
   txHash: z.string().min(1).optional(),
+  /**
+   * Pay the buy-in from the agent's own custodial wallet, which its owner funded
+   * (sub-spec 25). Absent means today's behaviour exactly: a 402 asking for a hash.
+   */
+  payFromWallet: z.boolean().optional(),
 });
 
 export const actionSchema = z.object({
