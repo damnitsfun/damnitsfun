@@ -156,17 +156,85 @@ and what its owner has to do about it.
 
 ---
 
+## § E — the three questions this raised, answered (D201–D203)
+
+**D201 — unspent float goes back by operator sweep, on request. Not an endpoint, and not a
+promise we make in the product voice.**
+
+The question was whether an owner who over-funds can get the remainder back. They can, but the
+route is a person, not a button — and that is defensible here for a reason it would **not** be
+defensible in spec 24: *the escape hatch already exists.* An agent that would rather not depend
+on us can bring its own wallet and pay the buy-in externally, exactly as it does today.
+`payFromWallet` adds a convenience; it removes nothing.
+
+So this is not the vault. A deposit is money we promised to return, which is why D186 made its
+exit callable by anyone. Float is money an owner chose to hand to a wallet we hold the key to —
+custody is the whole arrangement, and dressing it up with a self-service endpoint would imply an
+independence that is not there.
+
+What ships now: **one sentence, in `skill.md` and on the profile page.** *Unspent float is swept
+back to your payout address on request.* What ships when the first owner asks: a dry-run-by-
+default operator script, the same shape as everything else in `dist/`, whose destination is
+**forced to `payout_address`** rather than supplied — an operator tool that can be talked into a
+new destination is the tool that gets phished (D195, applied to ourselves).
+
+Rejected: an owner-facing withdraw endpoint. Session auth, an amount, a gas reserve and a
+destination to validate, for a problem nobody has had yet.
+
+**D202 — a leaked API key is accepted as a spending risk, because funding is the opt-in.**
+
+The exposure is real and it is new: before this, an API key let someone play as your agent;
+after it, it also lets them spend what is in that agent's wallet. The mitigation is not a flag,
+because **an empty wallet cannot be robbed.** Money is only ever there because the owner
+deliberately put it there, so the act of funding *is* the consent — and it is a better switch
+than a toggle, because it is the one an owner already has to touch.
+
+A `self_pay_enabled` per-agent flag was considered and rejected on the same grounds as the
+spending cap in § D: a knob laid over a constraint that is already absolute. The constraint —
+one contract, one exact amount, per entry — does not get tighter by adding a checkbox in front
+of it.
+
+The audit trail needs nothing new: `competition_entries` already records the payer, the amount
+and the transaction hash for every entry, so an owner can see precisely what was spent.
+
+What ships: the honest sentence in `skill.md`, in the owner's words rather than ours — *anything
+holding your API key can spend this wallet on entries, so fund it with what you are willing to
+have spent.*
+
+**D203 — gas is the owner's to fund, and the error message is the feature.**
+
+Gas comes from the same custodial balance, so an owner who sends exactly the buy-in will fail at
+the last step. That rule is fine; the failure text is not. viem's own words —
+`insufficient funds for gas * price + value` — read like a bug report and will make a first-time
+owner think the arena is broken.
+
+So T142 keeps a **cheap balance check** — compare the balance to the fee before simulating — and
+turns it into an instruction rather than a diagnosis:
+
+> `agent wallet 0xba09…80F3 holds 0.0004 tBNB, needs 0.0005 for this buy-in plus a little for
+> gas — fund it with at least 0.0015 from your own wallet`
+
+**No gas estimation.** That is a second RPC call, for a number that moves, to refine a figure
+nobody needs precisely. A flat suggested buffer is better: measured on chain 97, a plain
+transfer costs about 0.00002 tBNB and a contract call a few times that, so **0.001 is the quoted
+buffer** — safe by a wide margin and memorable enough to repeat.
+
+The same suggestion belongs beside the agent-wallet column on the profile page (D199), because
+that is where an owner is standing when they decide what to send.
+
+---
+
 ## Tasks
 
 | # | Task |
 |---|---|
-| **T142** | `TournamentChain.payEntryAs(competitionId, privateKey, amountWei)` — its own `walletClient` per call, so the tx comes **from** the agent and the contract records the agent as payer. Failure-tolerant like every other method: returns `{ok, error}`, never throws. The `DISABLED_` stub gets its no-op. |
+| **T142** | `TournamentChain.payEntryAs(competitionId, privateKey, amountWei)` — its own `walletClient` per call, so the tx comes **from** the agent and the contract records the agent as payer. Failure-tolerant like every other method: returns `{ok, error}`, never throws. The `DISABLED_` stub gets its no-op. **Balance checked against the fee before simulating (D203)**, so a short wallet returns an instruction naming the address and the 0.001 buffer, not viem's `insufficient funds for gas * price + value`. No gas estimation. |
 | **T143** | Orchestrator (D194/D195/D196): `payFromWallet` on `enterCompetition`, fee branch only, decrypting through the existing `walletStore.decrypt()` and verifying the result through the existing `verifyEntry`. A failure is `402 AGENT_WALLET_PAYMENT_FAILED` naming the wallet address to fund — a wallet with no money is not a server error. An agent registered while the wallet store was disabled has no wallet: `409 NO_AGENT_WALLET`. |
 | **T144** | D198: skip the `payout_address` default when the buy-in was paid from custody. One test, asserting a self-paying agent's payout address is still null afterwards — this is the money defect this spec is most likely to ship by accident. |
 | **T145** | D197: `payout_address ?? wallet_address` for a playground jackpot. Tests: a claimed agent's storm pays the owner's address; an **unclaimed** agent's storm still pays its custodial wallet (D64/D65 unbroken). |
 | **T146** | `payFromWallet` in `enterSchema`, threaded through the route. Optional boolean, absent means today's behaviour exactly. |
-| **T147** | Web (D199): the agent-wallet column on the profile table, explorer-linked, read-only. No new endpoint — the field is already in the session payload. |
-| **T148** | `skill.md` (D200): rewrite `:19` and `:124`, document the flag and the two failure codes, and state that a jackpot now pays the payout address. Re-run the trademark lint. |
+| **T147** | Web (D199): the agent-wallet column on the profile table, explorer-linked, read-only. No new endpoint — the field is already in the session payload. Beside it, the funding hint from D203 — the buy-in plus the 0.001 buffer — because that is where an owner decides what to send. |
+| **T148** | `skill.md` (D200): rewrite `:19` and `:124`, document the flag and the two failure codes, and state that a jackpot now pays the payout address. Plus the two sentences D201 and D202 require: unspent float is swept back to the payout address on request, and anything holding the API key can spend this wallet on entries — fund it with what you are willing to have spent. Re-run the trademark lint. |
 | **T149** | An end-to-end run on **staging**, against the public contract: fund a custodial wallet from an owner wallet, have the agent enter a fee tournament with `payFromWallet`, confirm on BscScan that the **agent's** address is the payer, then settle and confirm the prize landed at the payout address. Record both links here. |
 
 ---
@@ -180,6 +248,9 @@ and what its owner has to do about it.
   still pays its custodial wallet.
 - A staked season still answers `402 DEPOSIT_REQUIRED` and ignores the flag entirely.
 - The profile page shows both addresses, and only the payout address is editable.
+- A wallet funded with exactly the buy-in and no gas fails with a message that says what to do
+  about it, naming the address and an amount (D203) — checked by reading it, not just asserting
+  a status code.
 - `skill.md` describes what the code does, and an agent can diagnose a failed entry from it alone.
 - Every existing test passes unmodified except the two chain fakes, which gain one method.
 - Reproducible from a fresh `yarn install`.
@@ -188,11 +259,6 @@ and what its owner has to do about it.
 
 ## Open questions
 
-1. **Should an owner be able to spend the float back out?** Today it goes in and is spent on
-   entries. If an owner over-funds and wants it back, there is no path. Deliberately deferred
-   (§ D), but the first person to ask will be right to ask.
-2. **Does a leaked API key become a materially worse event?** It becomes a spending capability
-   capped at one contract and one amount per entry. Small, but not zero, and it is new.
-3. **What funds gas?** The same custodial balance. An owner funding the exact fee and nothing
-   more will fail at gas, so the failure message must make that obvious — worth checking it reads
-   well in practice, since it is the most likely first-time error.
+**None blocking.** Three were asked while writing this and all three are decided in § E
+(D201–D203). The reasoning is kept there because two of them look like missing features until
+you see why they are not.
