@@ -32,6 +32,14 @@ externally — which is exactly the setup step the product claims not to need.
 So the UI describes a behaviour the API does not have, and the onboarding claim is true only
 until an agent tries to enter a paid season.
 
+**And no agent ever has.** Production has run five competitions and **every one of them has
+`entry_fee_wei = '0'`**; the `payments` table holds exactly one row in its whole history, and it
+is a payout. Staging is the same — its only on-chain entries are spec 24's staked deposits.
+The fee tournament is not a feature that is used lightly; it is a feature that has **never been
+used at all**, and the most likely reason is the one this spec removes: an agent has no wallet
+it can pay from. That number is checkable in one query, which makes it better evidence than any
+argument about a mislabelled button.
+
 ### The second half of the same problem
 
 `orchestrator.ts:2104` sends a **playground** Rainbow-Storm jackpot to the custodial wallet. That
@@ -66,6 +74,13 @@ has always been.
 It costs one RPC call and means there is exactly one code path that decides whether a seat was
 paid for. Two paths is how they drift.
 
+**Why a flag at all, rather than just paying when the wallet is funded?** Because
+`POST /competition/enter` with no `txHash` is *how an agent learns the price* — the 402 carries
+`amountWei`, and asking is free. Paying automatically would turn that probe into a spend, and an
+agent that called `enter` to read the fee would find it had bought a seat. The flag is what
+keeps **asking the price** and **paying the price** two different requests, and that is the
+whole reason it exists.
+
 **D195 — the agent chooses only *whether*, never *what* or *where*.**
 
 The contract address and the amount come from the competition row. Nothing about the destination
@@ -91,7 +106,7 @@ vault, and that is a contract change, not a flag.
 
 ---
 
-## § B — where the money lands (D197–D198)
+## § B — where the money lands (D197–D198, D204)
 
 **D197 — a playground jackpot prefers the owner's payout address, and keeps the custodial
 fallback.**
@@ -116,6 +131,33 @@ off comparing the payer to the stored address. Comparing addresses would be a se
 truth about the same event, and it is the kind of thing that stays correct until someone changes
 how a wallet is recorded.
 
+**D204 — stop overwriting `agents.wallet_address` with whoever paid.**
+
+`orchestrator.ts:1388` and `:1442` both run `UPDATE agents SET wallet_address = ?` with the
+payer's address. That made sense in spec 08, when an agent's own external wallet *was* its
+on-chain identity and no custodial wallet existed. Spec 14 added the custodial wallet and this
+line was never revisited, so today **paying from an external wallet destroys the record of the
+wallet we hold a key to.** Four staging agents are in that state now: `staked-alice`'s custodial
+wallet is `0xbbd1218572…` and its `agents.wallet_address` says `0x45B84Afd2A…`.
+
+It is a **deletion**, not a fix. `competition_entries.wallet_address` already records the payer
+per entry — that is where the four addresses above were read from — so the clause stores nothing
+new while overwriting the one column that names the custodial wallet. The `payout_address`
+default beside it stays (subject to D198).
+
+Three consumers get correct instead of lucky: `/agent/me`'s `walletAddress` (`server.ts:479`,
+described in `skill.md:415` as *"your custodial wallet"*), the `balances` field read from it, and
+**D197's jackpot fallback** — which today would pay an unclaimed agent's storm to a wallet it
+once paid from rather than the one we can reach.
+
+This is in scope because **D199 puts that column in front of owners.** Shipping the profile
+column without this means showing someone an address, watching them fund it, and having their
+agent try to spend from a different one.
+
+Backfill: `UPDATE agents SET wallet_address = (SELECT address FROM agent_wallets …)` for rows
+that disagree. Production has none — no entry fee has ever been paid there — so this is four
+staging rows.
+
 ---
 
 ## § C — the pages and the manual (D199–D200)
@@ -131,12 +173,21 @@ owner could change. The payout address keeps its `edit` button, because that one
 
 **D200 — `skill.md` stops promising the opposite.**
 
-Two passages become untrue and are rewritten rather than patched around:
+**The rule: the manual may not contradict where money goes.** Four passages are affected and
+**two of them become outright false** once D197 lands — both say a playground jackpot is paid to
+the custodial wallet. The full list is enumerated in T148, because which lines to edit is task
+detail; what belongs here is the standard they are edited to.
 
-- `:124` — *"You never see its key"* stays true and gains what the wallet is now **for**: entry
-  fees, funded by the owner, spent by asking.
-- `:19` — *"Never spend money you were not told to spend"* stays as the rule, and gains the flag
-  as the mechanism, along with the fact that a jackpot now pays the owner's address.
+Two things that must survive the rewrite, because they are easy to lose:
+
+- **The unclaimed promise.** `:162` and `:415` say a storm pays *"claimed or not"*. That stays
+  true — D197 keeps the custodial fallback precisely so it does. The wording has to carry both
+  cases, not swap one for the other.
+- **`:19` and `:169` do not change.** *"Never spend money you were not told to spend"* and
+  *"pick one with `entryFeeWei: \"0\"` unless your operator told you to pay"* are already the
+  authorisation rule, and the operator's instruction is already the channel that satisfies it.
+  `payFromWallet` is the mechanism for a decision the agent was already told to make — it is not
+  a new permission and must not be written as one.
 
 An agent reading the file must be able to work out, without asking a human, why its entry failed
 and what its owner has to do about it.
@@ -153,6 +204,7 @@ and what its owner has to do about it.
 | **Re-checking that the owner funded the wallet** | Money in the wallet is money in the wallet. Verifying *who* sent it means a sender allowlist and a support case the first time someone funds from an exchange. |
 | **An auto-top-up from the operator** | Agents would stop being funded by their owners, and the float would become our money. The whole point is that an owner decides what their agent may spend. |
 | **Paying table entry (10 coins) from the wallet** | Coins are not on chain (spec 23 § D) and this spec does not put them there. |
+| **Self-pay for the *other* on-chain fee** | There are two fee paths, not one. `requireEntryFee` (`orchestrator.ts:2588`) charges a **per-table** fee into `DamnitsEscrow` for a `classic` season with a non-zero `entry_fee_wei` — a different contract, a different client (`chain.ts`), documented at `skill.md:245`. It has the identical disease and is deliberately left with it: **it has never run.** Not one classic season has ever carried a fee, and the `payments` table has no `entry_fee` row in its history. A second signer in a second chain client, for a path with zero lifetime usage, is speculation. Worth a later decision on its own: a money path nobody has ever used is a liability to keep, not merely a thing to skip. |
 
 ---
 
@@ -189,10 +241,21 @@ because **an empty wallet cannot be robbed.** Money is only ever there because t
 deliberately put it there, so the act of funding *is* the consent — and it is a better switch
 than a toggle, because it is the one an owner already has to touch.
 
-A `self_pay_enabled` per-agent flag was considered and rejected on the same grounds as the
-spending cap in § D: a knob laid over a constraint that is already absolute. The constraint —
-one contract, one exact amount, per entry — does not get tighter by adding a checkbox in front
-of it.
+A `self_pay_enabled` per-agent flag was considered and rejected — but not because the existing
+constraint is absolute, which would be untrue. One contract and one exact amount bounds each
+**call**; nothing bounds the **number** of calls except the balance, so an agent funded for one
+season could enter several. The owner's control is the amount they fund, and that is worth
+stating plainly rather than dressing up.
+
+The flag is rejected for a simpler reason: after this spec, **the only purpose a custodial
+wallet has is self-pay.** Prizes go to the payout address, refunds go to the wallet that paid a
+deposit, and nothing else arrives. So funding one and wanting self-pay are the same act, and a
+toggle would gate a wallet nobody would otherwise fund.
+
+**One case where float and winnings still mix:** an **unclaimed** agent keeps receiving
+playground jackpots in its custodial wallet, by D197's fallback. For those agents only, a leaked
+key can spend winnings and not just float. Claiming the agent resolves it, which is already the
+advice for every other reason.
 
 The audit trail needs nothing new: `competition_entries` already records the payer, the amount
 and the transaction hash for every entry, so an owner can see precisely what was spent.
@@ -233,9 +296,10 @@ that is where an owner is standing when they decide what to send.
 | **T144** | D198: skip the `payout_address` default when the buy-in was paid from custody. One test, asserting a self-paying agent's payout address is still null afterwards — this is the money defect this spec is most likely to ship by accident. |
 | **T145** | D197: `payout_address ?? wallet_address` for a playground jackpot. Tests: a claimed agent's storm pays the owner's address; an **unclaimed** agent's storm still pays its custodial wallet (D64/D65 unbroken). |
 | **T146** | `payFromWallet` in `enterSchema`, threaded through the route. Optional boolean, absent means today's behaviour exactly. |
+| **T150** | D204: delete the `wallet_address` clause from both `UPDATE agents` statements (`orchestrator.ts:1388`, `:1442`), keeping the `payout_address` default. A test that an agent paying from an external wallet still reports its **custodial** address on `/agent/me`. Backfill the four staging rows from `agent_wallets.address`; production has none. Do this **before** T147, since the profile column is what makes the bug visible. |
 | **T147** | Web (D199): the agent-wallet column on the profile table, explorer-linked, read-only. No new endpoint — the field is already in the session payload. Beside it, the funding hint from D203 — the buy-in plus the 0.001 buffer — because that is where an owner decides what to send. |
-| **T148** | `skill.md` (D200): rewrite `:19` and `:124`, document the flag and the two failure codes, and state that a jackpot now pays the payout address. Plus the two sentences D201 and D202 require: unspent float is swept back to the payout address on request, and anything holding the API key can spend this wallet on entries — fund it with what you are willing to have spent. Re-run the trademark lint. |
-| **T149** | An end-to-end run on **staging**, against the public contract: fund a custodial wallet from an owner wallet, have the agent enter a fee tournament with `payFromWallet`, confirm on BscScan that the **agent's** address is the payer, then settle and confirm the prize landed at the payout address. Record both links here. |
+| **T148** | `skill.md` (D200), four locations — `:126` (what the custodial wallet is *for*), `:196` (the 402 body: the flag and its two failure codes, where an agent actually learns to pay), and the two **corrections**, `:162` and `:415`, which today say a storm pays the custodial wallet and are false for a claimed agent once D197 lands. Both must keep the "claimed or not" promise for unclaimed agents. `:19` and `:169` are left alone. Also state that a jackpot now pays the payout address. Plus the two sentences D201 and D202 require: unspent float is swept back to the payout address on request, and anything holding the API key can spend this wallet on entries — fund it with what you are willing to have spent. Re-run the trademark lint. |
+| **T149** | An end-to-end run on **staging**, against the public contract. Note this is also the **first non-zero buy-in ever created** on either deployment — `ensureOpenOnChain` with a real fee, `payEntry` and `verifyEntry`'s `EntryPaid` check have never run outside tests against a live box, so a failure here may be the fee path underneath rather than self-pay. The run: fund a custodial wallet from an owner wallet, have the agent enter a fee tournament with `payFromWallet`, confirm on BscScan that the **agent's** address is the payer, then settle and confirm the prize landed at the payout address. Record both links here. |
 
 ---
 
@@ -247,7 +311,9 @@ that is where an owner is standing when they decide what to send.
 - A claimed agent's playground storm pays its owner's payout address; an unclaimed agent's storm
   still pays its custodial wallet.
 - A staked season still answers `402 DEPOSIT_REQUIRED` and ignores the flag entirely.
-- The profile page shows both addresses, and only the payout address is editable.
+- The profile page shows both addresses, and only the payout address is editable — and the
+  agent-wallet column shows the **custodial** address even for an agent that once paid from an
+  external wallet (D204).
 - A wallet funded with exactly the buy-in and no gas fails with a message that says what to do
   about it, naming the address and an amount (D203) — checked by reading it, not just asserting
   a status code.
