@@ -1,6 +1,6 @@
 import { loadConfig } from './config';
 import { openDatabase, type Db } from './db/index';
-import { Orchestrator } from './orchestrator';
+import { Orchestrator, TOTALS_CACHE_MS } from './orchestrator';
 import { buildServer } from './server';
 
 type Config = ReturnType<typeof loadConfig>;
@@ -140,7 +140,7 @@ describe('all-time totals (D141–D143)', () => {
     // visitor polls this and they all get the same three integers.
     expect(h.o.totals()).toEqual(first);
 
-    h.advance(11_000);                       // past TOTALS_CACHE_MS
+    h.advance(TOTALS_CACHE_MS + 1_000);      // past the cache window, whatever it is
     expect(h.o.totals().tables).toBe(first.tables + 1);
     expect(h.o.totals().agents).toBe(3);
   });
