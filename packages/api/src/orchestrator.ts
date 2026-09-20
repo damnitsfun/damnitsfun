@@ -267,7 +267,13 @@ function toApiError(error: unknown): ApiError {
 }
 
 /** How long {Orchestrator.totals} reuses a computed answer (sub-spec 21 D141). */
-const TOTALS_CACHE_MS = 10_000;
+/**
+ * The ticker is a marketing number on a homepage, not a live gauge, and counting
+ * 4.1M events costs about a second of a SYNCHRONOUS event loop. Ten seconds of
+ * cache meant paying that every ten seconds; five minutes makes it 0.4% of the
+ * time instead of 12%.
+ */
+export const TOTALS_CACHE_MS = 300_000;
 
 export class Orchestrator {
   private readonly db: Db;
@@ -1200,6 +1206,14 @@ export class Orchestrator {
    *     4,490 settled), so a row count reports 5.7x the tables anyone played.
    *   agents — agents that have taken a SEAT, not agents that hold an API key.
    *     20 registered, 15 ever seated; registering is not joining.
+   *
+   * `events` is deliberately NOT filtered the same way, because the inflation the
+   * other two guard against does not exist here: a reaped lobby has no events. On
+   * production the filtered count was 4,123,713 against 4,124,710 unfiltered — 997
+   * rows, 0.024%, all belonging to tables still in flight and about to settle. The
+   * join that bought that cost 18.6 SECONDS against 1.2, on a synchronous driver,
+   * which took the public site down with 504s while the agents kept playing.
+   * Measured before changing; see the settle-season incident on 2026-09-20.
    */
   totals(): { agents: number; tables: number; events: number } {
     const now = this.clock();
@@ -1209,8 +1223,7 @@ export class Orchestrator {
       .prepare(
         `SELECT (SELECT COUNT(DISTINCT agent_id) FROM session_players) AS agents,
                 (SELECT COUNT(*) FROM sessions WHERE status = 'settled') AS tables,
-                (SELECT COUNT(*) FROM session_events e
-                   JOIN sessions s ON s.id = e.session_id AND s.status = 'settled') AS events`,
+                (SELECT COUNT(*) FROM session_events) AS events`,
       )
       .get() as { agents: number; tables: number; events: number };
 
