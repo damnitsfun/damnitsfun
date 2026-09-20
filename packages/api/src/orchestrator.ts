@@ -2507,32 +2507,53 @@ export class Orchestrator {
     finalHandValue: number | null;
     reason: 'empty_hand' | 'timeout' | null;
   }> {
+    // Pick the page FIRST, then look anything up per row.
+    //
+    // `ORDER BY ... LIMIT` does not stop SQLite computing a correlated subquery in
+    // the SELECT list: it builds every matching row, sorts them in a temp b-tree,
+    // and only then discards all but the last few. With a per-row event-log lookup
+    // that meant one subquery per table the agent had EVER played — 17,300 of them
+    // for our oldest agent — to return ten. Measured on a production copy: 50,439 ms
+    // before, 65 ms after, same rows. It took the public site down on 2026-09-20,
+    // because better-sqlite3 is synchronous and nothing else runs meanwhile.
+    //
+    // The inner query touches only indexed columns; the two subqueries run against
+    // the page, so their cost is bounded by `limit` instead of by an agent's career.
     const rows = this.db
       .prepare(
-        `SELECT s.id            AS sessionId,
-                s.competition_id AS competitionId,
-                s.ended_at       AS endedAt,
-                s.winner_agent_id AS winnerAgentId,
-                s.table_size     AS seats,
-                p.place          AS place,
-                p.coin_delta     AS coinDelta,
-                p.final_hand_value AS finalHandValue,
-                (SELECT COUNT(*) FROM session_players q WHERE q.session_id = s.id) AS placedOf,
+        `SELECT x.sessionId      AS sessionId,
+                x.competitionId  AS competitionId,
+                x.endedAt        AS endedAt,
+                x.winnerAgentId  AS winnerAgentId,
+                x.seats          AS seats,
+                x.place          AS place,
+                x.coinDelta      AS coinDelta,
+                x.finalHandValue AS finalHandValue,
+                (SELECT COUNT(*) FROM session_players q WHERE q.session_id = x.sessionId) AS placedOf,
                 -- Read the reason from the event log rather than inferring it. A
                 -- timeout still NAMES a winner (the fewest-points seat takes the
                 -- table), so a null winner does not mean "ran out of time" --
                 -- inferring it that way reported every timeout as a clean win.
                 (SELECT json_extract(e.payload_json, '$.reason')
                    FROM session_events e
-                  WHERE e.session_id = s.id AND e.event_type = 'GAME_ENDED'
+                  WHERE e.session_id = x.sessionId AND e.event_type = 'GAME_ENDED'
                   LIMIT 1) AS reason
-           FROM session_players p
-           JOIN sessions s ON s.id = p.session_id
-          WHERE p.agent_id = @agentId
-            AND s.status = 'settled'
-            AND (@sessionId IS NULL OR s.id = @sessionId)
-          ORDER BY s.ended_at DESC
-          LIMIT @limit`,
+           FROM (SELECT s.id             AS sessionId,
+                        s.competition_id AS competitionId,
+                        s.ended_at       AS endedAt,
+                        s.winner_agent_id AS winnerAgentId,
+                        s.table_size     AS seats,
+                        p.place          AS place,
+                        p.coin_delta     AS coinDelta,
+                        p.final_hand_value AS finalHandValue
+                   FROM session_players p
+                   JOIN sessions s ON s.id = p.session_id
+                  WHERE p.agent_id = @agentId
+                    AND s.status = 'settled'
+                    AND (@sessionId IS NULL OR s.id = @sessionId)
+                  ORDER BY s.ended_at DESC
+                  LIMIT @limit) x
+          ORDER BY x.endedAt DESC`,
       )
       .all({
         agentId,
