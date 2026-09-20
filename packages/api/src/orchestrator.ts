@@ -1335,11 +1335,15 @@ export class Orchestrator {
    *    with a `warning` when too little season likely remains to qualify (D11).
    *  - Paid, txHash: verified on-chain (EntryPaid for THIS competition/amount), then
    *    recorded with the paying wallet address.
+   *  - Paid, `payFromWallet` (sub-spec 25): we sign the buy-in with the agent's own
+   *    custodial key — the wallet its owner funded — and then verify that
+   *    transaction exactly as if the agent had sent it.
    */
   async enterCompetition(
     agentId: string,
     competitionId: string,
     txHash?: string,
+    payFromWallet?: boolean,
   ): Promise<{ entered: true; warning?: string }> {
     const c = this.getCompetition(competitionId);
     if (c.status !== 'active') {
@@ -1367,7 +1371,17 @@ export class Orchestrator {
       return warning ? { entered: true, warning } : { entered: true };
     }
 
-    if (!txHash) {
+    // Pay from the agent's own custodial wallet, which its owner funded. The flag
+    // is what keeps asking the price and paying it two different requests: a bare
+    // `enter` is how an agent reads `amountWei` off the 402, and paying for that
+    // would turn a probe into a spend (D194).
+    //
+    // Fee model only (D196). A staked deposit is pulled back by whoever paid it —
+    // DamnitsVault.withdraw is msg.sender-only — so one paid from custody would be
+    // reachable only by an operator sweep. That branch returns above this line.
+    const paidTxHash = txHash ?? (payFromWallet ? await this.payEntryFromAgentWallet(agentId, c) : undefined);
+
+    if (!paidTxHash) {
       throw new ApiError(402, 'PAYMENT_REQUIRED', 'Tournament buy-in not paid', {
         paymentRequired: {
           chainId: this.config.bscChainId,
@@ -1379,7 +1393,9 @@ export class Orchestrator {
       });
     }
 
-    const check = await this.tournament.verifyEntry(competitionId, txHash, c.entry_fee_wei);
+    // Verified even when we signed it ourselves: one code path decides whether a
+    // seat was paid for, and two is how they drift.
+    const check = await this.tournament.verifyEntry(competitionId, paidTxHash, c.entry_fee_wei);
     if (!check.ok) {
       throw new ApiError(402, 'PAYMENT_NOT_VERIFIED', `Buy-in not verified: ${check.error}`, {
         paymentRequired: {
@@ -1391,18 +1407,67 @@ export class Orchestrator {
       });
     }
 
-    this.recordEntry(competitionId, agentId, check.payer ?? null, txHash, check.amountWei ?? c.entry_fee_wei);
+    this.recordEntry(competitionId, agentId, check.payer ?? null, paidTxHash, check.amountWei ?? c.entry_fee_wei);
     this.addToPool(competitionId, check.amountWei ?? c.entry_fee_wei);
-    // The paying wallet is the agent's on-chain identity; default the payout
-    // address to it too, so a winner without an explicit payout address still gets paid.
-    if (check.payer) {
+    // Default the payout address to the paying wallet, so a winner without an
+    // explicit one still gets paid — unless WE paid it from custody (D198). That
+    // wallet is entry float the owner tops up, never a prize destination: adopting
+    // it would send every prize back into the money its owner funds.
+    //
+    // Keyed off the flag, not off comparing the payer to a stored address: the
+    // call already knows which path it took, and one fact beats two.
+    //
+    // `wallet_address` is deliberately NOT overwritten (D204). It named the agent's
+    // on-chain identity back when an agent's own external wallet was the only one it
+    // had; since sub-spec 14 it names the CUSTODIAL wallet we hold a key to, and
+    // clobbering it with a payer address loses the one address an owner has to fund.
+    // The payer is already recorded per entry on `competition_entries`.
+    if (check.payer && !(payFromWallet && !txHash)) {
       this.db
-        .prepare(
-          `UPDATE agents SET wallet_address = ?, payout_address = COALESCE(payout_address, ?) WHERE id = ?`,
-        )
-        .run(check.payer, check.payer, agentId);
+        .prepare(`UPDATE agents SET payout_address = COALESCE(payout_address, ?) WHERE id = ?`)
+        .run(check.payer, agentId);
     }
     return warning ? { entered: true, warning } : { entered: true };
+  }
+
+  /**
+   * Pay a buy-in from the agent's own custodial wallet — the one its owner funds
+   * (D194). Returns the txHash for the caller to verify like any other.
+   */
+  private async payEntryFromAgentWallet(agentId: string, c: CompetitionRow): Promise<string> {
+    const row = this.db
+      .prepare(`SELECT enc_private_key FROM agent_wallets WHERE agent_id = ?`)
+      .get(agentId) as { enc_private_key: string } | undefined;
+    if (!row) {
+      throw new ApiError(409, 'NO_AGENT_WALLET', 'This agent has no custodial wallet to pay from', {
+        hint: 'Agents registered while the wallet store was disabled have none.',
+      });
+    }
+
+    const result = await this.tournament.payEntryAs(
+      c.id,
+      this.wallets.decrypt(row.enc_private_key),
+      c.entry_fee_wei,
+    );
+    if (!result.ok || !result.txHash) {
+      // 402, not 500: nothing is broken, the wallet is short. The message names
+      // the address so an owner knows exactly what to fund (D203).
+      throw new ApiError(
+        402,
+        'AGENT_WALLET_PAYMENT_FAILED',
+        `Could not pay from the agent wallet: ${result.error}`,
+        {
+          paymentRequired: {
+            chainId: this.config.bscChainId,
+            contractAddress: c.contract_address ?? this.config.tournamentContractAddress,
+            amountWei: c.entry_fee_wei,
+            competitionId: c.id,
+            walletAddress: this.getAgent(agentId).wallet_address,
+          },
+        },
+      );
+    }
+    return result.txHash;
   }
 
   /**
@@ -1449,12 +1514,11 @@ export class Orchestrator {
     // The deposit is NOT added to the pool: it is the player's money, held in the
     // vault and returned at resolve. The pool is sponsor money only.
     this.recordEntry(c.id, agentId, check.payer ?? null, txHash, check.amountWei ?? depositWei);
+    // Payout default only — `wallet_address` stays the custodial wallet (D204).
     if (check.payer) {
       this.db
-        .prepare(
-          `UPDATE agents SET wallet_address = ?, payout_address = COALESCE(payout_address, ?) WHERE id = ?`,
-        )
-        .run(check.payer, check.payer, agentId);
+        .prepare(`UPDATE agents SET payout_address = COALESCE(payout_address, ?) WHERE id = ?`)
+        .run(check.payer, agentId);
     }
     return warning ? { entered: true, warning } : { entered: true };
   }
@@ -2104,9 +2168,10 @@ export class Orchestrator {
     if (poolWei <= 0n) return; // unfunded season → recorded, not paid (D67)
 
     // WHERE the prize lands differs by game type, and deliberately:
-    //   playground — the agent's custodial wallet. Most playground agents are
-    //     unclaimed and have no payout address, so this is the only address that
-    //     always exists (D64/D65).
+    //   playground — the owner's `payout_address` when there is one, else the
+    //     agent's custodial wallet. Most playground agents are unclaimed and have
+    //     no payout address, so the custodial fallback is the address that always
+    //     exists (D64/D65) — but a claimed agent's prize goes to its owner (D197).
     //   tournament — the owner's nominated `payout_address`, the same place the
     //     prize pool pays. `captureJackpotFromSession` has already refused to
     //     record a triggerer without one, so this is set here; the fallback to
@@ -2114,7 +2179,13 @@ export class Orchestrator {
     //     to the zero address.
     const agent = this.getAgent(captured.agentId);
     const toPayoutAddress = comp.kind === 'tournament';
-    const destination = toPayoutAddress ? agent.payout_address : agent.wallet_address;
+    // A playground storm now prefers the owner's payout address (D197): a prize
+    // belongs to the human, not to the custodial wallet they top up for entry
+    // fees. The fallback is what keeps D64/D65 true — an UNCLAIMED agent has no
+    // owner and no payout address, and must still be payable.
+    const destination = toPayoutAddress
+      ? agent.payout_address
+      : (agent.payout_address ?? agent.wallet_address);
     if (!destination) return; // nothing safe to pay → recorded, not paid (D67)
 
     const seedReveal =

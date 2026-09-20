@@ -37,6 +37,7 @@ function fakeTournamentChain(awardCalls: AwardCall[]): TournamentChain {
     async verifyEntry() {
       return { ok: false, error: 'not used' };
     },
+    payEntryAs: ok,
     seedPool: ok,
     seedJackpot: ok,
     closeEntries: ok,
@@ -284,6 +285,21 @@ describe('playground Rainbow-Storm jackpot (T49)', () => {
     expect(row.commit_tx_hash).toBeNull();
     expect(row.settle_tx_hash).toBeNull();
     expect(h.escrowCalls).toEqual([]); // never opened/committed/settled on the escrow
+  });
+
+  it('a storm pays the OWNER payout address when the agent has one (D197)', async () => {
+    // The custodial wallet is entry float an owner tops up; a prize belongs to the
+    // owner. The unclaimed case below still pays the custodial wallet.
+    const h = boot();
+    const competitionId = h.orchestrator.createCompetition('Playground');
+    seedSeasonJackpot(h.db, competitionId, '50000000000000000');
+    const payout = `0x${'d'.repeat(40)}`;
+    const { agents, sessionId } = await seatAgents(h, competitionId);
+    h.db.prepare(`UPDATE agents SET payout_address = ?`).run(payout);
+    await playUntilStormSettles(h, agents, sessionId);
+
+    expect(h.awardCalls).toHaveLength(1);
+    expect(h.awardCalls[0]!.winner).toBe(payout);
   });
 
   it('the first storm of a FUNDED season pays the jackpot to the agent wallet, once', async () => {

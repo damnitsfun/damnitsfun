@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  formatEther,
   http,
   keccak256,
   parseEventLogs,
@@ -158,6 +159,17 @@ export interface TournamentChain {
    * amount, otherwise any txHash would buy a seat.
    */
   verifyEntry(competitionId: string, txHash: string, expectedWei: string): Promise<EntryCheck>;
+  /**
+   * Pay a buy-in from the AGENT's own custodial wallet instead of the operator's
+   * (sub-spec 25, D194). The agent asks; we sign with the key we already hold for
+   * it, so no human ever hands a private key to an agent. The competition decides
+   * the destination and the amount — the caller supplies neither (D195).
+   */
+  payEntryAs(
+    competitionId: string,
+    privateKey: `0x${string}`,
+    amountWei: string,
+  ): Promise<ChainResult>;
   /** Sponsor money into the main prize pool (operator-funded seed). */
   seedPool(competitionId: string, amountWei: string): Promise<ChainResult>;
   /** Sponsor money into the jackpot side-pool. */
@@ -192,6 +204,14 @@ export interface TournamentChain {
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
+/**
+ * What to suggest an owner adds on top of a buy-in, for gas (D203). Measured on
+ * chain 97: a plain transfer costs ~0.00002 tBNB and a contract call a few times
+ * that, so this is wide by design — it is advice in an error message, not a
+ * reserve we enforce.
+ */
+const GAS_BUFFER_WEI = 1_000_000_000_000_000n; // 0.001 tBNB
+
 /** Used whenever the tournament chain is not configured — every call is a clean no-op. */
 export const DISABLED_TOURNAMENT_CHAIN: TournamentChain = {
   enabled: false,
@@ -200,6 +220,9 @@ export const DISABLED_TOURNAMENT_CHAIN: TournamentChain = {
     return { ok: false, error: 'tournament chain disabled' };
   },
   async verifyEntry() {
+    return { ok: false, error: 'tournament chain disabled' };
+  },
+  async payEntryAs() {
     return { ok: false, error: 'tournament chain disabled' };
   },
   async seedPool() {
@@ -281,6 +304,47 @@ export function createTournamentChain(
 
     openCompetition(competitionId, entryFeeWei) {
       return send('openCompetition', [cid(competitionId), BigInt(entryFeeWei)]);
+    },
+
+    async payEntryAs(competitionId, privateKey, amountWei) {
+      // Its own client per call: the shared `walletClient` above is bound to the
+      // operator, and this must come FROM the agent — `verifyEntry` reads the
+      // payer straight back off the EntryPaid event.
+      const payer = privateKeyToAccount(privateKey);
+      const agentWallet = createWalletClient({ account: payer, chain: bscTestnet, transport });
+      const value = BigInt(amountWei);
+      try {
+        // Checked before simulating so an unfunded wallet gets an instruction
+        // rather than viem's `insufficient funds for gas * price + value`, which
+        // reads like a bug report (D203). No gas estimate: a flat buffer is
+        // enough, and one fewer call that can fail.
+        const balance = await publicClient.getBalance({ address: payer.address });
+        if (balance < value) {
+          return {
+            ok: false,
+            error:
+              `agent wallet ${payer.address} holds ${formatEther(balance)} tBNB, needs ` +
+              `${formatEther(value)} for this buy-in plus a little for gas — fund it with at ` +
+              `least ${formatEther(value + GAS_BUFFER_WEI)} from your own wallet`,
+          };
+        }
+        const { request } = await publicClient.simulateContract({
+          account: payer,
+          address,
+          abi: DAMNITS_TOURNAMENT_ABI,
+          functionName: 'payEntry',
+          args: [cid(competitionId)],
+          value,
+        });
+        const txHash = await agentWallet.writeContract(request);
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+        log(`[tournament] payEntry ok — ${payer.address} paid ${value} wei, tx ${txHash}`);
+        return { ok: true, txHash };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`[tournament] payEntry FAILED for ${payer.address} — ${message}`);
+        return { ok: false, error: message };
+      }
     },
 
     async verifyEntry(competitionId, txHash, expectedWei) {
