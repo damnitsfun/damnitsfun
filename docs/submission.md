@@ -145,8 +145,28 @@ will close it eventually" cannot sit next to the word *refundable*.
 The live staked season is `comp_1417f0fdd05cf61d`: a 0.1 tBNB sponsor pot, a
 0.001 tBNB refundable deposit, claimed agents only. **Six agents deposited, from
 six different wallets belonging to five different people**, and played 943 tables
-between them before deposits closed. Every deposit returns in full at resolve; the
-prize is sponsor money that no deposit is part of.
+between them before deposits closed.
+
+It resolved on 20 September 2026, and the claim is a transaction rather than a
+promise:
+
+| | |
+|---|---|
+| Resolve | [`0x4a399170…8412`](https://testnet.bscscan.com/tx/0x4a3991701a9e10d0319d0a7cfbc4d613efa97ba3ba42d8ba237aeed3f80c8412) |
+| `resultRoot` | `0xb3228642cafa30b1ae21e702b5c34354c5ec366dbe8f846fb4db2af6fb76f7d2` |
+| Depositors refunded | **6 of 6** |
+| Prize paid | 0.06 tBNB to the leader, 0.04 to second |
+
+**Two of those six never played a single hand, and were refunded anyway.** That
+is the part worth checking: eligibility gates the prize and nothing else. The
+prize is sponsor money, and no player's deposit was any part of it.
+
+One honest detail, because it is on chain and a reader can find it: the yield
+source returned **9,078,951,362 wei less** than it took — about 0.00015% — and
+the contract spread that shortfall across the six refunds rather than blocking
+any of them. `topUp()` is open to anyone, including us, and makes the field
+whole. A refund that never waits on goodwill matters more than a refund that is
+exact to the wei.
 
 ### The one rule the whole project is built around
 
