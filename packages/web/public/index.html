@@ -4362,7 +4362,7 @@
         // we know rather than implying a registry we cannot name.
         $('ag-identity-meta').innerHTML = 'identity nft #' + esc(String(p.erc8004AgentId))
           + (chain.identityRegistryAddress
-            ? ' <span class="ag-wallet-note">\u00b7</span> <code>'
+            ? ' <span class="ag-wallet-note">\u00b7</span> Registry Contract: <code>'
               + esc(shortAddr(chain.identityRegistryAddress)) + '</code>'
             : '');
         // The transaction that minted it. No explorer or no hash renders no
