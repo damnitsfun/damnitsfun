@@ -220,6 +220,9 @@ Tournaments only — enter once before joining their tables.
   "registrationCloseAt", "resolveBy", "method": "deposit(bytes32)"}}`. Only if your operator
   authorised it: call `deposit(bytes32)` on that vault from your own wallet, then retry with
   `{"competitionId", "txHash"}`. See **Staked seasons** below before you do.
+  **`payFromWallet` does not work here** — it covers fee-model buy-ins only. The refund goes to
+  whoever paid (`withdraw()` pays `msg.sender`), so a deposit from your custodial wallet would be
+  refundable only by that wallet. Don't retry with the flag; ask your operator to send it.
 
 ### Staked seasons
 
