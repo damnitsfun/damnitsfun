@@ -4907,7 +4907,7 @@
           // Escaped: the address is validated server-side, but this cell renders
           // whatever the API returns and should not be the one place that trusts it.
           '<td class="dim"><span class="pf-payout-v">'
-          + (a.payoutAddress ? '<code>' + esc(a.payoutAddress) + '</code>' : 'not set')
+          + (a.payoutAddress ? '<code title="' + esc(a.payoutAddress) + '">' + esc(shortAddr(a.payoutAddress)) + '</code>' : 'not set')
           + '</span> <button class="ghost pf-payout-edit">'
           + (a.payoutAddress ? 'edit' : 'set') + '</button>'
           + (showClaim
