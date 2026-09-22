@@ -86,6 +86,21 @@ as_app node packages/api/dist/db/migrate.js
 log "config drift check"
 as_app node packages/api/dist/check-env-drift.js || true
 
+# Publish the docs site (sub-spec 27). It has its own fast deploy path that
+# skips everything in this script, but the two must not be able to disagree: a
+# full deploy carries the docs too, so a broken or disabled deploy-docs workflow
+# can never strand them. Copied rather than served in place because nginx runs
+# as www-data and must never be given a path into /opt/damnits.
+if [ -d "$APP_ROOT/app/packages/docs-site/public" ]; then
+  log "publish docs -> /var/www/damnits-docs/$ENV_NAME"
+  sudo mkdir -p "/var/www/damnits-docs/$ENV_NAME"
+  sudo rsync -a --delete "$APP_ROOT/app/packages/docs-site/public/" "/var/www/damnits-docs/$ENV_NAME/"
+  # Owned by the deploy user so the docs-only workflow can rsync here without
+  # sudo; group www-data so nginx can read it.
+  sudo chown -R "$(id -un):www-data" "/var/www/damnits-docs/$ENV_NAME"
+  sudo chmod -R 755 "/var/www/damnits-docs/$ENV_NAME"
+fi
+
 # Hard restart. The orchestrator is in-process with real timers, so this
 # interrupts any in-flight table — there is no blue/green here by design.
 log "restart $SERVICE"

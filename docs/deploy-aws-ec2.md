@@ -24,10 +24,15 @@ Each instance serves the whole product from one process: `/` (homepage),
 Alongside it, nginx serves the **docs site** off disk — no app process involved:
 
 ```
-docs.damnits.fun          ─► /opt/damnits/production/app/packages/docs-site/public
-staging.docs.damnits.fun  ─► /opt/damnits/staging/app/packages/docs-site/public
+docs.damnits.fun          ─► /var/www/damnits-docs/production
+staging.docs.damnits.fun  ─► /var/www/damnits-docs/staging
       (each proxies only /api/, /skill.md and /fonts/ to its own instance)
 ```
+
+Note the root: **not** the deployed tree. nginx runs as `www-data` and cannot
+traverse the deployment root, and those permissions are deliberate — the web
+server is never given a path into the application tree. Both deploy paths
+publish into `/var/www` instead.
 
 | | trigger | CI gate | slot |
 |---|---|---|---|
@@ -586,11 +591,30 @@ sudo journalctl -u damnits-api@staging -f
 The vhost ships in this repo already configured for all three names — no editing
 needed.
 
+> ⚠️ **On a box that already has a certificate, do NOT `cp` this file over the
+> live one.** certbot rewrote `/etc/nginx/sites-available/damnits` in place — it
+> owns the `listen 443` blocks and the HTTP redirects — and the copy in the repo
+> is the pre-TLS template. Overwriting it drops HTTPS from the live site until
+> certbot runs again. To add the docs blocks to a running box, append only that
+> section and leave the rest alone:
+>
+> ```bash
+> sudo cp /etc/nginx/sites-available/damnits /etc/nginx/sites-available/damnits.bak-$(date +%F-%H%M%S)
+> sudo sh -c 'sed -n "/^# --- docs ---/,\$p" \
+>   /opt/damnits/production/app/deploy/nginx-damnits.conf \
+>   >> /etc/nginx/sites-available/damnits'
+> ```
+
 ```bash
 sudo cp /opt/damnits/production/app/deploy/nginx-damnits.conf /etc/nginx/sites-available/damnits
 sudo ln -sf /etc/nginx/sites-available/damnits /etc/nginx/sites-enabled/damnits
 # Shared proxy headers, included by the docs server blocks (sub-spec 27).
 sudo cp /opt/damnits/production/app/deploy/nginx-proxy-common.conf /etc/nginx/damnits-proxy.conf
+# The docs web root. Owned by the deploy user so the docs-only workflow can
+# rsync into it without sudo; group www-data so nginx can read it.
+sudo mkdir -p /var/www/damnits-docs/production /var/www/damnits-docs/staging
+sudo chown -R ubuntu:www-data /var/www/damnits-docs
+sudo chmod -R 755 /var/www/damnits-docs
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 

@@ -20,7 +20,7 @@
  * That was one of the four bugs, and finding it needs a real CSS parser rather
  * than a regex.
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -224,6 +224,39 @@ for (let i = 1; i < palettes.length; i += 1) {
     console.error(
       `[lint:web-css] ${token} disagrees: ${base.name} has \`${theirs}\`, ${page.name} has \`${value}\`.`,
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A file copied into both page directories must stay identical.
+//
+// The docs site keeps its own copy of the favicon rather than proxying it, so
+// the icon survives an app outage — same reasoning as the palette above, and
+// the same risk: a brand asset updated in one directory and not the other is
+// invisible until someone notices two different icons in two tabs.
+{
+  const byName = new Map();
+  for (const rel of DIRS) {
+    const dir = join(ROOT, rel);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.html')) continue; // the pages are meant to differ
+      const path = join(dir, f);
+      if (!statSync(path).isFile()) continue;
+      (byName.get(f) ?? byName.set(f, []).get(f)).push({ rel, path });
+    }
+  }
+  for (const [name, copies] of byName) {
+    if (copies.length < 2) continue;
+    const first = readFileSync(copies[0].path);
+    for (const other of copies.slice(1)) {
+      if (first.equals(readFileSync(other.path))) continue;
+      failed = true;
+      console.error(
+        `[lint:web-css] ${name} differs between ${copies[0].rel} and ${other.rel} — `
+        + 'a shared asset must be byte-identical in both.',
+      );
+    }
   }
 }
 
