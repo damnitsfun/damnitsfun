@@ -1,0 +1,120 @@
+name: Deploy docs (reusable)
+
+# The docs site is static files that nginx serves off disk, so deploying it is a
+# file copy. It deliberately does NOT go through deploy-target.yml, and the
+# reason is worth stating once here rather than rediscovering it:
+#
+# every app deploy ends in `systemctl restart`, and the orchestrator archives
+# every mid-hand table when it boots. Riding the ordinary deploy would make the
+# cost of a typo fix on a docs page ~15 minutes of CI plus every live game.
+#
+# So: no install, no build, no migrate, no restart, no soak. Lint, rsync one
+# directory, check the page answers.
+#
+# Both environments call this; as with the app deploy, the ONLY thing that
+# differs between them is which environment-scoped secrets resolve.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'GitHub environment name — also the /opt/damnits/<name> directory'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref to deploy (defaults to the calling workflow ref)'
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.DOCS_URL }}
+
+    # The SAME group the app deploy uses. That deploy rsyncs the whole tree with
+    # --delete; a docs copy landing in the middle of it would be half-applied.
+    concurrency:
+      group: damnits-ec2-shared
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # The checks that can actually fail on a static page. No unit tests to
+      # run and no soak worth running — a leaked trademark, an undefined class,
+      # a dead anchor or a palette that has drifted from the app's are the real
+      # failure modes, and all four are silent in a browser.
+      - name: Lint — trademark
+        run: bash scripts/lint-trademark.sh
+
+      - name: Lint — pages
+        run: node scripts/lint-web-css.mjs
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      # One directory, and --delete is scoped to it. Nothing here can reach the
+      # app tree, the database, or .env.
+      - name: Sync docs to ${{ inputs.environment }}
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+          APP_ROOT: ${{ secrets.APP_ROOT }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" \
+            "mkdir -p '$APP_ROOT/app/packages/docs-site/public'"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            packages/docs-site/public/ \
+            "$USER@$HOST:$APP_ROOT/app/packages/docs-site/public/"
+
+      # Proves nginx, TLS and the file on disk agree, from the public internet.
+      # Greps for a string the page actually contains: a 200 alone would also be
+      # satisfied by a stale copy or by the app's own 404 page.
+      - name: Public check
+        env:
+          URL: ${{ vars.DOCS_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::error::set the DOCS_URL variable on the ${{ inputs.environment }} environment"
+            exit 1
+          fi
+          for i in $(seq 1 5); do
+            if curl -fsS --max-time 10 "$URL" | grep -q 'id="quickstart"'; then
+              echo "docs live at $URL"; exit 0
+            fi
+            echo "attempt $i failed, retrying in 5s"; sleep 5
+          done
+          echo "::error::$URL did not serve the docs page"
+          exit 1
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "### ${{ inputs.environment }} docs deploy — ${{ job.status }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| environment | \`${{ inputs.environment }}\` |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| url | ${{ vars.DOCS_URL }} |"
+            echo "| app restarted | no — static file copy |"
+          } >> "$GITHUB_STEP_SUMMARY"

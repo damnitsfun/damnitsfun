@@ -20,7 +20,7 @@
  * That was one of the four bugs, and finding it needs a real CSS parser rather
  * than a regex.
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,11 +28,27 @@ import { fileURLToPath } from 'node:url';
 // package as the working directory, so a repo-relative path would only work
 // when invoked from the root.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DIR = join(ROOT, 'packages/web/public');
+
+// Every directory of hand-written pages. The docs site (sub-spec 27) is held to
+// the same checks as the app for the same reason: it is single-file HTML by
+// hand, with no build step to notice anything.
+const DIRS = ['packages/web/public', 'packages/docs-site/public'];
+
+// `{ name, path, html }`, where `name` is repo-relative — two directories both
+// contain an `index.html`, and a bare filename in an error would be ambiguous.
+const pagesIn = (ext) =>
+  DIRS.flatMap((rel) => {
+    const dir = join(ROOT, rel);
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(ext))
+      .map((f) => ({ name: `${rel}/${f}`, path: join(dir, f) }));
+  });
+
+const HTML = pagesIn('.html').map((p) => ({ ...p, html: readFileSync(p.path, 'utf8') }));
 let failed = false;
 
-for (const file of readdirSync(DIR).filter((f) => f.endsWith('.html'))) {
-  const html = readFileSync(join(DIR, file), 'utf8');
+for (const { name: file, html } of HTML) {
   const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join('\n');
   if (!styles) continue;
 
@@ -84,8 +100,8 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith('.html'))) {
  * Same failure shape as the undefined-class bugs above: valid-looking input, no
  * error anywhere, wrong pixels.
  */
-for (const file of readdirSync(DIR).filter((f) => f.endsWith('.svg'))) {
-  const svg = readFileSync(join(DIR, file), 'utf8');
+for (const { name: file, path } of pagesIn('.svg')) {
+  const svg = readFileSync(path, 'utf8');
   for (const [i, line] of svg.split('\n').entries()) {
     // Cheap and exact: the only double hyphen legal in XML is the comment
     // delimiters themselves.
@@ -129,8 +145,7 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith('.svg'))) {
 // Only DEREFERENCES count — `$('x').foo` or `$('x')(...)`. Assigning `$('x')` to
 // a variable is how the guarded cases are already written (`const foot =
 // $('foot-cmd'); if (foot) ...`), so those are correctly ignored.
-for (const file of readdirSync(DIR).filter((f) => f.endsWith('.html'))) {
-  const html = readFileSync(join(DIR, file), 'utf8');
+for (const { name: file, html } of HTML) {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
   if (!scripts) continue;
   // Ids the markup actually defines, ignoring anything inside an HTML comment —
@@ -146,10 +161,79 @@ for (const file of readdirSync(DIR).filter((f) => f.endsWith('.html'))) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// In-page anchors that land nowhere (sub-spec 27 T169).
+//
+// A page navigated entirely by `href="#section"` fails the same way everything
+// else in this file does: no error, no warning, the browser simply does not
+// scroll. On the docs site the anchor nav IS the navigation, so a typo there is
+// a broken table of contents that looks perfectly fine in review.
+//
+// Only literal same-page hrefs count. `#` alone is the conventional inert link
+// and is ignored.
+for (const { name: file, html } of HTML) {
+  const live = html.replaceAll(/<!--[\s\S]*?-->/g, '');
+  const targets = new Set([...live.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  for (const m of live.matchAll(/\sname="([^"]+)"/g)) targets.add(m[1]);
+  // Anchors the script writes into the page are legitimate targets too.
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
+  for (const m of scripts.matchAll(/id="([^"]+)"/g)) targets.add(m[1]);
+
+  const seen = new Set();
+  for (const m of live.matchAll(/href="#([^"]+)"/g)) {
+    const id = decodeURIComponent(m[1]);
+    if (seen.has(id) || targets.has(id)) continue;
+    seen.add(id);
+    failed = true;
+    const line = live.slice(0, m.index).split('\n').length;
+    console.error(`[lint:web-css] ${file}:${line} — href="#${id}" but no element has that id.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One palette across every page (sub-spec 27 T171 / D224).
+//
+// Each page carries its own `:root` block — three copies of the same design
+// tokens, and until now nothing compared them. The docs site is the third, and
+// the whole point of it is to look like the product rather than like a
+// write-up of it, so a `--gold` adjusted in one file and not the others is a
+// real defect that renders as "close enough" and is never noticed.
+//
+// A page need not define every token — it defines what it uses. The rule is
+// only that a token defined in two places must carry the SAME value.
+const palettes = HTML.map(({ name, html }) => {
+  const root = html.match(/:root\s*{([\s\S]*?)}/);
+  if (!root) return null;
+  const tokens = new Map();
+  for (const m of root[1].matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+    // Compared on the VALUE, not on how it was typed: `rgba(34,32,26,.05)` and
+    // `rgba(34, 32, 26, .05)` are the same colour, and the two current pages
+    // genuinely differ that way. A lint that fails on whitespace is the noisy
+    // kind this file's header warns about.
+    tokens.set(m[1], m[2].trim().replaceAll(/\s+/g, '').toLowerCase());
+  }
+  return { name, tokens };
+}).filter(Boolean);
+
+for (let i = 1; i < palettes.length; i += 1) {
+  const [base, page] = [palettes[0], palettes[i]];
+  for (const [token, value] of page.tokens) {
+    const theirs = base.tokens.get(token);
+    if (theirs === undefined || theirs === value) continue;
+    failed = true;
+    console.error(
+      `[lint:web-css] ${token} disagrees: ${base.name} has \`${theirs}\`, ${page.name} has \`${value}\`.`,
+    );
+  }
+}
+
 if (failed) {
   console.error('');
-  console.error('An undefined class or token does not error — it silently renders unstyled.');
-  console.error('Define it, or fix the name.');
+  console.error('None of these error at runtime — they render unstyled, scroll');
+  console.error('nowhere, or draw the wrong shade. Fix the name or the value.');
   process.exit(1);
 }
-console.log('[lint:web-css] OK — markup tokens defined, SVG assets well-formed.');
+console.log(
+  `[lint:web-css] OK — ${HTML.length} page(s): tokens defined, anchors resolve, `
+  + 'palettes agree, SVG assets well-formed.',
+);

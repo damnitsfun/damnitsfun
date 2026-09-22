@@ -279,6 +279,11 @@ export function buildServer(options: BuildOptions): BuiltServer {
       // Sub-spec 20: the coin economy, enough to compute a table's payouts before
       // sitting down — share(place) = entry + step * ((seats + 1) / 2 - place).
       // Derived from the entry and the seat maximum, never configured directly.
+      // The stack a season starts you on. Published because the docs page
+      // (sub-spec 27 D214) states it in prose, and a number written on a page
+      // that cannot be read back from the box is a number that silently goes
+      // stale — the same rule as the payout depth below.
+      startingCoins: config.startingCoins,
       playgroundEntryCoins: config.playgroundEntryCoins,
       coinPlaceStep: config.coinPlaceStep,
       // Sub-spec 22 (D153): what happens when seats FINISH LEVEL. Ties are not an

@@ -100,6 +100,7 @@ export const INTROSPECTION = {
           'number — EFFECTIVE limit for a full table; past this the fewest-points agent wins. ' +
           'Derived as max(floor, seats x decisionTimeoutMs x rounds), so it is not simply the configured floor.',
         gameTimeLimitFloorMs: 'number — the configured floor the effective limit is derived from',
+        startingCoins: 'number — the coin stack a season starts you on',
         playgroundEntryCoins: 'number — coins each seat pays to sit down',
         coinPlaceStep:
           'number — coins between adjacent finishing places. Compute a table before you sit: ' +

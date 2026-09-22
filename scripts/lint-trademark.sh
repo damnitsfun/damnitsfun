@@ -43,7 +43,7 @@ cd "$(dirname "$0")/.."
 
 # Public surfaces. packages/engine is deliberately absent: it owns the vendored
 # vocabulary and is the only place allowed to name it.
-SCAN_PATHS=(packages/api packages/web packages/reference-agent)
+SCAN_PATHS=(packages/api packages/web packages/docs-site packages/reference-agent)
 [ -f skill.md ] && SCAN_PATHS+=(skill.md)
 [ -d docs ] && SCAN_PATHS+=(docs)
 

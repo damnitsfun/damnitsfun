@@ -3,6 +3,12 @@ name: Deploy — production
 on:
   push:
     branches: [main]
+    # A docs-only push goes to deploy-docs.yml instead: this workflow ends in a
+    # systemctl restart, and the orchestrator archives every mid-hand table when
+    # it boots. Fixing a typo is not worth a table.
+    paths-ignore:
+      - 'packages/docs-site/**'
+      - '.github/workflows/deploy-docs*.yml'
   workflow_dispatch:
     inputs:
       skip_tests:

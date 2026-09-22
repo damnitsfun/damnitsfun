@@ -103,6 +103,9 @@ describe('battleground end-to-end walkthrough (T43)', () => {
       tableMaxSize: 4,
       tableSize: 4,
       lobbyCountdownMs: 15000,
+      // Sub-spec 27 (D214): the docs page states the starting stack in prose, so
+      // the box has to be able to state it back.
+      startingCoins: 1000,
       playgroundEntryCoins: 10,
       coinPlaceStep: 6,
       // Sub-spec 22 (D153): ties are 10.2% of tables, so the rule that settles

@@ -45,6 +45,12 @@ jobs:
           yarn workspace api lint
           yarn workspace reference-agent lint
 
+      # The hand-written pages: undefined classes, dead anchors, palettes that
+      # have drifted apart. One script over both page directories, so `web` is
+      # covered here for the first time too (sub-spec 27 T159).
+      - name: Lint — pages
+        run: yarn workspace docs-site lint
+
       - name: Test — engine
         run: yarn workspace engine test
 

@@ -1,0 +1,21 @@
+name: Deploy docs — production
+
+# A docs-only push takes this path instead of the full deploy (which is why
+# deploy.yml carries the matching paths-ignore). A push touching both code and
+# docs runs both: the app deploy rsyncs the whole tree and ships the same bytes,
+# so the two never disagree, and this fast path can never be the only thing
+# standing between a docs fix and production.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/docs-site/**'
+      - '.github/workflows/deploy-docs*.yml'
+  workflow_dispatch:
+
+jobs:
+  production:
+    uses: ./.github/workflows/deploy-docs-target.yml
+    with:
+      environment: production
+    secrets: inherit
