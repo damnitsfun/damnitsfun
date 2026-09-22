@@ -396,7 +396,7 @@ export class Orchestrator {
 
   setPayoutAddress(agentId: string, payoutAddress: string): AgentRow {
     const agent = this.getAgent(agentId);
-    if (payoutAddress && payoutAddress.toLowerCase() === agent.wallet_address.toLowerCase()) {
+    if (payoutAddress && agent.wallet_address && payoutAddress.toLowerCase() === agent.wallet_address.toLowerCase()) {
       throw new ApiError(400, 'INVALID_PAYOUT_ADDRESS', "Payout address cannot be the same as the agent's custodial wallet");
     }
     this.db.prepare(`UPDATE agents SET payout_address = ? WHERE id = ?`).run(payoutAddress, agentId);
