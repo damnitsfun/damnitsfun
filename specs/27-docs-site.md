@@ -137,6 +137,35 @@ to publish an ambition is to date it and label it. Rules, all three load-bearing
   feature and may be said; a rate, an APY or a projected return may not, in this
   section least of all.
 
+**D224 — the docs page wears the app's theme, and a check keeps it that way.**
+`docs.dev.fun` reads as the same product as `dev.fun`; ours must do the same, or
+the docs look like a third-party write-up of our site. Concretely that means the
+same `:root` token block (the warm stone palette, the gold, the deck's four
+colours, the radii and shadows), the same three type faces from `--display` /
+`--body` / `--mono`, the same panel-and-hairline treatment, the four-colour
+stripe across the top, and a header that echoes the app's so moving between them
+does not feel like leaving.
+
+Three consequences, each of which someone will otherwise get wrong:
+
+- **Light only.** Neither `index.html` nor `home.html` has a single
+  `prefers-color-scheme` rule; the product is one warm light theme on purpose.
+  A docs page that helpfully adds a dark mode is not following the app's theme,
+  it is inventing a second one and volunteering to maintain it. Follow the app.
+- **The tokens are copied, not linked.** A `<link>` to a stylesheet on the app
+  origin would make the docs unstyled during exactly the outage D212 exists to
+  survive — colour failing open is far worse than the fonts doing so. The fonts
+  themselves stay proxied (D213/T161); the existing pages are already written to
+  hold on their fallback stacks if a face does not load, so that degrades to
+  plain-but-correct rather than broken.
+- **Copied means checked.** `index.html` and `home.html` already keep separate
+  `:root` blocks, so this is the third copy, and nothing has ever verified that
+  the first two agree. A lint that compares the token block across all three
+  files and fails on a difference costs about fifteen lines and pays for itself
+  the first time someone adjusts `--gold` in one place. Expect it to report a
+  pre-existing drift between the two current pages on its first run; fix that in
+  the same task rather than lowering the bar to accommodate it.
+
 **D222 — a docs change must never restart the API.** This is the one place the
 "just let it ride the existing deploy" answer is actively wrong, and it is worth
 being precise about why. A push to `main` runs the full CI suite (the ten-way
@@ -244,7 +273,8 @@ repo.
 - **T161** — the page itself: `packages/docs-site/public/index.html`, seven
   sections, sticky anchor nav, the site's own fonts and palette by copy (the
   fonts are served from the app origin and the docs host proxies `/fonts/*`
-  through with `/api`), responsive at 400px, dark/light per the existing pages.
+  through with `/api`), responsive at 400px, light-only like the rest of the
+  product (D224).
 - **T162** — the `GET /config` fill (D214): one `fetch`, `.cfg-*` spans, and a
   page that still reads correctly if the request fails — static fallback text in
   the span, replaced on success. A docs page that renders "—" because the API
@@ -287,13 +317,17 @@ repo.
   and which one a given change takes. The reason a docs push skips CI is not
   self-evident from the workflow file, and the next person to "tidy up" two
   workflows into one will re-create the restart.
+- **T171** — the token-parity lint (D224): the `:root` block in the docs page,
+  `index.html` and `home.html` must agree; fail on a difference, and resolve
+  whatever drift the first run finds. Same script as the other page lints.
 
 ## Definition of done
 
 `https://docs.damnits.fun` serves the seven sections over TLS; the numbers on it
 match `GET /config` on production at the moment of loading; `yarn lint` passes
 with the new package scanned by both linters; the page is legible at 400px wide
-and in dark mode; the roadmap carries a status word per quarter and a visible
+and is visibly the same product as `damnits.fun` — same palette, faces and
+stripe, no dark mode the app does not have; the roadmap carries a status word per quarter and a visible
 review date, with its only two figures labelled as targets and no yield rate
 anywhere; a docs-only commit reaches production without the API process
 restarting (check the service's uptime across it) and without the engine soak
