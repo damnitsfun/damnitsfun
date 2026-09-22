@@ -29,10 +29,10 @@ staging.docs.damnits.fun  ─► /var/www/damnits-docs/staging
       (each proxies only /api/, /skill.md and /fonts/ to its own instance)
 ```
 
-Note the root: **not** the deployed tree. nginx runs as `www-data`, `/opt/damnits`
-is `drwxrwx--- damnits`, and the only thing protecting the world-readable
-production SQLite file is that directory's permissions — so the web server is
-never given a path into it. Both deploy paths publish into `/var/www` instead.
+Note the root: **not** the deployed tree. nginx runs as `www-data` and cannot
+traverse the deployment root, and those permissions are deliberate — the web
+server is never given a path into the application tree. Both deploy paths
+publish into `/var/www` instead.
 
 | | trigger | CI gate | slot |
 |---|---|---|---|

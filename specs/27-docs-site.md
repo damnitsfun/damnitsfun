@@ -43,14 +43,13 @@ repo tree to the box, so a new directory under `packages/` arrives with no
 change to `deploy-target.yml` at all.
 
 **D225 — the served directory is `/var/www/damnits-docs/<environment>`, not the
-app tree.** Found on the box, not on paper: nginx runs as `www-data`, and
-`/opt/damnits` is `drwxrwx--- damnits`, so a root inside the deployed tree
-returns 500 on every request. The two obvious fixes are both wrong here —
-`chmod o+x /opt/damnits`, or putting `www-data` in the `damnits` group — because
-`/opt/damnits/production/data` is world-readable and that one top-level
-directory is the *only* thing standing between a local process and a 3 GB
-SQLite file holding encrypted agent wallet keys. Widening it to serve a static
-page would trade a real secret for a convenience.
+app tree.** Found on the box, not on paper: nginx runs as `www-data` and cannot
+traverse the deployment root, so a root inside the deployed tree returns 500 on
+every request. The two one-command fixes — relaxing that directory's
+permissions, or putting `www-data` in the application's group — are both wrong
+here. Those permissions are what protect the files sitting beside the
+application, and a static page is not worth widening them; the web server should
+not be able to reach that tree at all, whatever its permissions happen to be.
 
 So the docs live in their own directory containing nothing else, and the web
 server never holds a path into the application tree. The full deploy publishes
