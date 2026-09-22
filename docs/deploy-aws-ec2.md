@@ -21,10 +21,37 @@ Each instance serves the whole product from one process: `/` (homepage),
 `/battleground`, `/profile`, `/claim`, `/skill.md`, and `/api/battleground/*`
 (plus the deprecated `/api/arena/*` alias).
 
+Alongside it, nginx serves the **docs site** off disk — no app process involved:
+
+```
+docs.damnits.fun          ─► /opt/damnits/production/app/packages/docs-site/public
+staging.docs.damnits.fun  ─► /opt/damnits/staging/app/packages/docs-site/public
+      (each proxies only /api/, /skill.md and /fonts/ to its own instance)
+```
+
 | | trigger | CI gate | slot |
 |---|---|---|---|
 | **production** | push to `main` | full suite must pass | dedicated |
 | **staging** | PR labelled `deploy:staging` | none — the PR's own CI check covers it | **shared, last-deploy-wins** |
+| **docs (either)** | docs-only push to `main`, or the same `deploy:staging` label | linters only | file copy, no restart |
+
+### Two deploy paths, and why they must stay two
+
+A change under `packages/docs-site/` goes through `deploy-docs.yml`; everything
+else goes through `deploy.yml`. That split is not tidiness. **Every app deploy
+ends in `systemctl restart`, and the orchestrator archives every mid-hand table
+when it boots** — so a docs typo taking the ordinary path would cost roughly
+fifteen minutes of CI *and* every live game on the box. The docs path lints,
+rsyncs one directory, and curls the result; it starts nothing and stops nothing.
+
+Both use the same `damnits-ec2-shared` concurrency group, because the app deploy
+rsyncs the whole tree with `--delete` and a docs copy landing mid-flight would be
+half-applied. A push touching both code and docs runs both workflows and ships
+the same bytes twice, harmlessly — which also means the docs can never be
+stranded by their own workflow breaking.
+
+If you ever "tidy up" the two workflows into one, you are re-creating the
+restart.
 
 ---
 
@@ -150,14 +177,19 @@ auth you add.
 
 ### 1.4 DNS for `damnits.fun`
 
-Three `A` records, all pointing at the Elastic IP (or: the staging record at the
+Five `A` records, all pointing at the Elastic IP (or: the staging records at the
 second box's EIP, if you split):
 
 ```
-damnits.fun.           A   <elastic-ip>     # apex — the canonical production origin
-www.damnits.fun.       A   <elastic-ip>     # 301'd to the apex by nginx
-staging.damnits.fun.   A   <elastic-ip>     # staging
+damnits.fun.               A   <elastic-ip>   # apex — the canonical production origin
+www.damnits.fun.           A   <elastic-ip>   # 301'd to the apex by nginx
+staging.damnits.fun.       A   <elastic-ip>   # staging
+docs.damnits.fun.          A   <elastic-ip>   # the docs site (sub-spec 27)
+staging.docs.damnits.fun.  A   <elastic-ip>   # its staging copy
 ```
+
+`staging.docs` is a **third-level** name and needs its own record — a wildcard
+on `*.damnits.fun` does not match it.
 
 The apex **must** be an `A` record — CNAME at the zone apex is invalid, which is
 exactly why this setup uses an Elastic IP rather than chasing a changing public
@@ -165,12 +197,12 @@ IP.
 
 Where you create them depends on where `damnits.fun` is managed:
 
-- **Route 53** — create a public hosted zone for `damnits.fun`, add the three
+- **Route 53** — create a public hosted zone for `damnits.fun`, add the five
   `A` records, then copy the four `NS` values from the zone into your
   registrar's nameserver settings. Propagation is minutes-to-hours.
 - **Registrar's own DNS** (Namecheap, Porkbun, Cloudflare, …) — just add the
-  three `A` records there. Nothing here needs Route 53.
-- **Cloudflare specifically** — set all three to **DNS only** (grey cloud) for
+  five `A` records there. Nothing here needs Route 53.
+- **Cloudflare specifically** — set all five to **DNS only** (grey cloud) for
   the initial certbot run. Orange-cloud proxying intercepts the HTTP-01
   challenge and issuance fails. You can re-enable the proxy afterwards, but then
   keep SSL mode on **Full (strict)**.
@@ -557,20 +589,24 @@ needed.
 ```bash
 sudo cp /opt/damnits/production/app/deploy/nginx-damnits.conf /etc/nginx/sites-available/damnits
 sudo ln -sf /etc/nginx/sites-available/damnits /etc/nginx/sites-enabled/damnits
+# Shared proxy headers, included by the docs server blocks (sub-spec 27).
+sudo cp /opt/damnits/production/app/deploy/nginx-proxy-common.conf /etc/nginx/damnits-proxy.conf
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 
 # Plain HTTP should work before you ask certbot for a certificate.
 curl -sI http://damnits.fun | head -1            # 200
 curl -sI http://staging.damnits.fun | head -1    # 200
+curl -sI http://docs.damnits.fun | head -1       # 200 — static, no app needed
 
 sudo snap install --classic certbot
 sudo ln -sf /snap/bin/certbot /usr/bin/certbot
-sudo certbot --nginx -d damnits.fun -d www.damnits.fun -d staging.damnits.fun
+sudo certbot --nginx -d damnits.fun -d www.damnits.fun -d staging.damnits.fun \
+             -d docs.damnits.fun -d staging.docs.damnits.fun
 sudo systemctl list-timers | grep certbot     # auto-renew is installed by the snap
 ```
 
-All three names go on **one** certificate. Verify:
+All five names go on **one** certificate. Verify:
 
 ```bash
 curl -sI https://damnits.fun | head -1              # 200
@@ -635,6 +671,10 @@ the deployment URL in the Actions UI:
 | Variable | `production` | `staging` |
 |---|---|---|
 | `PUBLIC_URL` | `https://damnits.fun` | `https://staging.damnits.fun` |
+| `DOCS_URL` | `https://docs.damnits.fun` | `https://staging.docs.damnits.fun` |
+
+`DOCS_URL` is what the docs deploy curls at the end of its run — without it that
+workflow fails loudly rather than reporting a green deploy it never verified.
 
 > **Two boxes instead of one?** Move `EC2_HOST` (and `EC2_KNOWN_HOSTS`, and the
 > key if it differs) from repository-level down into each environment, and set

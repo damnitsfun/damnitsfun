@@ -45,6 +45,17 @@ jobs:
           fi
           echo "go=true" >> "$GITHUB_OUTPUT"
 
+  # The docs site for this PR, on the same label. It is a file copy that
+  # restarts nothing, so it runs beside the app deploy rather than after it.
+  docs:
+    needs: [guard]
+    if: ${{ needs.guard.outputs.go == 'true' }}
+    uses: ./.github/workflows/deploy-docs-target.yml
+    with:
+      environment: staging
+      ref: ${{ inputs.ref || github.event.pull_request.head.sha }}
+    secrets: inherit
+
   staging:
     needs: [guard]
     if: ${{ needs.guard.outputs.go == 'true' }}
