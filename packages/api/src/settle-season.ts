@@ -308,8 +308,23 @@ async function main(): Promise<void> {
     log(`  refunded ${out.refunds.length} depositor(s) in full:`);
     for (const r of out.refunds) log(`    ${r.agentId} -> ${r.walletAddress ?? '(no wallet)'}  ${fmtWei(r.amountWei)}`);
     for (const w of out.winners) log(`    prize ${w.agentId} -> ${w.payoutAddress}  ${fmtWei(w.amountWei)}`);
+    // Sub-spec 26: agents that staked themselves have already been pulled out, so
+    // "everyone withdraws" is no longer true for them. Say which is which, and say
+    // plainly when a pull failed — that deposit is still in the vault.
+    if (out.swept.length > 0) {
+      const done = out.swept.filter((s) => !s.error);
+      const failed = out.swept.filter((s) => s.error);
+      log('');
+      log(`  swept ${done.length} self-staked refund(s) back to their agent wallets:`);
+      for (const s of done) log(`    ${s.agentId} -> ${s.txHash ?? '(nothing owed)'}`);
+      if (failed.length > 0) {
+        log(`  ${failed.length} sweep(s) FAILED — still owed in the vault, re-run to retry:`);
+        for (const s of failed) log(`    ${s.agentId}  ${s.error}`);
+      }
+    }
     log('');
-    log('  Everyone withdraws with vault.withdraw() — refunds and prizes alike.');
+    log('  Humans withdraw with vault.withdraw() — refunds and prizes alike.');
+    log('  Self-staked agents were pulled out above and need no one.');
     db.close();
     return;
   }

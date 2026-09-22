@@ -95,6 +95,10 @@ CREATE TABLE IF NOT EXISTS competition_entries (
   -- prizes go to the agent's payout address (D187).
   refund_wei     TEXT,
   refund_tx_hash TEXT,
+  -- Sub-spec 26: the withdraw() tx that pulled an AGENT-staked refund out of the
+  -- vault and back into its own custodial wallet. Null on a human's deposit,
+  -- which that human pulls themselves.
+  refund_sweep_tx_hash TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (competition_id, agent_id)
 );

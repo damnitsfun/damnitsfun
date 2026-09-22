@@ -1471,6 +1471,48 @@ export class Orchestrator {
   }
 
   /**
+   * Stake a season deposit from the agent's own custodial wallet (sub-spec 26,
+   * T151). The fee-path twin is `payEntryFromAgentWallet`; the only differences
+   * are the contract and that this money comes back.
+   */
+  private async depositFromAgentWallet(
+    agentId: string,
+    c: CompetitionRow,
+    depositWei: string,
+  ): Promise<string> {
+    const row = this.db
+      .prepare(`SELECT enc_private_key FROM agent_wallets WHERE agent_id = ?`)
+      .get(agentId) as { enc_private_key: string } | undefined;
+    if (!row) {
+      throw new ApiError(409, 'NO_AGENT_WALLET', 'This agent has no custodial wallet to stake from', {
+        hint: 'Agents registered while the wallet store was disabled have none.',
+      });
+    }
+
+    const result = await this.vault.depositAs(c.id, this.wallets.decrypt(row.enc_private_key), depositWei);
+    if (!result.ok || !result.txHash) {
+      // 402, not 500: nothing is broken, the wallet is short. The message names
+      // the address so an owner knows exactly what to fund (D203/D211).
+      throw new ApiError(
+        402,
+        'AGENT_WALLET_DEPOSIT_FAILED',
+        `Could not stake from the agent wallet: ${result.error}`,
+        {
+          paymentRequired: {
+            chainId: this.config.bscChainId,
+            contractAddress: c.vault_address ?? this.config.vaultContractAddress,
+            amountWei: depositWei,
+            competitionId: c.id,
+            refundable: true,
+            walletAddress: this.getAgent(agentId).wallet_address,
+          },
+        },
+      );
+    }
+    return result.txHash;
+  }
+
+  /**
    * Take a season deposit (D190). The shape mirrors the fee path exactly — 402
    * naming where to pay, then the txHash verified against the chain rather than
    * trusted — so an agent that can already enter a tournament needs no new code.
@@ -1498,26 +1540,25 @@ export class Orchestrator {
       method: 'deposit(bytes32)',
     };
 
-    if (!txHash) {
+    // Stake from the agent's own custodial wallet, the one its owner funded
+    // (sub-spec 26, D205). Same two-request shape as the fee path: a bare `enter`
+    // is how an agent reads the deposit off the 402 without spending, and the flag
+    // is what turns reading the price into paying it (D194).
+    //
+    // What D196 got wrong: it read `withdraw()` being msg.sender-only as a dead
+    // end for custody. The arena holds the key, so the API pulls the refund back
+    // as the agent at resolve — see `sweepAgentRefunds`.
+    const paidTxHash =
+      txHash ?? (payFromWallet ? await this.depositFromAgentWallet(agentId, c, depositWei) : undefined);
+
+    if (!paidTxHash) {
       throw new ApiError(402, 'DEPOSIT_REQUIRED', 'Season deposit not paid', {
         paymentRequired,
         ...(warning ? { warning } : {}),
-        // `payFromWallet` is a fee-model flag (D196) and this branch returns before
-        // it is ever read, so an agent that set it would otherwise get a bare 402
-        // and have to guess why. It guessed wrong in the field: that the custodial
-        // wallet cannot sign. Say which it is.
-        ...(payFromWallet
-          ? {
-              hint:
-                'payFromWallet covers fee-model buy-ins only. A staked deposit must come from a ' +
-                'wallet you control, because DamnitsVault.withdraw() refunds msg.sender — a ' +
-                'deposit paid from your custodial wallet could only be withdrawn by that wallet.',
-            }
-          : {}),
       });
     }
 
-    const check = await this.vault.verifyDeposit(c.id, txHash, depositWei);
+    const check = await this.vault.verifyDeposit(c.id, paidTxHash, depositWei);
     if (!check.ok) {
       throw new ApiError(402, 'DEPOSIT_NOT_VERIFIED', `Deposit not verified: ${check.error}`, {
         paymentRequired,
@@ -1526,9 +1567,15 @@ export class Orchestrator {
 
     // The deposit is NOT added to the pool: it is the player's money, held in the
     // vault and returned at resolve. The pool is sponsor money only.
-    this.recordEntry(c.id, agentId, check.payer ?? null, txHash, check.amountWei ?? depositWei);
+    this.recordEntry(c.id, agentId, check.payer ?? null, paidTxHash, check.amountWei ?? depositWei);
     // Payout default only — `wallet_address` stays the custodial wallet (D204).
-    if (check.payer) {
+    //
+    // Never default the payout address off a deposit the agent paid itself (D208):
+    // the payer there IS the custodial wallet, and nominating it would send every
+    // future prize into custody instead of to the owner. Keyed off the flag rather
+    // than comparing addresses, because the flag is the thing that knows.
+    const selfStaked = payFromWallet && !txHash;
+    if (check.payer && !selfStaked) {
       this.db
         .prepare(`UPDATE agents SET payout_address = COALESCE(payout_address, ?) WHERE id = ?`)
         .run(check.payer, agentId);
@@ -1799,6 +1846,8 @@ export class Orchestrator {
     refunds: Array<{ agentId: string; walletAddress: string | null; amountWei: string }>;
     resultRoot: string;
     txHash: string | null;
+    /** Agent-paid deposits pulled back into their own wallets (sub-spec 26). */
+    swept: Array<{ agentId: string; txHash: string | null; error?: string }>;
   }> {
     const c = this.requireStaked(competitionId);
 
@@ -1872,7 +1921,62 @@ export class Orchestrator {
       }
     })();
 
-    return { winners, refunds, resultRoot, txHash: result.txHash ?? null };
+    // Pull back every deposit the agents paid themselves (sub-spec 26, T155).
+    // Deliberately after the settlement transaction above has committed: resolve()
+    // has already moved money on chain, so a throwing sweep would erase the record
+    // of a settlement that really happened (D209). Failures are reported, not
+    // raised, and a re-run picks up whatever is still owed.
+    const swept = await this.sweepAgentRefunds(competitionId);
+
+    return { winners, refunds, resultRoot, txHash: result.txHash ?? null, swept };
+  }
+
+  /**
+   * Withdraw refunds owed to agents that staked from their own custodial wallet
+   * (sub-spec 26, D205). `withdraw()` pays `msg.sender`, so nobody but the arena
+   * can move these — the agent's key is the only one that works, and we hold it.
+   *
+   * Idempotent by construction (D209): `withdrawAs` reads `owed` first and reports
+   * a zero as `nothingOwed`, so running this twice costs two reads and no gas.
+   * Only entries the agent paid itself are touched — a human's deposit is the
+   * human's to pull, and we have no key for it (D210).
+   */
+  async sweepAgentRefunds(
+    competitionId: string,
+  ): Promise<Array<{ agentId: string; txHash: string | null; error?: string }>> {
+    const rows = this.db
+      .prepare(
+        `SELECT e.agent_id, w.enc_private_key
+           FROM competition_entries e
+           JOIN agent_wallets w ON w.agent_id = e.agent_id
+          WHERE e.competition_id = ?
+            AND e.refund_sweep_tx_hash IS NULL
+            AND lower(e.wallet_address) = lower(w.address)`,
+      )
+      .all(competitionId) as Array<{ agent_id: string; enc_private_key: string }>;
+
+    const out: Array<{ agentId: string; txHash: string | null; error?: string }> = [];
+    const record = this.db.prepare(
+      `UPDATE competition_entries SET refund_sweep_tx_hash = ?
+        WHERE competition_id = ? AND agent_id = ?`,
+    );
+
+    for (const r of rows) {
+      const result = await this.vault.withdrawAs(this.wallets.decrypt(r.enc_private_key));
+      if (!result.ok) {
+        // Left unmarked on purpose: `owed` survives on chain, so the next run
+        // retries it. A stranded balance is recoverable; a row marked swept that
+        // never was is not.
+        out.push({ agentId: r.agent_id, txHash: null, error: result.error });
+        continue;
+      }
+      // `nothingOwed` is a success with no transaction — already swept, or the
+      // season refunded nothing. Mark it so we stop reading the chain for it.
+      const txHash = result.txHash ?? 'nothing-owed';
+      record.run(txHash, competitionId, r.agent_id);
+      out.push({ agentId: r.agent_id, txHash: result.txHash ?? null });
+    }
+    return out;
   }
 
   /**

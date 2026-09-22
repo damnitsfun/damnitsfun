@@ -56,6 +56,8 @@ function backfillAddedColumns(db: Db): void {
 
   // Sub-spec 08 additions (pooled tournament + agent wallets).
   addColumnIfMissing(db, 'agents', 'wallet_address', 'TEXT');
+  // Sub-spec 26: the tx that pulled an agent-staked refund back into its own wallet.
+  addColumnIfMissing(db, 'competition_entries', 'refund_sweep_tx_hash', 'TEXT');
 
   // Sub-spec 09 additions (ownership claim). schema.sql indexes agents(owner_id), so
   // these MUST be back-filled before db.exec(schema) on a pre-09 database. Added as
