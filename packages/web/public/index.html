@@ -1773,6 +1773,13 @@
       font-size: 12px;
     }
 
+    /* A 42-char hex address offers no break opportunity, so each address column
+       is min-content-wide and the two of them push the table past the panel.
+       Let them wrap. */
+    #pf-agents code {
+      overflow-wrap: anywhere;
+    }
+
     /* A settled prize waiting at this payout address. Gold, because it is the
        one thing on this page that is money the reader has already won. */
     .pf-prize {
@@ -4900,7 +4907,7 @@
           // Escaped: the address is validated server-side, but this cell renders
           // whatever the API returns and should not be the one place that trusts it.
           '<td class="dim"><span class="pf-payout-v">'
-          + (a.payoutAddress ? '<code>' + esc(a.payoutAddress) + '</code>' : 'not set')
+          + (a.payoutAddress ? '<code title="' + esc(a.payoutAddress) + '">' + esc(shortAddr(a.payoutAddress)) + '</code>' : 'not set')
           + '</span> <button class="ghost pf-payout-edit">'
           + (a.payoutAddress ? 'edit' : 'set') + '</button>'
           + (showClaim
