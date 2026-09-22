@@ -1,3 +1,4 @@
+import { privateKeyToAccount } from 'viem/accounts';
 import { loadConfig } from './config';
 import { openDatabase, type Db } from './db/index';
 import { ApiError, Orchestrator } from './orchestrator';
@@ -24,23 +25,42 @@ interface FakeVault extends VaultChain {
   resolveCalls: ResolveCall[];
   openCalls: Array<{ seasonId: string; depositWei: string; closeAt: number; resolveBy: number }>;
   verifyOk: boolean;
+  /** Sub-spec 26: deposits the agent signed for itself. */
+  depositAsCalls: Array<{ seasonId: string; payer: string; depositWei: string }>;
+  withdrawAsCalls: string[];
+  /** Flip to make the sweep fail, to prove a settlement survives it (D209). */
+  withdrawOk: boolean;
+  /** Flip to make the sweep report nothing owed rather than a transaction. */
+  withdrawNothingOwed: boolean;
 }
 
 function fakeVaultChain(): FakeVault {
   const resolveCalls: ResolveCall[] = [];
   const openCalls: FakeVault['openCalls'] = [];
+  const depositAsCalls: FakeVault['depositAsCalls'] = [];
+  const withdrawAsCalls: string[] = [];
+  /** txHash -> the address that actually signed it, as the chain would report. */
+  const selfStaked = new Map<string, string>();
   const v: FakeVault = {
     enabled: true,
     contractAddress: '0xVAULT',
     resolveCalls,
     openCalls,
+    depositAsCalls,
+    withdrawAsCalls,
     verifyOk: true,
+    withdrawOk: true,
+    withdrawNothingOwed: false,
     async openSeason(seasonId, depositWei, closeAt, resolveBy) {
       openCalls.push({ seasonId, depositWei, closeAt, resolveBy });
       return { ok: true, txHash: '0xopen' };
     },
     async verifyDeposit(_seasonId, txHash, expectedWei) {
       if (!v.verifyOk) return { ok: false, error: 'not a deposit for this season' };
+      // A deposit the agent signed: the payer is its custodial wallet, exactly as
+      // the Deposited event would say (sub-spec 26).
+      const signer = selfStaked.get(txHash);
+      if (signer) return { ok: true, payer: signer, amountWei: expectedWei };
       // A distinct "wallet" per txHash, so each depositor is its own address.
       const payer = `0x${txHash.replace(/[^a-f0-9]/gi, '0').padEnd(40, '0').slice(0, 40)}`;
       return { ok: true, payer, amountWei: expectedWei };
@@ -57,6 +77,22 @@ function fakeVaultChain(): FakeVault {
     },
     async exitStale() {
       return { ok: true, txHash: '0xexit' };
+    },
+    async depositAs(seasonId, privateKey, depositWei) {
+      // Derive the real address from the real key, so the sweep's address
+      // matching is genuinely exercised rather than stubbed past.
+      const payer = privateKeyToAccount(privateKey as `0x${string}`).address;
+      const txHash = `0xselfstake${depositAsCalls.length}`;
+      depositAsCalls.push({ seasonId, payer, depositWei });
+      selfStaked.set(txHash, payer);
+      return { ok: true, txHash };
+    },
+    async withdrawAs(privateKey) {
+      const holder = privateKeyToAccount(privateKey as `0x${string}`).address;
+      withdrawAsCalls.push(holder);
+      if (!v.withdrawOk) return { ok: false, error: 'rpc unreachable' };
+      if (v.withdrawNothingOwed) return { ok: true, nothingOwed: true };
+      return { ok: true, txHash: `0xsweep${withdrawAsCalls.length}` };
     },
     async readSeason() {
       return null;
@@ -139,37 +175,111 @@ describe('the refundable season (sub-spec 24)', () => {
   });
 
   /**
-   * `payFromWallet` is a fee-model flag (D196). A staked season returns before it
-   * is read, which used to mean an agent that set it got a bare 402 and had to
-   * guess why — and in the field one guessed wrong, concluding the custodial
-   * wallet could not sign at all.
-   *
-   * `DEPOSIT_REQUIRED` is itself the proof that self-pay was never attempted: the
-   * harness leaves the tournament chain disabled, so a `payEntryAs` reached here
-   * would have failed with `AGENT_WALLET_PAYMENT_FAILED` instead.
+   * Sub-spec 26 — the whole point. The owner funds the custodial wallet once and
+   * the agent stakes itself, unattended. What it must NOT do is inherit that
+   * wallet as its payout address: prizes belong to the owner, not to the float
+   * the owner tops up (D208).
    */
-  it('tells an agent that set payFromWallet why the flag did nothing', async () => {
-    const h = boot();
+  it('stakes the deposit from the agent own wallet when asked', async () => {
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
     const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
-    const { agentId } = h.orchestrator.registerAgent('depositor');
+    const { agentId } = h.orchestrator.registerAgent('self-staker');
 
-    const err = await h.orchestrator
-      .enterCompetition(agentId, id, undefined, true)
-      .catch((e) => e as ApiError);
+    await expect(h.orchestrator.enterCompetition(agentId, id, undefined, true)).resolves.toMatchObject(
+      { entered: true },
+    );
+    expect(h.orchestrator.isEntered(agentId, id)).toBe(true);
 
-    expect((err as ApiError).code).toBe('DEPOSIT_REQUIRED');
-    expect(((err as ApiError).details as { hint?: string }).hint).toMatch(/fee-model buy-ins only/);
-    expect(h.orchestrator.isEntered(agentId, id)).toBe(false);
+    // Signed with the agent's own key, for the season's own deposit.
+    expect(h.vault.depositAsCalls).toHaveLength(1);
+    expect(h.vault.depositAsCalls[0]).toMatchObject({ seasonId: id, depositWei: '1000' });
+
+    // The depositor recorded is the agent's custodial wallet, which is what the
+    // sweep later matches on.
+    const custodial = h.db
+      .prepare(`SELECT address FROM agent_wallets WHERE agent_id = ?`)
+      .get(agentId) as { address: string };
+    expect(h.vault.depositAsCalls[0]!.payer.toLowerCase()).toBe(custodial.address.toLowerCase());
+
+    const after = h.db.prepare(`SELECT payout_address FROM agents WHERE id = ?`).get(agentId) as {
+      payout_address: string | null;
+    };
+    expect(after.payout_address).toBeNull();
   });
 
-  /** No flag, no hint — the ordinary 402 stays exactly as it was. */
-  it('does not add the hint when payFromWallet was not sent', async () => {
-    const h = boot();
+  /**
+   * The refund is owed to the custodial wallet and `withdraw()` pays msg.sender,
+   * so nobody but the arena can move it. If this pull is missing the deposit sits
+   * in the vault forever and "refundable" is a lie for every self-staked agent.
+   */
+  it('pulls an agent-staked refund back into the agent wallet at resolve', async () => {
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
     const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
-    const { agentId } = h.orchestrator.registerAgent('depositor');
+    const { agentId } = h.orchestrator.registerAgent('self-staker');
+    await h.orchestrator.enterCompetition(agentId, id, undefined, true);
 
-    const err = await h.orchestrator.enterCompetition(agentId, id).catch((e) => e as ApiError);
-    expect(((err as ApiError).details as { hint?: string }).hint).toBeUndefined();
+    const out = await h.orchestrator.resolveStakedSeason(id);
+
+    expect(out.swept).toHaveLength(1);
+    expect(out.swept[0]).toMatchObject({ agentId });
+    expect(out.swept[0]!.txHash).toMatch(/^0xsweep/);
+    // Withdrawn by the custodial wallet itself, not the operator.
+    const custodial = h.db
+      .prepare(`SELECT address FROM agent_wallets WHERE agent_id = ?`)
+      .get(agentId) as { address: string };
+    expect(h.vault.withdrawAsCalls).toEqual([custodial.address]);
+  });
+
+  /** Re-running the sweep costs reads and no gas — nothing is pulled twice (D209). */
+  it('does not sweep the same entry twice', async () => {
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const { agentId } = h.orchestrator.registerAgent('self-staker');
+    await h.orchestrator.enterCompetition(agentId, id, undefined, true);
+    await h.orchestrator.resolveStakedSeason(id);
+
+    expect(await h.orchestrator.sweepAgentRefunds(id)).toEqual([]);
+    expect(h.vault.withdrawAsCalls).toHaveLength(1);
+  });
+
+  /**
+   * `resolve()` has already moved money on chain by the time the sweep runs, so a
+   * sweep that threw would erase the record of a real settlement (D209). The
+   * failure is reported and the row stays unmarked, so a re-run retries it.
+   */
+  it('settles the season even when the sweep fails, and retries later', async () => {
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const { agentId } = h.orchestrator.registerAgent('self-staker');
+    await h.orchestrator.enterCompetition(agentId, id, undefined, true);
+
+    h.vault.withdrawOk = false;
+    const out = await h.orchestrator.resolveStakedSeason(id);
+
+    expect(out.txHash).toBe('0xresolve');
+    expect(out.swept[0]).toMatchObject({ agentId, txHash: null, error: 'rpc unreachable' });
+    const comp = h.db.prepare(`SELECT status FROM competitions WHERE id = ?`).get(id) as {
+      status: string;
+    };
+    expect(comp.status).toBe('settled');
+
+    // Unmarked, so the retry picks it up and succeeds.
+    h.vault.withdrawOk = true;
+    const retry = await h.orchestrator.sweepAgentRefunds(id);
+    expect(retry[0]!.txHash).toMatch(/^0xsweep/);
+  });
+
+  /** A human's deposit is the human's to pull, and we hold no key for it (D210). */
+  it('leaves a human-paid deposit alone', async () => {
+    const h = boot({ WALLET_ENCRYPTION_KEY: 'unit-test-encryption-key' });
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const { agentId } = h.orchestrator.registerAgent('human-funded');
+    await h.orchestrator.enterCompetition(agentId, id, '0xdeadbeef');
+
+    const out = await h.orchestrator.resolveStakedSeason(id);
+
+    expect(out.swept).toEqual([]);
+    expect(h.vault.withdrawAsCalls).toEqual([]);
   });
 
   it('the 402 names the vault, the amount, and says the deposit comes back', async () => {

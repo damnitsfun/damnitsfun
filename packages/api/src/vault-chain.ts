@@ -1,6 +1,7 @@
 import {
   createPublicClient,
   createWalletClient,
+  formatEther,
   http,
   parseEventLogs,
   type Address,
@@ -77,6 +78,22 @@ export const DAMNITS_VAULT_ABI = [
     stateMutability: 'view',
     inputs: [{ name: '', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }],
+  },
+  // Both credit and pay `msg.sender`, which is exactly why sub-spec 26 needs no
+  // contract change: the agent's custodial wallet is an ordinary sender (D207).
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'payable',
+    inputs: [{ name: 'seasonId', type: 'bytes32' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'withdraw',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
   },
   {
     type: 'function',
@@ -171,9 +188,27 @@ export interface VaultChain {
   readSeason(seasonId: string): Promise<VaultSeasonView | null>;
   /** What an address can withdraw right now; null when it cannot be read. */
   readOwed(address: string): Promise<string | null>;
+  /**
+   * Deposit into a staked season FROM the agent's own custodial wallet, so an
+   * agent can enter unattended (sub-spec 26, D205). The counterpart to
+   * `TournamentChain.payEntryAs`; `verifyDeposit` reads the payer back off the
+   * Deposited event either way, so the seat is still earned by the chain and not
+   * by our word for it.
+   */
+  depositAs(seasonId: string, privateKey: string, depositWei: string): Promise<ChainResult>;
+  /**
+   * Pull an agent's `owed` balance into its own wallet, signed with its custodial
+   * key. `withdraw()` pays `msg.sender`, so this is the only way a refund owed to
+   * a custodial wallet ever moves. `nothingOwed` distinguishes "already swept"
+   * from a failure, which is what makes a re-run safe (D209).
+   */
+  withdrawAs(privateKey: string): Promise<ChainResult & { nothingOwed?: boolean }>;
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+/** Headroom left for gas when checking an agent wallet can afford a deposit (D211). */
+const GAS_BUFFER_WEI = 1_000_000_000_000_000n; // 0.001 tBNB
 
 /** Used whenever the vault is not configured — every call is a clean no-op. */
 export const DISABLED_VAULT_CHAIN: VaultChain = {
@@ -202,6 +237,12 @@ export const DISABLED_VAULT_CHAIN: VaultChain = {
   },
   async readOwed() {
     return null;
+  },
+  async depositAs() {
+    return { ok: false, error: 'vault chain disabled' };
+  },
+  async withdrawAs() {
+    return { ok: false, error: 'vault chain disabled' };
   },
 };
 
@@ -360,6 +401,81 @@ export function createVaultChain(
         return String(owed);
       } catch {
         return null;
+      }
+    },
+
+    async depositAs(seasonId, privateKey, depositWei) {
+      // Its own client per call: the shared `walletClient` is bound to the
+      // operator, and this deposit must come FROM the agent — the contract credits
+      // `msg.sender`, and `verifyDeposit` reads that address straight back off the
+      // Deposited event.
+      const payer = privateKeyToAccount(privateKey as `0x${string}`);
+      const wallet = createWalletClient({ account: payer, chain: bscTestnet, transport });
+      const value = BigInt(depositWei);
+      try {
+        // Checked before simulating so an unfunded wallet gets an instruction
+        // rather than viem's `insufficient funds for gas * price + value` (D211).
+        const balance = await publicClient.getBalance({ address: payer.address });
+        if (balance < value) {
+          return {
+            ok: false,
+            error:
+              `agent wallet ${payer.address} holds ${formatEther(balance)} tBNB, needs ` +
+              `${formatEther(value)} for this refundable deposit plus a little for gas — fund ` +
+              `it with at least ${formatEther(value + GAS_BUFFER_WEI)} from your own wallet`,
+          };
+        }
+        const { request } = await publicClient.simulateContract({
+          account: payer,
+          address,
+          abi: DAMNITS_VAULT_ABI,
+          functionName: 'deposit',
+          args: [sid(seasonId)],
+          value,
+        });
+        const txHash = await wallet.writeContract(request);
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+        log(`[vault] deposit ok — ${payer.address} staked ${value} wei, tx ${txHash}`);
+        return { ok: true, txHash };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`[vault] deposit FAILED for ${payer.address} — ${message}`);
+        return { ok: false, error: message };
+      }
+    },
+
+    async withdrawAs(privateKey) {
+      const holder = privateKeyToAccount(privateKey as `0x${string}`);
+      const wallet = createWalletClient({ account: holder, chain: bscTestnet, transport });
+      try {
+        // Read first: `withdraw()` reverts on a zero balance, and a sweep that has
+        // already run is a success, not a failure (D209). Reading also saves the
+        // gas of a transaction that was always going to revert.
+        const owed = (await publicClient.readContract({
+          address,
+          abi: DAMNITS_VAULT_ABI,
+          functionName: 'owed',
+          args: [holder.address],
+        })) as bigint;
+        if (owed === 0n) {
+          log(`[vault] withdraw skipped — ${holder.address} is owed nothing`);
+          return { ok: true, nothingOwed: true };
+        }
+        const { request } = await publicClient.simulateContract({
+          account: holder,
+          address,
+          abi: DAMNITS_VAULT_ABI,
+          functionName: 'withdraw',
+          args: [],
+        });
+        const txHash = await wallet.writeContract(request);
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+        log(`[vault] withdraw ok — ${holder.address} pulled ${owed} wei, tx ${txHash}`);
+        return { ok: true, txHash };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`[vault] withdraw FAILED for ${holder.address} — ${message}`);
+        return { ok: false, error: message };
       }
     },
   };
