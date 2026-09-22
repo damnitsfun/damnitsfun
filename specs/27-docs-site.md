@@ -76,10 +76,31 @@ carve-out applies under its existing conditions: the marker on the line, the
 Mattel disclaimer in the footer, never in a `<title>` or `<h1>`. Add the path in
 the same commit that creates the directory, not after.
 
-**D218 — production's copy is the only copy.** No `docs-staging` subdomain. The
-file is static and previewable with `python3 -m http.server` in the directory;
-inventing a second environment for a page with no state is ceremony. The known
-ceiling below says when that stops being true.
+**D218 — two environments, the same two the app has.** An earlier draft of this
+spec said production only, on the grounds that a static page is previewable with
+`python3 -m http.server` and a second environment for a page with no state is
+ceremony. That is wrong for one specific reason: **a local preview cannot check
+the thing most likely to be wrong.** D214 makes every number on the page come
+from `GET /config`, D213 makes that work through an nginx block that exists only
+on the box, and D221 puts claims about money on the page. A file opened from
+disk exercises none of it — no proxy, no TLS, no real config, no cache headers.
+The parts a human should look at before the public does are exactly the parts
+localhost cannot show.
+
+So `docs-staging.damnits.fun`, mirroring the app's split:
+
+- Same subdomain convention, same box layout, same `APP_ROOT` per environment —
+  the docs root is just a directory inside the tree that is already deployed per
+  environment.
+- **Staging docs read the staging API.** Its `location /api/` proxies to
+  `damnits_staging`, not to production. Docs that preview against production's
+  numbers are not a preview of anything; the point is to see this page render
+  the config it will actually render.
+- `noindex` and a `Disallow: /` robots file, copied from the existing staging
+  server block. A second public copy of the docs competing with the real one in
+  search results is a worse outcome than having no staging at all.
+- One shared slot, last deploy wins, exactly like the app's staging. There is no
+  per-PR environment here and should not be.
 
 **D219 — the docs site links to the app, never reimplements it.** No live
 leaderboard, no embedded replay, no login. Those exist at `damnits.fun` and a
@@ -124,13 +145,24 @@ was mid-hand and refunds the seats** (spec 22). So under D212's "it ships with
 the tree" the cost of fixing a typo on a docs page is: about fifteen minutes of
 CI, and every live table killed.
 
-So docs-only pushes take their own path:
+So docs-only pushes take their own path, in the shape the app already uses — one
+reusable workflow, two thin callers, and the only difference between the
+environments is which environment-scoped secrets resolve:
 
-- A `deploy-docs.yml` on `push: main` with `paths: ['packages/docs-site/**']`
-  that rsyncs **only** that directory. No install, no build, no migrate, no
-  restart, no soak. It is a file copy, because that is all a static page needs.
-- `deploy.yml` gains the matching `paths-ignore`, so a docs-only push does not
+- **`deploy-docs-target.yml`** (`workflow_call`, inputs `environment` and `ref`):
+  lint, then rsync **only** `packages/docs-site/public/`, then curl the public
+  URL. No install, no build, no migrate, no restart, no soak. It is a file copy,
+  because that is all a static page needs.
+- **production** — `deploy-docs.yml` on `push: main` with
+  `paths: ['packages/docs-site/**']`, calling it with `environment: production`.
+  `deploy.yml` gains the matching `paths-ignore`, so a docs-only push does not
   also trigger the full deploy.
+- **staging** — a second job inside the existing `deploy-staging.yml`, behind
+  the guard that is already there. No new trigger and no new label: the
+  `deploy:staging` label now puts the app *and* the docs for that PR on the
+  staging box, which is what someone adding the label wants. Copying that
+  guard's fork check into a new file would be the version of this that
+  eventually diverges.
 - Both share the existing `damnits-ec2-shared` concurrency group. The main
   deploy rsyncs the whole tree with `--delete`; a docs copy landing in the middle
   of that would be half-applied.
@@ -215,15 +247,18 @@ repo.
   page that still reads correctly if the request fails — static fallback text in
   the span, replaced on success. A docs page that renders "—" because the API
   blinked is worse than one that is briefly stale.
-- **T163** — `deploy/nginx-damnits.conf`: a `docs.damnits.fun` server block —
-  `root` at `<APP_ROOT>/app/packages/docs-site/public`, `location /api/` and
-  `location = /skill.md` and `location /fonts/` proxying to
-  `damnits_production`, gzip on, a `robots.txt` that allows indexing and points
-  at `skill.md`, and cache headers short enough that a deploy is visible
-  (`max-age=300`).
-- **T164** — `docs/deploy-aws-ec2.md`: the DNS A record, the `certbot` line
-  extended with `-d docs.damnits.fun`, and one paragraph in the ASCII diagram at
-  the top so the third hostname is not a surprise.
+- **T163** — `deploy/nginx-damnits.conf`: **two** server blocks.
+  `docs.damnits.fun` — `root` at production's
+  `<APP_ROOT>/app/packages/docs-site/public`, `location /api/`, `location =
+  /skill.md` and `location /fonts/` proxying to `damnits_production`, gzip on, a
+  `robots.txt` that allows indexing and points at `skill.md`, and cache headers
+  short enough that a deploy is visible (`max-age=300`). Then
+  `docs-staging.damnits.fun` — the same block against staging's `APP_ROOT` and
+  the `damnits_staging` upstream (D218), plus the `X-Robots-Tag: noindex` header
+  and `Disallow: /` robots file copied from the existing staging block.
+- **T164** — `docs/deploy-aws-ec2.md`: two DNS A records, the `certbot` line
+  extended with `-d docs.damnits.fun -d docs-staging.damnits.fun`, and the ASCII
+  diagram at the top updated so the two new hostnames are not a surprise.
 - **T165** — cross-links both ways: the homepage and the app FAQ gain a "docs"
   link; `skill.md` gains one line near the top saying where the human version
   lives. One line, not a section — `skill.md`'s reader is not the one who needs
@@ -231,17 +266,22 @@ repo.
 - **T166** — the roadmap section (D220/D221): status word per quarter, a
   hardcoded "last reviewed" date, the two Q2 figures marked as targets. Then
   retire the deck slide as a source — the next deck exports from this section.
-- **T167** — `.github/workflows/deploy-docs.yml` (D222): trademark + CSS +
-  anchor lint, then an rsync of `packages/docs-site/public/` alone to
+- **T167** — `.github/workflows/deploy-docs-target.yml` (D222): trademark + CSS
+  + anchor lint, then an rsync of `packages/docs-site/public/` alone to
   `$APP_ROOT/app/packages/docs-site/public/`, in the `damnits-ec2-shared`
-  concurrency group, under the `production` environment for its secrets. Ends
-  with a public check — `curl` the live URL and grep for a string the page
-  actually contains, the same shape as the existing health check step. Add the
-  matching `paths-ignore` to `deploy.yml`.
-- **T168** — the anchor check in `scripts/lint-web-css.mjs` (D223): every
+  concurrency group, resolving `EC2_HOST` / `APP_ROOT` from the `environment`
+  input. Ends with a public check — `curl` the environment's own docs URL and
+  grep for a string the page actually contains, the same shape as the existing
+  health check step. The URL comes from an environment variable, not a literal,
+  so one file serves both hosts.
+- **T168** — the two callers: `deploy-docs.yml` (push to `main`, `paths:
+  packages/docs-site/**`, `environment: production`), plus a `docs` job added to
+  the existing `deploy-staging.yml` behind its current guard (`environment:
+  staging`). Add the matching `paths-ignore` to `deploy.yml`.
+- **T169** — the anchor check in `scripts/lint-web-css.mjs` (D223): every
   in-page `href="#..."` has a matching `id`. It runs over `packages/web` too;
   expect it to find something there.
-- **T169** — one paragraph in `docs/deploy-aws-ec2.md` on the two deploy paths
+- **T170** — one paragraph in `docs/deploy-aws-ec2.md` on the two deploy paths
   and which one a given change takes. The reason a docs push skips CI is not
   self-evident from the workflow file, and the next person to "tidy up" two
   workflows into one will re-create the restart.
@@ -255,13 +295,14 @@ and in dark mode; the roadmap carries a status word per quarter and a visible
 review date, with its only two figures labelled as targets and no yield rate
 anywhere; a docs-only commit reaches production without the API process
 restarting (check the service's uptime across it) and without the engine soak
-running; and the API can be stopped without the docs site changing in any way
+running; `docs-staging.damnits.fun` serves the same page against the staging
+API's config and is `noindex`; and the API can be stopped without the docs site changing in any way
 except the fetched numbers falling back to their static text.
 
 ## Known ceiling
 
-One file, no search, no versioning, no staging copy. That holds while the site
-is seven sections that one person edits. It stops holding at the first of: someone
+One file, no search, no versioning, one shared staging slot. That holds while
+the site is seven sections that one person edits. It stops holding at the first of: someone
 wants a page per topic for linking and SEO, the file passes roughly 2,000 lines,
 or an API version ships that makes "the docs" and "the docs for v1" different
 documents. The upgrade is a page tree and a generator, and it is a spec of its
