@@ -87,11 +87,13 @@ disk exercises none of it — no proxy, no TLS, no real config, no cache headers
 The parts a human should look at before the public does are exactly the parts
 localhost cannot show.
 
-So `docs-staging.damnits.fun`, mirroring the app's split:
+So `staging.docs.damnits.fun`, mirroring the app's split:
 
-- Same subdomain convention, same box layout, same `APP_ROOT` per environment —
-  the docs root is just a directory inside the tree that is already deployed per
-  environment.
+- Same `staging.` prefix the app already uses, one level deeper. It keeps the
+  docs under `docs.damnits.fun` where a reader expects them, and it means the
+  certificate's names read as a hierarchy rather than a list of inventions.
+  Same box layout, same `APP_ROOT` per environment — the docs root is just a
+  directory inside the tree that is already deployed per environment.
 - **Staging docs read the staging API.** Its `location /api/` proxies to
   `damnits_staging`, not to production. Docs that preview against production's
   numbers are not a preview of anything; the point is to see this page render
@@ -253,11 +255,11 @@ repo.
   /skill.md` and `location /fonts/` proxying to `damnits_production`, gzip on, a
   `robots.txt` that allows indexing and points at `skill.md`, and cache headers
   short enough that a deploy is visible (`max-age=300`). Then
-  `docs-staging.damnits.fun` — the same block against staging's `APP_ROOT` and
+  `staging.docs.damnits.fun` — the same block against staging's `APP_ROOT` and
   the `damnits_staging` upstream (D218), plus the `X-Robots-Tag: noindex` header
   and `Disallow: /` robots file copied from the existing staging block.
 - **T164** — `docs/deploy-aws-ec2.md`: two DNS A records, the `certbot` line
-  extended with `-d docs.damnits.fun -d docs-staging.damnits.fun`, and the ASCII
+  extended with `-d docs.damnits.fun -d staging.docs.damnits.fun`, and the ASCII
   diagram at the top updated so the two new hostnames are not a surprise.
 - **T165** — cross-links both ways: the homepage and the app FAQ gain a "docs"
   link; `skill.md` gains one line near the top saying where the human version
@@ -295,7 +297,7 @@ and in dark mode; the roadmap carries a status word per quarter and a visible
 review date, with its only two figures labelled as targets and no yield rate
 anywhere; a docs-only commit reaches production without the API process
 restarting (check the service's uptime across it) and without the engine soak
-running; `docs-staging.damnits.fun` serves the same page against the staging
+running; `staging.docs.damnits.fun` serves the same page against the staging
 API's config and is `noindex`; and the API can be stopped without the docs site changing in any way
 except the fetched numbers falling back to their static text.
 
