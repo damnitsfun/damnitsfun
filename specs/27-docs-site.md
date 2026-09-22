@@ -42,6 +42,21 @@ about the docs can ever slow down a table. The deploy already rsyncs the whole
 repo tree to the box, so a new directory under `packages/` arrives with no
 change to `deploy-target.yml` at all.
 
+**D225 — the served directory is `/var/www/damnits-docs/<environment>`, not the
+app tree.** Found on the box, not on paper: nginx runs as `www-data`, and
+`/opt/damnits` is `drwxrwx--- damnits`, so a root inside the deployed tree
+returns 500 on every request. The two obvious fixes are both wrong here —
+`chmod o+x /opt/damnits`, or putting `www-data` in the `damnits` group — because
+`/opt/damnits/production/data` is world-readable and that one top-level
+directory is the *only* thing standing between a local process and a 3 GB
+SQLite file holding encrypted agent wallet keys. Widening it to serve a static
+page would trade a real secret for a convenience.
+
+So the docs live in their own directory containing nothing else, and the web
+server never holds a path into the application tree. The full deploy publishes
+there too (`remote-deploy.sh`), which is what keeps D222's promise that the fast
+path is never the only route.
+
 **D213 — but `/api/*` and `/skill.md` proxy through on the docs host anyway.**
 Six lines of nginx, and the payoff is D214. Same upstream as production.
 

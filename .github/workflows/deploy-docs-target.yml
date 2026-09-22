@@ -70,20 +70,20 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      # One directory, and --delete is scoped to it. Nothing here can reach the
-      # app tree, the database, or .env.
+      # Into /var/www, NOT the app tree: nginx runs as www-data and must never
+      # be given a path into /opt/damnits, where the world-readable production
+      # SQLite file sits behind one directory's permissions. This directory
+      # holds the docs and nothing else, and --delete is scoped to it.
       - name: Sync docs to ${{ inputs.environment }}
         env:
           HOST: ${{ secrets.EC2_HOST }}
           USER: ${{ secrets.EC2_USER }}
-          APP_ROOT: ${{ secrets.APP_ROOT }}
+          DOCS_ROOT: /var/www/damnits-docs/${{ inputs.environment }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$USER@$HOST" \
-            "mkdir -p '$APP_ROOT/app/packages/docs-site/public'"
           rsync -az --delete \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
             packages/docs-site/public/ \
-            "$USER@$HOST:$APP_ROOT/app/packages/docs-site/public/"
+            "$USER@$HOST:$DOCS_ROOT/"
 
       # Proves nginx, TLS and the file on disk agree, from the public internet.
       # Greps for a string the page actually contains: a 200 alone would also be
