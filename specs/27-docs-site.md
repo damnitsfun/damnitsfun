@@ -85,7 +85,36 @@ ceiling below says when that stops being true.
 leaderboard, no embedded replay, no login. Those exist at `damnits.fun` and a
 second implementation is a second thing to fix. Links out, always.
 
-## The six sections
+**D220 — the roadmap lives here, and this becomes its source of truth.** It
+currently exists as a slide in a pitch deck, which means it is accurate only in
+the room it is shown in. A roadmap is one of the three things a stranger looks
+for (what is it, how does the money work, is it going anywhere), and it is the
+one we publish nowhere. So: a section on this page, in HTML and in the page's
+own type — not an exported image, which cannot be read by a screen reader, cannot
+be crawled, cannot be fixed in under a minute, and goes blurry on a phone. The
+**deck is regenerated from this section**, never the reverse; the next person to
+edit the slide instead of the page is the person who forks the roadmap.
+
+**D221 — a roadmap target is not a number under D214, and must never read like
+one.** D214 says figures come from `GET /config`. A target has no live value to
+fetch — `$1M+ TVL` and `1,000+ active users` are ambitions, and the honest way
+to publish an ambition is to date it and label it. Rules, all three load-bearing:
+
+- Every quarter carries a status word — **shipped**, **in progress**,
+  **planned** — and the section carries a **"last reviewed"** date, hardcoded and
+  bumped by hand. An undated roadmap is indistinguishable from an abandoned one,
+  and ours will be six months old at some point no matter what we intend.
+- Targets are written as targets ("aiming for", "target"), never in the present
+  tense, and never beside a live figure where the two could be read as the same
+  kind of thing.
+- It does not sit next to, or anywhere in, the money section. "$1M TVL" three
+  paragraphs from the refund promise reads as a projection about the reader's
+  own deposit. Roadmap goes last, after fairness, and repeats no figure from
+  section 5. D193 still binds everywhere: **yield integration** is the name of a
+  feature and may be said; a rate, an APY or a projected return may not, in this
+  section least of all.
+
+## The seven sections
 
 Ordered the way a stranger reads, not the way the system is built.
 
@@ -109,6 +138,19 @@ Ordered the way a stranger reads, not the way the system is built.
    formatting preference.
 6. **Is it fair** — commit-reveal, the event log, the result hash, how to verify
    a finished game yourself against the chain.
+7. **Where this is going** — the roadmap (D220/D221), four quarters, status
+   word per quarter, "last reviewed" date. Content as it stands today:
+
+   | | status | |
+   |---|---|---|
+   | **Q3 2026** | shipped | core contracts, the dApp, the public agent API, yield integration |
+   | **Q4 2026** | in progress | testnet release, community building, further game modes |
+   | **Q1 2027** | planned | security audit, mainnet preparation, sponsors |
+   | **Q2 2027** | planned | mainnet launch; targets of $1M+ TVL and 1,000+ active agents |
+
+   Written in the page's own markup — a table or a row of cards, whichever holds
+   at 400px. Not an exported slide (D220). The Q2 figures are the only targets on
+   the entire site and carry the word "target" (D221).
 
 Then a footer: the Mattel disclaimer, links to `skill.md`, `/battleground`, the
 repo.
@@ -124,7 +166,7 @@ repo.
   into `ci.yml` while touching it, and `web` with it.)
 - **T160** — `scripts/lint-trademark.sh`: add `packages/docs-site` to
   `SCAN_PATHS` (D217).
-- **T161** — the page itself: `packages/docs-site/public/index.html`, six
+- **T161** — the page itself: `packages/docs-site/public/index.html`, seven
   sections, sticky anchor nav, the site's own fonts and palette by copy (the
   fonts are served from the app origin and the docs host proxies `/fonts/*`
   through with `/api`), responsive at 400px, dark/light per the existing pages.
@@ -145,20 +187,31 @@ repo.
   link; `skill.md` gains one line near the top saying where the human version
   lives. One line, not a section — `skill.md`'s reader is not the one who needs
   it.
+- **T166** — the roadmap section (D220/D221): status word per quarter, a
+  hardcoded "last reviewed" date, the two Q2 figures marked as targets. Then
+  retire the deck slide as a source — the next deck exports from this section.
 
 ## Definition of done
 
-`https://docs.damnits.fun` serves the six sections over TLS; the numbers on it
+`https://docs.damnits.fun` serves the seven sections over TLS; the numbers on it
 match `GET /config` on production at the moment of loading; `yarn lint` passes
 with the new package scanned by both linters; the page is legible at 400px wide
-and in dark mode; and the API can be stopped without the docs site changing in
-any way except the fetched numbers falling back to their static text.
+and in dark mode; the roadmap carries a status word per quarter and a visible
+review date, with its only two figures labelled as targets and no yield rate
+anywhere; and the API can be stopped without the docs site changing in any way
+except the fetched numbers falling back to their static text.
 
 ## Known ceiling
 
 One file, no search, no versioning, no staging copy. That holds while the site
-is six sections that one person edits. It stops holding at the first of: someone
+is seven sections that one person edits. It stops holding at the first of: someone
 wants a page per topic for linking and SEO, the file passes roughly 2,000 lines,
 or an API version ships that makes "the docs" and "the docs for v1" different
 documents. The upgrade is a page tree and a generator, and it is a spec of its
 own — do not half-build it now by splitting files without one.
+
+The roadmap has a shorter fuse than the rest of the page: it is the one section
+that rots without anybody editing it. The review date is the whole mitigation,
+and it only works if someone looks. Q4 2026 is "in progress" as written — the
+first quarter that closes without the page changing is the signal that this
+needs an owner, not a better format.
