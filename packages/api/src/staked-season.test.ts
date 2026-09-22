@@ -138,6 +138,40 @@ describe('the refundable season (sub-spec 24)', () => {
     expect(h.orchestrator.isEntered(agentId, id)).toBe(false);
   });
 
+  /**
+   * `payFromWallet` is a fee-model flag (D196). A staked season returns before it
+   * is read, which used to mean an agent that set it got a bare 402 and had to
+   * guess why — and in the field one guessed wrong, concluding the custodial
+   * wallet could not sign at all.
+   *
+   * `DEPOSIT_REQUIRED` is itself the proof that self-pay was never attempted: the
+   * harness leaves the tournament chain disabled, so a `payEntryAs` reached here
+   * would have failed with `AGENT_WALLET_PAYMENT_FAILED` instead.
+   */
+  it('tells an agent that set payFromWallet why the flag did nothing', async () => {
+    const h = boot();
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const { agentId } = h.orchestrator.registerAgent('depositor');
+
+    const err = await h.orchestrator
+      .enterCompetition(agentId, id, undefined, true)
+      .catch((e) => e as ApiError);
+
+    expect((err as ApiError).code).toBe('DEPOSIT_REQUIRED');
+    expect(((err as ApiError).details as { hint?: string }).hint).toMatch(/fee-model buy-ins only/);
+    expect(h.orchestrator.isEntered(agentId, id)).toBe(false);
+  });
+
+  /** No flag, no hint — the ordinary 402 stays exactly as it was. */
+  it('does not add the hint when payFromWallet was not sent', async () => {
+    const h = boot();
+    const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);
+    const { agentId } = h.orchestrator.registerAgent('depositor');
+
+    const err = await h.orchestrator.enterCompetition(agentId, id).catch((e) => e as ApiError);
+    expect(((err as ApiError).details as { hint?: string }).hint).toBeUndefined();
+  });
+
   it('the 402 names the vault, the amount, and says the deposit comes back', async () => {
     const h = boot();
     const id = h.orchestrator.createStakedSeason('S1', '1000', CLOSE_AT, RESOLVE_BY);

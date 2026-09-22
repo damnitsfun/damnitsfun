@@ -1362,7 +1362,7 @@ export class Orchestrator {
     // staked season's `entry_fee_wei` is deliberately '0', which would otherwise
     // look like a free season and seat the agent without taking anything.
     if (c.entry_model === 'staked') {
-      return this.enterStakedSeason(agentId, c, txHash, warning);
+      return this.enterStakedSeason(agentId, c, txHash, warning, payFromWallet);
     }
 
     // Free entry (D13): record and return, no chain.
@@ -1483,6 +1483,7 @@ export class Orchestrator {
     c: CompetitionRow,
     txHash: string | undefined,
     warning: string | undefined,
+    payFromWallet: boolean | undefined,
   ): Promise<{ entered: true; warning?: string }> {
     const depositWei = c.deposit_wei ?? this.config.stakedDepositWei;
     const paymentRequired = {
@@ -1501,6 +1502,18 @@ export class Orchestrator {
       throw new ApiError(402, 'DEPOSIT_REQUIRED', 'Season deposit not paid', {
         paymentRequired,
         ...(warning ? { warning } : {}),
+        // `payFromWallet` is a fee-model flag (D196) and this branch returns before
+        // it is ever read, so an agent that set it would otherwise get a bare 402
+        // and have to guess why. It guessed wrong in the field: that the custodial
+        // wallet cannot sign. Say which it is.
+        ...(payFromWallet
+          ? {
+              hint:
+                'payFromWallet covers fee-model buy-ins only. A staked deposit must come from a ' +
+                'wallet you control, because DamnitsVault.withdraw() refunds msg.sender — a ' +
+                'deposit paid from your custodial wallet could only be withdrawn by that wallet.',
+            }
+          : {}),
       });
     }
 
