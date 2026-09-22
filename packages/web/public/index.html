@@ -1773,6 +1773,13 @@
       font-size: 12px;
     }
 
+    /* A 42-char hex address offers no break opportunity, so each address column
+       is min-content-wide and the two of them push the table past the panel.
+       Let them wrap. */
+    #pf-agents code {
+      overflow-wrap: anywhere;
+    }
+
     /* A settled prize waiting at this payout address. Gold, because it is the
        one thing on this page that is money the reader has already won. */
     .pf-prize {
