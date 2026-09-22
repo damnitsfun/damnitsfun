@@ -114,6 +114,47 @@ to publish an ambition is to date it and label it. Rules, all three load-bearing
   feature and may be said; a rate, an APY or a projected return may not, in this
   section least of all.
 
+**D222 — a docs change must never restart the API.** This is the one place the
+"just let it ride the existing deploy" answer is actively wrong, and it is worth
+being precise about why. A push to `main` runs the full CI suite (the ten-way
+real-delay matrix included), then `yarn install`, two `tsc` builds, `migrate`,
+and finally `systemctl restart`. The orchestrator is in-process with real timers,
+and **on boot it runs `reapOrphanedSessions()`, which archives every table that
+was mid-hand and refunds the seats** (spec 22). So under D212's "it ships with
+the tree" the cost of fixing a typo on a docs page is: about fifteen minutes of
+CI, and every live table killed.
+
+So docs-only pushes take their own path:
+
+- A `deploy-docs.yml` on `push: main` with `paths: ['packages/docs-site/**']`
+  that rsyncs **only** that directory. No install, no build, no migrate, no
+  restart, no soak. It is a file copy, because that is all a static page needs.
+- `deploy.yml` gains the matching `paths-ignore`, so a docs-only push does not
+  also trigger the full deploy.
+- Both share the existing `damnits-ec2-shared` concurrency group. The main
+  deploy rsyncs the whole tree with `--delete`; a docs copy landing in the middle
+  of that would be half-applied.
+- A push touching both code and docs runs both, and that is fine — the tree
+  rsync ships the same bytes. **The fast path is an optimisation, never the only
+  route**: if `deploy-docs.yml` is broken or disabled, the next ordinary deploy
+  still carries the docs. Nothing about the docs site can be stranded by its own
+  workflow failing.
+
+**D223 — the checks are the ones that can actually fail here, and no others.**
+A static page cannot fail a unit test it does not have, and running the engine
+soak to publish prose is theatre. What can genuinely break, and is therefore
+gated on every PR: the **trademark lint** (D217 — the highest-risk surface in the
+repo for it), the **CSS lint** extended to the new directory (T159), and an
+**anchor check** — every `href="#x"` on the page resolves to an `id="x"`. A
+single page whose whole navigation is anchors fails by silently scrolling
+nowhere, which is precisely the failure the CSS linter was written to catch a
+different flavour of. Ten lines in that same script, not a new tool.
+
+Two properties this buys, both worth stating because they are the reason the
+static choice is right: a docs deploy is a few seconds and touches no running
+process, and a rollback is `git revert` plus the same few seconds — no rebuild,
+no migration, nothing to un-migrate.
+
 ## The seven sections
 
 Ordered the way a stranger reads, not the way the system is built.
@@ -190,6 +231,20 @@ repo.
 - **T166** — the roadmap section (D220/D221): status word per quarter, a
   hardcoded "last reviewed" date, the two Q2 figures marked as targets. Then
   retire the deck slide as a source — the next deck exports from this section.
+- **T167** — `.github/workflows/deploy-docs.yml` (D222): trademark + CSS +
+  anchor lint, then an rsync of `packages/docs-site/public/` alone to
+  `$APP_ROOT/app/packages/docs-site/public/`, in the `damnits-ec2-shared`
+  concurrency group, under the `production` environment for its secrets. Ends
+  with a public check — `curl` the live URL and grep for a string the page
+  actually contains, the same shape as the existing health check step. Add the
+  matching `paths-ignore` to `deploy.yml`.
+- **T168** — the anchor check in `scripts/lint-web-css.mjs` (D223): every
+  in-page `href="#..."` has a matching `id`. It runs over `packages/web` too;
+  expect it to find something there.
+- **T169** — one paragraph in `docs/deploy-aws-ec2.md` on the two deploy paths
+  and which one a given change takes. The reason a docs push skips CI is not
+  self-evident from the workflow file, and the next person to "tidy up" two
+  workflows into one will re-create the restart.
 
 ## Definition of done
 
@@ -198,7 +253,9 @@ match `GET /config` on production at the moment of loading; `yarn lint` passes
 with the new package scanned by both linters; the page is legible at 400px wide
 and in dark mode; the roadmap carries a status word per quarter and a visible
 review date, with its only two figures labelled as targets and no yield rate
-anywhere; and the API can be stopped without the docs site changing in any way
+anywhere; a docs-only commit reaches production without the API process
+restarting (check the service's uptime across it) and without the engine soak
+running; and the API can be stopped without the docs site changing in any way
 except the fetched numbers falling back to their static text.
 
 ## Known ceiling
