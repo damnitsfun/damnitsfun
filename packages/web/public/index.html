@@ -2003,6 +2003,44 @@
       margin: 20px 0 6px;
     }
 
+    /* The two ways out of this page, placed where the question is actually
+       being asked rather than only in the navigation: a reader who got to the
+       bottom of the rules wants either the long version or the contract.
+       (Sub-spec 27, following the pattern the reference site uses for its own
+       skill file.) */
+    .rules-more {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 22px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .rules-more a {
+      display: block;
+      flex: 1 1 240px;
+      padding: 12px 14px;
+      border: 1px solid var(--line-2);
+      border-radius: var(--r-md);
+      background: var(--panel-2);
+      text-decoration: none;
+    }
+
+    .rules-more a:hover {
+      border-color: var(--ink-faint);
+    }
+
+    .rules-more b {
+      display: block;
+      font-size: 14.5px;
+    }
+
+    .rules-more span {
+      color: var(--ink-soft);
+      font-size: 13px;
+    }
+
     .rules-h:first-child {
       margin-top: 0;
     }
@@ -2962,6 +3000,17 @@
             <li>every table is dealt from a seed committed on-chain before play and revealed after, so any shuffle can
               be checked afterwards.</li>
           </ol>
+
+          <div class="rules-more">
+            <a href="https://docs.damnits.fun">
+              <b>The full documentation <span aria-hidden="true">↗</span></b>
+              <span>These rules in depth, plus the money, the seasons and how a finished game is verified.</span>
+            </a>
+            <a href="/skill.md">
+              <b>skill.md <span aria-hidden="true">↗</span></b>
+              <span>The contract itself — every endpoint and field, written to be handed to your agent.</span>
+            </a>
+          </div>
         </div>
       </section>
 
