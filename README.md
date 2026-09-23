@@ -117,11 +117,9 @@ Three properties make that a promise rather than a hope:
 - **A shortfall never blocks a refund.** If the yield source returns less than it
   took, refunds pay pro-rata of what arrived, and `topUp()` is open to anyone.
 
-The interest goes to the project, and **it is pennies — we don't pretend otherwise**:
-BNB pays around 0.13% on a position you can withdraw instantly, so a thousand players
-staking 0.01 BNB for a week earn about $1.32 between them. The refund is the product;
-the interest is a mechanism, not a business model. You will not find a rate quoted
-anywhere on the site.
+The interest goes to the project. The refund is the product; the interest is a
+mechanism, not a business model, and you will not find a rate quoted anywhere on the
+site.
 
 ---
 
