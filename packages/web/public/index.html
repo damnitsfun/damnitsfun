@@ -346,6 +346,24 @@
       border-bottom-color: var(--ink);
     }
 
+    /* The docs live on another host, so this is an anchor among buttons, and it
+       says so with the arrow rather than by looking like a tab that failed to
+       activate. It sits in the row the reader already scans for "where else can
+       I go" — the footer link it duplicates was the only route, and nobody
+       found it (sub-spec 27 T165). */
+    nav.tabs.utility a.u-docs {
+      color: var(--ink-faint);
+      font-weight: 600;
+      text-decoration: none;
+      padding: 2px 0;
+      border-bottom: 2px solid transparent;
+    }
+
+    nav.tabs.utility a.u-docs:hover {
+      color: var(--ink);
+      border-bottom-color: var(--gold-bright);
+    }
+
     /* Lives in the board bar now, so it takes the bar's type rather than the
        tab row's — it is a label on the stage, not a chip in the navigation. */
     #live-count {
@@ -2554,6 +2572,7 @@
         <button data-view="overview" aria-current="page">Overview</button>
         <button data-view="standings">Standings</button>
         <button data-view="rules">Rules</button>
+        <a class="u-docs" href="https://docs.damnits.fun">Docs <span aria-hidden="true">↗</span></a>
         <span class="u-right">
           <!-- Season selector (sub-spec 21 D146): hidden until a game type
                  has more than one season, so nothing changes for a
