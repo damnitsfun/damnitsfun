@@ -288,46 +288,90 @@ export function createSettlementChain(
  * before there is traffic to justify it would be a guess — add one if a soak ever
  * shows this endpoint hot.
  */
+/** `owed(address)` — the same view on both payout contracts (D7's pull ledger). */
+const OWED_ABI = [
+  {
+    type: 'function',
+    name: 'owed',
+    stateMutability: 'view',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
 /**
- * What `address` can collect from the tournament contract right now — the
- * pull-payment ledger `owed[address]`, filled by `settleCompetition` and emptied
- * by `withdraw()`.
+ * What `address` can collect right now — the pull-payment ledger `owed[address]`,
+ * credited at settlement and emptied by `withdraw()`.
+ *
+ * **Read from BOTH payout contracts and summed.** A fee season pays out of
+ * `DamnitsTournament`; a staked season (24) pays prizes AND refunds out of
+ * `DamnitsVault`, which carries the identical `owed`/`withdraw()` pair. Reading
+ * only the tournament is why a settled staked season showed nothing waiting on
+ * the profile while a settled fee season showed a claim button — the money was
+ * credited, in the other contract, with nothing in the product pointing at it.
+ * Two contracts pay people, so both are read; a future third must be added here
+ * or it will be invisible in exactly the same way.
  *
  * The profile page shows this beside a payout address so a winner is told there
  * is money waiting and can claim it with one click, instead of being expected to
  * find `withdraw()` on BscScan. Best-effort in the same way as
  * {@link readNativeBalance}: null on any failure, never an error, because it is
  * read on the profile's load path and a slow RPC must cost a badge, not a page.
+ * One contract answering while the other times out contributes its share rather
+ * than voiding the total — an understated figure still beats a missing button.
  */
 export async function readClaimable(
   config: Config,
   address: string,
   timeoutMs = 2000,
 ): Promise<string | null> {
-  if (!config.tournamentContractAddress) return null;
-  try {
-    const client = createPublicClient({
-      chain: bscTestnet,
-      transport: http(config.bscTestnetRpcUrl, { timeout: timeoutMs, retryCount: 0 }),
-    });
-    const wei = await client.readContract({
-      address: config.tournamentContractAddress as Address,
-      abi: [
-        {
-          type: 'function',
-          name: 'owed',
-          stateMutability: 'view',
-          inputs: [{ name: '', type: 'address' }],
-          outputs: [{ name: '', type: 'uint256' }],
-        },
-      ] as const,
-      functionName: 'owed',
-      args: [address as Address],
-    });
-    return wei.toString();
-  } catch {
-    return null;
-  }
+  const contracts = payoutContracts(config);
+  if (contracts.length === 0) return null;
+  const client = createPublicClient({
+    chain: bscTestnet,
+    transport: http(config.bscTestnetRpcUrl, { timeout: timeoutMs, retryCount: 0 }),
+  });
+  return sumOwed(
+    await Promise.all(
+      contracts.map(async (contract) => {
+        try {
+          return await client.readContract({
+            address: contract as Address,
+            abi: OWED_ABI,
+            functionName: 'owed',
+            args: [address as Address],
+          });
+        } catch {
+          return null;
+        }
+      }),
+    ),
+  );
+}
+
+/**
+ * Every contract that credits `owed[address]`, in the order a claim withdraws
+ * from them. The web page reads the same two off `GET /config`, so the list lives
+ * in one place conceptually even though it is spelled twice.
+ */
+export function payoutContracts(config: Config): string[] {
+  return [config.tournamentContractAddress, config.vaultContractAddress].filter(
+    (a): a is string => !!a,
+  );
+}
+
+/**
+ * Combine per-contract `owed` reads into the one figure the profile shows.
+ *
+ * A `null` entry is a read that FAILED, which is not zero. So: all reads failing
+ * is `null` ("we do not know", and the page shows no badge), while a mix
+ * contributes what answered — an understated prize still gets the owner to a
+ * claim button, whereas voiding the total on one slow RPC hides money that is
+ * really there.
+ */
+export function sumOwed(owed: Array<bigint | null>): string | null {
+  if (owed.length === 0 || owed.every((wei) => wei === null)) return null;
+  return owed.reduce<bigint>((total, wei) => total + (wei ?? 0n), 0n).toString();
 }
 
 export async function readNativeBalance(

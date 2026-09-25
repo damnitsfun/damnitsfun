@@ -5033,6 +5033,32 @@
      * selector — no ABI library needed on a page with no build step.
      */
     const WITHDRAW_SELECTOR = '0x3ccfd60b'; // keccak256("withdraw()")[0:4]
+    const OWED_SELECTOR = '0xdf18e047'; // keccak256("owed(address)")[0:4]
+
+    /**
+     * TWO contracts pay people, and the badge's figure is their sum: a fee season
+     * settles in `DamnitsTournament`, a staked season (24) settles prizes and
+     * refunds in `DamnitsVault`. Both expose the same `owed`/`withdraw()` pair, so
+     * the claim asks each what it owes and withdraws only where something is owed
+     * — one wallet confirmation per paying contract. Withdrawing from both blindly
+     * would make an owner sign a transaction certain to revert; withdrawing from
+     * the tournament alone was the bug that left a settled staked season's prize
+     * credited with nothing in the product able to collect it.
+     *
+     * `owed(address)` on any contract that does not implement it answers `0x` or
+     * reverts, both of which read as "owes nothing" — so an address configured by
+     * mistake costs a skipped contract, not a failed claim.
+     */
+    async function readOwed(eth, contract, address) {
+      try {
+        const data = OWED_SELECTOR + address.slice(2).toLowerCase().padStart(64, '0');
+        const hex = await eth.request({ method: 'eth_call', params: [{ to: contract, data }, 'latest'] });
+        return hex && hex !== '0x' ? BigInt(hex) : 0n;
+      } catch {
+        return 0n;
+      }
+    }
+
     // `wallet` defaults to the browser's injected one. It is a parameter so the
     // flow can be exercised with a stand-in: an installed MetaMask owns
     // `window.ethereum` and will not let it be replaced.
@@ -5041,7 +5067,9 @@
       const eth = wallet;
       const chain = state.chain || {};
       if (!eth) return say('To claim, open this page in a browser with a wallet such as MetaMask.');
-      if (!chain.tournamentAddress || !chain.chainId) return say('Claiming is not available on this deployment.');
+      if (!chain.chainId || !(chain.tournamentAddress || chain.vaultAddress)) {
+        return say('Claiming is not available on this deployment.');
+      }
 
       btn.disabled = true;
       say('Confirm in your wallet\u2026');
@@ -5073,15 +5101,33 @@
             });
           }
         }
-        const txHash = await eth.request({
-          method: 'eth_sendTransaction',
-          params: [{ from, to: chain.tournamentAddress, data: WITHDRAW_SELECTOR }],
-        });
-        const link = chain.explorerBaseUrl
-          ? ' <a href="' + chain.explorerBaseUrl + '/tx/' + encodeURIComponent(txHash)
-            + '" target="_blank" rel="noopener noreferrer">view on BscScan \u2197</a>'
-          : '';
-        say('\u2713 Prize claimed \u2014 it is on its way to your wallet.' + link);
+        // Ask first, so the owner is only shown a wallet confirmation for a
+        // contract that will actually pay. `filter` drops whichever of the two
+        // this deployment does not have.
+        const paying = [];
+        for (const contract of [chain.tournamentAddress, chain.vaultAddress].filter(Boolean)) {
+          if ((await readOwed(eth, contract, payoutAddress)) > 0n) paying.push(contract);
+        }
+        if (paying.length === 0) {
+          return say('Nothing is owed to <code>' + esc(shortAddr(payoutAddress))
+            + '</code> right now \u2014 it may already have been collected.');
+        }
+
+        const links = [];
+        for (const contract of paying) {
+          if (paying.length > 1) {
+            say('Confirm in your wallet \u2014 ' + (links.length + 1) + ' of ' + paying.length + '\u2026');
+          }
+          const txHash = await eth.request({
+            method: 'eth_sendTransaction',
+            params: [{ from, to: contract, data: WITHDRAW_SELECTOR }],
+          });
+          links.push(chain.explorerBaseUrl
+            ? ' <a href="' + chain.explorerBaseUrl + '/tx/' + encodeURIComponent(txHash)
+              + '" target="_blank" rel="noopener noreferrer">view on BscScan \u2197</a>'
+            : '');
+        }
+        say('\u2713 Prize claimed \u2014 it is on its way to your wallet.' + links.join(''));
         // Re-read once the block lands, so the badge disappears on its own.
         setTimeout(loadAuth, 8000);
       } catch (e) {
