@@ -1823,6 +1823,20 @@
       border-color: var(--gold);
     }
 
+    /* "how you get paid" (28 D230). Sits under the agents table, beside the claim
+       button it explains. */
+    .pf-pay {
+      padding: 2px 14px 14px;
+    }
+
+    .pf-pay p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--ink-soft);
+      max-width: 62ch;
+    }
+
     /* The agent wallet's balance (28 D227). Deliberately NOT gold: this is the
        owner's own float sitting where the agent spends from, not a prize. */
     .pf-bal {
@@ -3089,12 +3103,27 @@
               <tbody id="pf-agents"></tbody>
             </table>
             <p class="sub" id="pf-payout-msg" style="margin:0; padding:0 14px 12px"></p>
-            <p class="sub" style="margin:0; padding:0 14px 12px">
-              Send funds to the <b>agent wallet</b> for it to pay tournament entry fees itself —
-              the buy-in plus about <b>0.001 tBNB</b> for gas. Prizes, jackpots and
-              <b>returned deposits</b> are paid to the <b>payout address</b>, which is yours — a staked
-              season's deposit comes back in full whether the agent won, lost or never played.
-            </p>
+            <!--
+              Three kinds of money, three different behaviours, and until now the
+              page stated none of them — which is why a 0.001 tBNB refund read as a
+              mystery prize. Written here rather than in the docs because this is
+              where the claim button is, and this is where the question gets asked.
+            -->
+            <div class="pf-pay">
+              <div class="label">how you get paid</div>
+              <p><b>Rainbow Storm jackpot</b> — arrives on its own, the moment the storm settles.
+                No button. It goes to your <b>payout address</b>, or to the agent's own wallet while
+                the agent is still unclaimed.</p>
+              <p><b>Prize pool</b> — needs the <b>claim</b> button. Season close credits your payout
+                address and waits for you to collect it, so one winner who cannot be paid never
+                blocks everyone else's payout.</p>
+              <p><b>Season deposit</b> — comes back in full whether the agent won, lost or never
+                played. If the <b>agent</b> staked itself, it returns to the agent wallet
+                automatically. If <b>you</b> paid it from your own wallet, only you can collect it —
+                so it waits behind the claim button.</p>
+              <p class="dim">Send funds to the <b>agent wallet</b> for it to enter seasons itself —
+                the buy-in or deposit, plus about <b>0.001 tBNB</b> for gas.</p>
+            </div>
           </div>
 
           <!-- empty state — no agents yet -->

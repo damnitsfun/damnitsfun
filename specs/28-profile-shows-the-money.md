@@ -101,6 +101,30 @@ spec adds is about the *rendering*: `null` must display as `—`, distinct from 
 This is not pedantry. "0" tells an owner their funding never arrived and they should send it again;
 "—" tells them the page could not check. One of those costs them a duplicate transaction.
 
+**D230 — the page states how each kind of money reaches you.**
+
+Three kinds, three behaviours, and the page stated none of them:
+
+| money | mechanism | button? |
+|---|---|---|
+| Rainbow Storm jackpot | `awardJackpot` → `winner.call{value}` — **push** | no, instant |
+| Prize pool | `settleCompetition` / `Vault.resolve` → `owed[]` — pull | **yes** |
+| Season deposit | `Vault.resolve` → `owed[]` — pull | no *if the agent self-staked* (26 T155 sweeps it) |
+
+The jackpot can push because it pays **exactly one** address; the prize pool credits many in one
+transaction, where a single rejecting wallet would revert everyone's settlement (D7). That is the
+whole rule, and it fits in a sentence, which is the argument for writing it down.
+
+It goes on the **profile**, under the agents table and beside the claim button it explains — not in
+the docs site. The question is asked here, standing in front of a number.
+
+This also corrects a sentence D226a itself got wrong: *"Prizes, jackpots and returned deposits are
+paid to the payout address"* is false twice over — a **self-staked deposit returns to the agent's
+custodial wallet** (26 D205), and a **playground jackpot for an unclaimed agent** pays the custodial
+wallet too (D64/D65). Production S5 shows the first one plainly: `pokerface` had its deposit swept
+back to `0xba09…80F3` automatically and its prize left waiting at `0x895F…b409`, from the same
+`resolve()` call.
+
 **D229 — read per address, not per agent.**
 
 The `owed` ledger is keyed by address, so two agents sharing a payout address share one balance —
