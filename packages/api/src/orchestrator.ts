@@ -108,7 +108,15 @@ export interface WebSessionInfo {
   agents: Array<{
     agentId: string;
     displayName: string;
+    /** Where prizes are sent. The owner's, and the only editable one. */
     payoutAddress: string | null;
+    /**
+     * The custodial wallet the battleground issued — what the agent pays entry
+     * fees and deposits FROM (25 D194, 26 D205). `sessionInfo` has returned this
+     * since D199; the field was simply never declared here, which is why adding
+     * a balance beside it (28 T174) is what surfaced the gap.
+     */
+    walletAddress: string | null;
     coins: number;
     claimed: boolean;
   }>;

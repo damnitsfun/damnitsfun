@@ -1822,6 +1822,18 @@
       border-color: var(--gold);
     }
 
+    /* The agent wallet's balance (28 D227). Deliberately NOT gold: this is the
+       owner's own float sitting where the agent spends from, not a prize. */
+    .pf-bal {
+      margin-top: 4px;
+    }
+
+    .pf-bal-v {
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
     @media (max-width: 560px) {
       .ag-identity .row {
         flex-wrap: wrap;
@@ -3070,7 +3082,7 @@
                   <th>agent</th>
                   <th>agent id</th>
                   <th class="num">coins</th>
-                  <th>agent wallet</th>
+                  <th>agent wallet &amp; balance</th>
                   <th>payout address</th>
                 </tr>
               </thead>
@@ -4968,11 +4980,17 @@
           // The custodial wallet: what this agent pays entry fees FROM, so an
           // owner can see where to send funds. Read-only — the battleground
           // issued the address and holds its key, so there is nothing to edit.
+          //
+          // With its BALANCE (28 D227), because the owner funds this address and
+          // the agent spends from it, so it is the number that answers "can my
+          // agent enter the next season?". The address alone sent owners to
+          // BscScan to find out.
           '<td class="dim">' + (a.walletAddress
             ? (wex
               ? '<a class="agent-link" href="' + wex + '/address/' + encodeURIComponent(a.walletAddress)
                 + '" target="_blank" rel="noopener noreferrer"><code>' + esc(a.walletAddress) + '</code></a>'
               : '<code>' + esc(a.walletAddress) + '</code>')
+              + '<div class="pf-bal">' + balanceMarkup(a.walletBalanceWei) + '</div>'
             : 'unavailable') + '</td>' +
           // Escaped: the address is validated server-side, but this cell renders
           // whatever the API returns and should not be the one place that trusts it.
@@ -5015,6 +5033,25 @@
     /** wei → a short tBNB figure: 500000000000000000n → "0.5". */
     function fmtTbnb(wei) {
       return (Number(wei) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 4 });
+    }
+
+    /**
+     * An agent wallet's balance for the profile (28 D227/D228).
+     *
+     * `null` is "could not read", and renders as `—`, NOT as `0`. A false zero
+     * tells an owner their funding never arrived and costs them a duplicate
+     * transfer, which is a worse outcome than admitting the page could not check.
+     *
+     * A tiny-but-real balance is the same trap one decimal place down: `fmtTbnb`
+     * rounds to 4 places, so dust would print as an exact "0". Anything nonzero
+     * that rounds away says `<0.0001` instead — the stake is 0.001 tBNB and the
+     * gas buffer the same, so this range is the one owners actually operate in.
+     */
+    function balanceMarkup(wei) {
+      if (wei == null) return '<span class="pf-bal-v dim" title="balance could not be read">—</span>';
+      const n = BigInt(wei);
+      const shown = n > 0n && fmtTbnb(n) === '0' ? '<0.0001' : fmtTbnb(n);
+      return '<span class="pf-bal-v">' + esc(shown) + ' tBNB</span>';
     }
 
     // Survives the re-render a claim triggers, so the BscScan link stays put.

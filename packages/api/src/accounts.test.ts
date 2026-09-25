@@ -53,13 +53,25 @@ interface Harness {
   orchestrator: Orchestrator;
 }
 
-function boot(readClaimable?: (address: string) => Promise<string | null>): Harness {
-  const config = loadConfig({ env: { PUBLIC_BASE_URL: 'https://arena.test', MIN_RANKED_SESSIONS: '0' } });
+function boot(
+  readClaimable?: (address: string) => Promise<string | null>,
+  readBalance?: (address: string) => Promise<string | null>,
+): Harness {
+  const config = loadConfig({
+    env: {
+      PUBLIC_BASE_URL: 'https://arena.test',
+      MIN_RANKED_SESSIONS: '0',
+      // Registration only issues a custodial wallet when the store is enabled
+      // (sub-spec 14 D67), and sub-spec 28's balance field is read against that
+      // wallet — so a walletless harness would test nothing.
+      WALLET_ENCRYPTION_KEY: 'test-key-for-agent-wallets',
+    },
+  });
   const db = openDatabase(':memory:');
   const google = new FakeGoogle();
   const xoauth = new FakeX();
   const orchestrator = new Orchestrator(db, config, { googleoauth: google, xoauth });
-  const { app } = buildServer({ db, config, orchestrator, readClaimable });
+  const { app } = buildServer({ db, config, orchestrator, readClaimable, readBalance });
   return { app, google, xoauth, orchestrator };
 }
 
@@ -229,6 +241,53 @@ describe('sub-spec 11 — web accounts', () => {
       payload: { payoutAddress: '0xF977F34dB8a986A0A9edec3E744092c715EF793c' },
     });
     expect((await session(h, cookie)).agents[0].claimableWei).toBeNull();
+  });
+
+  /**
+   * Sub-spec 28 (T174/D227) — the agent wallet's BALANCE, not just its address.
+   *
+   * The owner funds that wallet and the agent spends from it (25 D194, 26 D205),
+   * so it is the number that answers "can my agent enter the next season?" — and
+   * the page showed the address without it, sending owners to BscScan.
+   */
+  it('reports the agent wallet balance, read against the wallet address', async () => {
+    const asked: string[] = [];
+    const h = boot(undefined, async (a) => {
+      asked.push(a);
+      return '2500000000000000'; // 0.0025 tBNB — a funded float
+    });
+    const cookie = await signInWithGoogle(h);
+    await connectX(h, cookie);
+    const token = await registerAgentWithClaim(h, 'Funded');
+    await h.app.inject({
+      method: 'POST',
+      url: '/api/arena/auth/claim-agent',
+      headers: { cookie },
+      payload: { claimToken: token },
+    });
+
+    const agent = (await session(h, cookie)).agents[0];
+    expect(agent.walletBalanceWei).toBe('2500000000000000');
+    // Read against the WALLET, never the payout address — they are different jobs
+    // and this one has no payout address set at all.
+    expect(asked).toEqual([agent.walletAddress]);
+    expect(agent.payoutAddress).toBeNull();
+  });
+
+  it('leaves the wallet balance null when no chain reader is wired — unknown is not zero (D228)', async () => {
+    const h = boot(); // every chainless box
+    const cookie = await signInWithGoogle(h);
+    await connectX(h, cookie);
+    const token = await registerAgentWithClaim(h, 'NoBalance');
+    await h.app.inject({
+      method: 'POST',
+      url: '/api/arena/auth/claim-agent',
+      headers: { cookie },
+      payload: { claimToken: token },
+    });
+    // Null, not '0'. A false zero tells an owner their funding never arrived and
+    // costs them a duplicate transfer; the page renders this as '—'.
+    expect((await session(h, cookie)).agents[0].walletBalanceWei).toBeNull();
   });
 
   it('claims one agent to the account; enforces the 1:1 rule', async () => {

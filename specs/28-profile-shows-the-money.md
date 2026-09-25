@@ -127,7 +127,14 @@ as a surprise.
 - **T176** — tests: `payoutContracts` returns both contracts, skips an undeployed one, is empty on a
   chainless box; `sumOwed` adds both, surfaces a vault-only prize, reports a measured zero as `0`,
   is `null` when every read failed, and counts what answered when one failed;
-  `GET /auth/session` carries `walletBalanceWei` and leaves it `null` with no chain reader wired.
+  `GET /auth/session` carries `walletBalanceWei`, reads it against the WALLET address rather than
+  the payout address, and leaves it `null` with no chain reader wired.
+
+  The `accounts.test.ts` harness must set `WALLET_ENCRYPTION_KEY` — registration issues a custodial
+  wallet only when the store is enabled (14 D67), so a walletless harness would assert nothing.
+
+  `WebSessionInfo.agents` does not declare `walletAddress` even though `sessionInfo` has returned it
+  since D199. Adding a field beside it is what surfaces this; declare it.
 
 ## Definition of done
 
@@ -140,3 +147,19 @@ as a surprise.
    RPC is unreachable.
 5. Neither figure can 500 the profile: a box with `BSC_TESTNET_RPC_URL` pointed at nothing still
    renders the page.
+6. **`VAULT_CONTRACT_ADDRESS` is set on every box that runs a staked season.** This spec is inert
+   without it — `payoutContracts` skips a null, so the fix silently reduces to the old behaviour.
+   Both live boxes already publish a `vaultAddress` on `GET /config`, which is how to check one from
+   outside; the committed `.env.example` carries the key blank. This is the CLAUDE.md rule about a
+   deployed `.env` overriding a code default, and it applies here exactly.
+
+## Verified
+
+Against production's chain, not argued from the code. S5's `resolve()` calldata credited
+`0x895F…b409` and `0x34b5…21bD`; today the **vault** owes them 0.121 and 0.08 tBNB and the
+**tournament** owes both zero — the figure the old single-contract read returned as `'0'`.
+
+In a browser against the built page: `balanceMarkup` over null / 0 / dust / 0.001 / 0.0025 / 1.5,
+and `claimPrize` driven with a stand-in wallet over all four ledger shapes — vault-only withdraws
+from the vault (the defect), tournament-only still withdraws from the tournament (no regression),
+both owed sends two transactions and reports two links, nothing owed sends none and says so.
