@@ -63,6 +63,26 @@ third payout contract is invisible in exactly the same way if it is added to set
 here — so the list is a named function (`payoutContracts`) rather than two inline reads, and the
 page gets both addresses off `GET /config`, which already publishes them.
 
+**D226a — and the wording goes neutral, because the figure is no longer only prizes.**
+
+D226 is what makes this necessary. The vault's one `owed` balance merges a tournament prize with a
+staked season's **returned deposit**, and a refund is the owner's own money coming back — 24's whole
+claim. The badge said `🏆 … tBNB ready` and the claim said *"only that address can collect this
+prize"*, which was accidentally true while only the fee contract was read and became false the moment
+the vault was.
+
+Found on staging by an owner asking why their agent had a 0.001 tBNB prize: 0.001 is exactly
+`stakedDepositWei`. It was their deposit, and the page called it winnings.
+
+So: **"0.001 tBNB ready to collect"**, no trophy; *"only that address can collect it"*; *"✓ Claimed"*.
+The account menu's `prize wallet` becomes `payout wallet` for the same reason, and the agents-table
+footer now says returned deposits land there too — the omission is what made the badge surprising.
+
+Splitting the figure into prize-vs-refund was considered and rejected: it costs a second read per
+address to restate something the season history already tells, and the neutral sentence is true of
+both. **The rule: where one number covers two kinds of money, name the action (collect), not the
+kind.** Gold stays — it is still money the reader can take — only the words change.
+
 **D227 — the custodial wallet shows its balance beside its address.**
 
 D199's reasoning, applied to the number instead of the string: the arena issued the wallet, the
