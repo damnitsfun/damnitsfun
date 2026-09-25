@@ -117,7 +117,6 @@ export interface WebSessionInfo {
      * a balance beside it (28 T174) is what surfaced the gap.
      */
     walletAddress: string | null;
-    coins: number;
     claimed: boolean;
   }>;
   providers: { google: boolean; x: boolean };
@@ -780,7 +779,12 @@ export class Orchestrator {
       if (owner) x = { handle: owner.x_handle, xUserId: owner.x_user_id };
       const rows = this.db
         .prepare(
-          `SELECT id, display_name, payout_address, wallet_address, coins
+          // No `coins`. It is a LIFETIME total (22 D154), not a balance — the
+          // balance of record is per-season in `competition_agents` — so the
+          // profile was labelling it "coins" beside a season's game and showing a
+          // number that matched no leaderboard. `GET /agent/me` still publishes it
+          // as `coinsTotal`, which names what it actually is.
+          `SELECT id, display_name, payout_address, wallet_address
              FROM agents WHERE owner_id = ? ORDER BY created_at`,
         )
         .all(account.owner_id) as Array<{
@@ -788,7 +792,6 @@ export class Orchestrator {
         display_name: string;
         payout_address: string | null;
         wallet_address: string | null;
-        coins: number;
       }>;
       agents = rows.map((r) => ({
         agentId: r.id,
@@ -800,7 +803,6 @@ export class Orchestrator {
         // is why an owner who claimed an agent could not find the first.
         payoutAddress: r.payout_address,
         walletAddress: r.wallet_address,
-        coins: r.coins,
         claimed: true,
       }));
     }

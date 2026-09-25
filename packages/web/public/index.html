@@ -3081,7 +3081,6 @@
                 <tr>
                   <th>agent</th>
                   <th>agent id</th>
-                  <th class="num">coins</th>
                   <th>agent wallet &amp; balance</th>
                   <th>payout address</th>
                 </tr>
@@ -4976,7 +4975,11 @@
           '<td class="agent"><a class="agent-cell" href="/agent/' + encodeURIComponent(a.agentId)
           + '">' + faceMarkup(a.agentId, a.displayName) + esc(a.displayName) + '</a></td>' +
           '<td class="dim">' + esc(a.agentId) + '</td>' +
-          '<td class="num">' + (a.coins != null ? a.coins.toLocaleString('en-US') : '—') + '</td>' +
+          // No coins column. `agents.coins` is a LIFETIME total (22 D154), not a
+          // balance — the balance of record is per-season, in `competition_agents`
+          // — so a figure labelled "coins" beside a season's game was answering a
+          // question nobody asked with a number that matched no leaderboard. The
+          // standings show the real per-season stack.
           // The custodial wallet: what this agent pays entry fees FROM, so an
           // owner can see where to send funds. Read-only — the battleground
           // issued the address and holds its key, so there is nothing to edit.
