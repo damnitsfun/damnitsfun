@@ -295,6 +295,59 @@ contract DamnitsVaultTest is Test {
         v.resolve(SEASON, winners, amounts, ROOT);
     }
 
+    // ---- the uncontested season --------------------------------------------
+
+    /**
+     * A funded season that NOBODY entered, recovered by the operator.
+     *
+     * Production reached this state: Tournament S3 sat in `Registration` with a
+     * 0.1 tBNB pot, zero entrants, and a `registrationCloseAt` already past — so
+     * `deposit` reverts `RegistrationClosed` forever and no agent can ever make it
+     * winnable. The pot has exactly one exit, `resolve`/`awardPrizes` naming an
+     * address, because `seedPot` counts into `reserved` and `sweepUnaccounted`
+     * only takes `balance - reserved`.
+     *
+     * The bit worth pinning is that `_unwindAndRefund` is a clean no-op here: with
+     * `depositTotal == 0` and the season never `Staked`, it must not call the yield
+     * source, must credit nobody, and must sweep nothing to the treasury. If any of
+     * that stopped holding, recovering an uncontested pot would move money it was
+     * never supposed to touch.
+     */
+    function test_resolve_recoversTheWholePotOfASeasonNobodyEntered() public {
+        vm.prank(sponsor);
+        v.seedPot{value: 0.1 ether}(SEASON);
+        vm.warp(resolveBy); // registration long closed; still in Registration state
+
+        // Nobody can join any more, so the pot cannot be won.
+        vm.prank(_agent(0));
+        vm.expectRevert(DamnitsVault.RegistrationClosed.selector);
+        v.deposit{value: DEPOSIT}(SEASON);
+
+        address[] memory winners = new address[](1);
+        uint256[] memory amounts = new uint256[](1);
+        winners[0] = treasury;
+        amounts[0] = 0.1 ether;
+
+        uint256 treasuryBefore = v.owed(treasury);
+        vm.prank(operator);
+        v.resolve(SEASON, winners, amounts, ROOT);
+
+        assertEq(v.owed(treasury) - treasuryBefore, 0.1 ether, "the whole pot is recoverable");
+        // No deposits existed, so nothing was refunded and no interest was swept —
+        // the treasury's balance moved by the pot and by nothing else.
+        (, uint256 depositTotal, uint256 prizePot,,,,,, DamnitsVault.SeasonState state,) =
+            v.getSeason(SEASON);
+        assertEq(depositTotal, 0, "no deposits to unwind");
+        assertEq(prizePot, 0, "pot fully distributed");
+        assertEq(uint8(state), uint8(DamnitsVault.SeasonState.Resolved), "season closed");
+
+        // And it is really collectable, not just credited.
+        uint256 walletBefore = treasury.balance;
+        vm.prank(treasury);
+        v.withdraw();
+        assertEq(treasury.balance - walletBefore, 0.1 ether, "pot reaches the wallet");
+    }
+
     // ---- the public exit (D186) ---------------------------------------------
 
     function test_exitStale_succeedsForANonOperatorAfterTheDeadline() public {
