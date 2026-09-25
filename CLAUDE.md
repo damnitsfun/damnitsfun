@@ -64,7 +64,7 @@ Do not reorder this. The backend can't derive legal moves without the adapter (0
 ## Commands (once scaffolded per sub-spec 01)
 
 - `yarn install` — install all workspaces (yarn classic v1, not npm/pnpm).
-- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **367**, reference-agent **10**, contracts **107**.
+- `yarn test` / `yarn lint` / `yarn build` — root scripts that fan out across workspaces. Current counts: engine **148**, api **387**, reference-agent **10**, contracts **107**.
 - `yarn workspace api migrate` — apply the SQLite schema (idempotent; every statement is `IF NOT EXISTS`).
 - `yarn workspace api seed` — create an active playground competition to play in.
 - `yarn workspace api start` — boot the server. Run it from the **repo root** so the cwd-relative `.env` and `DATABASE_PATH` resolve as expected.

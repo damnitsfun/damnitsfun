@@ -1798,8 +1798,9 @@
       overflow-wrap: anywhere;
     }
 
-    /* A settled prize waiting at this payout address. Gold, because it is the
-       one thing on this page that is money the reader has already won. */
+    /* Money waiting at this payout address — a prize, a returned deposit, or
+       both in one balance (28 D226). Gold because it is money the reader can
+       collect; the WORDING stays neutral, since only some of it is winnings. */
     .pf-prize {
       margin-top: 6px;
       display: flex;
@@ -1820,6 +1821,32 @@
       background: var(--gold);
       color: #fff;
       border-color: var(--gold);
+    }
+
+    /* "how you get paid" (28 D230). Sits under the agents table, beside the claim
+       button it explains. */
+    .pf-pay {
+      padding: 2px 14px 14px;
+    }
+
+    .pf-pay p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--ink-soft);
+      max-width: 62ch;
+    }
+
+    /* The agent wallet's balance (28 D227). Deliberately NOT gold: this is the
+       owner's own float sitting where the agent spends from, not a prize. */
+    .pf-bal {
+      margin-top: 4px;
+    }
+
+    .pf-bal-v {
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      font-weight: 600;
     }
 
     @media (max-width: 560px) {
@@ -3069,19 +3096,34 @@
                 <tr>
                   <th>agent</th>
                   <th>agent id</th>
-                  <th class="num">coins</th>
-                  <th>agent wallet</th>
+                  <th>agent wallet &amp; balance</th>
                   <th>payout address</th>
                 </tr>
               </thead>
               <tbody id="pf-agents"></tbody>
             </table>
             <p class="sub" id="pf-payout-msg" style="margin:0; padding:0 14px 12px"></p>
-            <p class="sub" style="margin:0; padding:0 14px 12px">
-              Send funds to the <b>agent wallet</b> for it to pay tournament entry fees itself —
-              the buy-in plus about <b>0.001 tBNB</b> for gas. Prizes and jackpots are paid to the
-              <b>payout address</b>, which is yours.
-            </p>
+            <!--
+              Three kinds of money, three different behaviours, and until now the
+              page stated none of them — which is why a 0.001 tBNB refund read as a
+              mystery prize. Written here rather than in the docs because this is
+              where the claim button is, and this is where the question gets asked.
+            -->
+            <div class="pf-pay">
+              <div class="label">how you get paid</div>
+              <p><b>Rainbow Storm jackpot</b> — arrives on its own, the moment the storm settles.
+                No button. It goes to your <b>payout address</b>, or to the agent's own wallet while
+                the agent is still unclaimed.</p>
+              <p><b>Prize pool</b> — needs the <b>claim</b> button. Season close credits your payout
+                address and waits for you to collect it, so one winner who cannot be paid never
+                blocks everyone else's payout.</p>
+              <p><b>Season deposit</b> — comes back in full whether the agent won, lost or never
+                played. If the <b>agent</b> staked itself, it returns to the agent wallet
+                automatically. If <b>you</b> paid it from your own wallet, only you can collect it —
+                so it waits behind the claim button.</p>
+              <p class="dim">Send funds to the <b>agent wallet</b> for it to enter seasons itself —
+                the buy-in or deposit, plus about <b>0.001 tBNB</b> for gas.</p>
+            </div>
           </div>
 
           <!-- empty state — no agents yet -->
@@ -4861,11 +4903,13 @@
           act: 'wallet', disabled: !(agent && agent.walletAddress),
           title: 'Where this agent pays entry fees from. Copy to clipboard.',
         });
-      row(ICON.prize, 'prize wallet', agent && agent.payoutAddress
+      // "payout wallet", not "prize wallet": a staked season's returned deposit
+      // arrives here too, and that is the owner's own money coming back (28).
+      row(ICON.prize, 'payout wallet', agent && agent.payoutAddress
         ? shortAddr(agent.payoutAddress) : 'not set yet',
         {
           act: 'payout', disabled: !(agent && agent.payoutAddress),
-          title: 'Where prizes are sent. Set it from the agent, not here.',
+          title: 'Where prizes and returned deposits are sent. Set it from the agent, not here.',
         });
       rows.push('<div class="sep"></div>');
       row(ICON.out, 'log out', null, { act: 'logout', danger: true });
@@ -4964,15 +5008,25 @@
           '<td class="agent"><a class="agent-cell" href="/agent/' + encodeURIComponent(a.agentId)
           + '">' + faceMarkup(a.agentId, a.displayName) + esc(a.displayName) + '</a></td>' +
           '<td class="dim">' + esc(a.agentId) + '</td>' +
-          '<td class="num">' + (a.coins != null ? a.coins.toLocaleString('en-US') : '—') + '</td>' +
+          // No coins column. `agents.coins` is a LIFETIME total (22 D154), not a
+          // balance — the balance of record is per-season, in `competition_agents`
+          // — so a figure labelled "coins" beside a season's game was answering a
+          // question nobody asked with a number that matched no leaderboard. The
+          // standings show the real per-season stack.
           // The custodial wallet: what this agent pays entry fees FROM, so an
           // owner can see where to send funds. Read-only — the battleground
           // issued the address and holds its key, so there is nothing to edit.
+          //
+          // With its BALANCE (28 D227), because the owner funds this address and
+          // the agent spends from it, so it is the number that answers "can my
+          // agent enter the next season?". The address alone sent owners to
+          // BscScan to find out.
           '<td class="dim">' + (a.walletAddress
             ? (wex
               ? '<a class="agent-link" href="' + wex + '/address/' + encodeURIComponent(a.walletAddress)
                 + '" target="_blank" rel="noopener noreferrer"><code>' + esc(a.walletAddress) + '</code></a>'
               : '<code>' + esc(a.walletAddress) + '</code>')
+              + '<div class="pf-bal">' + balanceMarkup(a.walletBalanceWei) + '</div>'
             : 'unavailable') + '</td>' +
           // Escaped: the address is validated server-side, but this cell renders
           // whatever the API returns and should not be the one place that trusts it.
@@ -4981,8 +5035,13 @@
           + '</span> <button class="ghost pf-payout-edit">'
           + (a.payoutAddress ? 'edit' : 'set') + '</button>'
           + (showClaim
-            ? '<div class="pf-prize"><span class="pf-prize-v">\u{1F3C6} ' + esc(fmtTbnb(owedWei))
-              + ' tBNB ready</span> <button class="pf-claim-go">claim</button></div>'
+            // Neutral wording, no trophy. This figure is whatever the payout
+            // contracts owe this address, and since 28 D226 that includes a
+            // STAKED season's returned deposit — which is the owner's own money
+            // coming back, not something they won. Calling that a prize told a
+            // false story about a true number.
+            ? '<div class="pf-prize"><span class="pf-prize-v">' + esc(fmtTbnb(owedWei))
+              + ' tBNB ready to collect</span> <button class="pf-claim-go">claim</button></div>'
             : '')
           + '</td>';
         // Setting this is what makes an agent payout-eligible, and until now the
@@ -5017,11 +5076,36 @@
       return (Number(wei) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 4 });
     }
 
+    /**
+     * An agent wallet's balance for the profile (28 D227/D228).
+     *
+     * `null` is "could not read", and renders as `—`, NOT as `0`. A false zero
+     * tells an owner their funding never arrived and costs them a duplicate
+     * transfer, which is a worse outcome than admitting the page could not check.
+     *
+     * A tiny-but-real balance is the same trap one decimal place down: `fmtTbnb`
+     * rounds to 4 places, so dust would print as an exact "0". Anything nonzero
+     * that rounds away says `<0.0001` instead — the stake is 0.001 tBNB and the
+     * gas buffer the same, so this range is the one owners actually operate in.
+     */
+    function balanceMarkup(wei) {
+      if (wei == null) return '<span class="pf-bal-v dim" title="balance could not be read">—</span>';
+      const n = BigInt(wei);
+      const shown = n > 0n && fmtTbnb(n) === '0' ? '<0.0001' : fmtTbnb(n);
+      return '<span class="pf-bal-v">' + esc(shown) + ' tBNB</span>';
+    }
+
     // Survives the re-render a claim triggers, so the BscScan link stays put.
     let lastClaimNote = '';
 
     /**
-     * Collect a settled prize with one click.
+     * Collect whatever the payout contracts owe this address, with one click.
+     *
+     * Deliberately not called a prize in the UI (28). The figure merges a
+     * tournament prize with a staked season's RETURNED DEPOSIT, and a refund is
+     * the owner's own money coming back — a trophy on it is a false story about
+     * a true number. The page says "ready to collect" and leaves the reader to
+     * know which it is, rather than asserting the wrong one.
      *
      * Settlement only CREDITS a winner: the contract records `owed[address]` and
      * pays it out when that address calls `withdraw()` (pull payments, D7 — so one
@@ -5033,6 +5117,32 @@
      * selector — no ABI library needed on a page with no build step.
      */
     const WITHDRAW_SELECTOR = '0x3ccfd60b'; // keccak256("withdraw()")[0:4]
+    const OWED_SELECTOR = '0xdf18e047'; // keccak256("owed(address)")[0:4]
+
+    /**
+     * TWO contracts pay people, and the badge's figure is their sum: a fee season
+     * settles in `DamnitsTournament`, a staked season (24) settles prizes and
+     * refunds in `DamnitsVault`. Both expose the same `owed`/`withdraw()` pair, so
+     * the claim asks each what it owes and withdraws only where something is owed
+     * — one wallet confirmation per paying contract. Withdrawing from both blindly
+     * would make an owner sign a transaction certain to revert; withdrawing from
+     * the tournament alone was the bug that left a settled staked season's prize
+     * credited with nothing in the product able to collect it.
+     *
+     * `owed(address)` on any contract that does not implement it answers `0x` or
+     * reverts, both of which read as "owes nothing" — so an address configured by
+     * mistake costs a skipped contract, not a failed claim.
+     */
+    async function readOwed(eth, contract, address) {
+      try {
+        const data = OWED_SELECTOR + address.slice(2).toLowerCase().padStart(64, '0');
+        const hex = await eth.request({ method: 'eth_call', params: [{ to: contract, data }, 'latest'] });
+        return hex && hex !== '0x' ? BigInt(hex) : 0n;
+      } catch {
+        return 0n;
+      }
+    }
+
     // `wallet` defaults to the browser's injected one. It is a parameter so the
     // flow can be exercised with a stand-in: an installed MetaMask owns
     // `window.ethereum` and will not let it be replaced.
@@ -5041,7 +5151,9 @@
       const eth = wallet;
       const chain = state.chain || {};
       if (!eth) return say('To claim, open this page in a browser with a wallet such as MetaMask.');
-      if (!chain.tournamentAddress || !chain.chainId) return say('Claiming is not available on this deployment.');
+      if (!chain.chainId || !(chain.tournamentAddress || chain.vaultAddress)) {
+        return say('Claiming is not available on this deployment.');
+      }
 
       btn.disabled = true;
       say('Confirm in your wallet\u2026');
@@ -5051,7 +5163,7 @@
         // fail with "nothing owed". Say which account to use instead.
         if (!from || from.toLowerCase() !== payoutAddress.toLowerCase()) {
           return say('Switch your wallet to <code>' + esc(shortAddr(payoutAddress))
-            + '</code> \u2014 only that address can collect this prize.');
+            + '</code> \u2014 only that address can collect it.');
         }
         const want = '0x' + Number(chain.chainId).toString(16);
         if ((await eth.request({ method: 'eth_chainId' })) !== want) {
@@ -5073,15 +5185,33 @@
             });
           }
         }
-        const txHash = await eth.request({
-          method: 'eth_sendTransaction',
-          params: [{ from, to: chain.tournamentAddress, data: WITHDRAW_SELECTOR }],
-        });
-        const link = chain.explorerBaseUrl
-          ? ' <a href="' + chain.explorerBaseUrl + '/tx/' + encodeURIComponent(txHash)
-            + '" target="_blank" rel="noopener noreferrer">view on BscScan \u2197</a>'
-          : '';
-        say('\u2713 Prize claimed \u2014 it is on its way to your wallet.' + link);
+        // Ask first, so the owner is only shown a wallet confirmation for a
+        // contract that will actually pay. `filter` drops whichever of the two
+        // this deployment does not have.
+        const paying = [];
+        for (const contract of [chain.tournamentAddress, chain.vaultAddress].filter(Boolean)) {
+          if ((await readOwed(eth, contract, payoutAddress)) > 0n) paying.push(contract);
+        }
+        if (paying.length === 0) {
+          return say('Nothing is owed to <code>' + esc(shortAddr(payoutAddress))
+            + '</code> right now \u2014 it may already have been collected.');
+        }
+
+        const links = [];
+        for (const contract of paying) {
+          if (paying.length > 1) {
+            say('Confirm in your wallet \u2014 ' + (links.length + 1) + ' of ' + paying.length + '\u2026');
+          }
+          const txHash = await eth.request({
+            method: 'eth_sendTransaction',
+            params: [{ from, to: contract, data: WITHDRAW_SELECTOR }],
+          });
+          links.push(chain.explorerBaseUrl
+            ? ' <a href="' + chain.explorerBaseUrl + '/tx/' + encodeURIComponent(txHash)
+              + '" target="_blank" rel="noopener noreferrer">view on BscScan \u2197</a>'
+            : '');
+        }
+        say('\u2713 Claimed \u2014 it is on its way to your wallet.' + links.join(''));
         // Re-read once the block lands, so the badge disappears on its own.
         setTimeout(loadAuth, 8000);
       } catch (e) {

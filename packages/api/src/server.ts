@@ -62,11 +62,17 @@ export interface BuildOptions {
    */
   registrar?: IdentityRegistrar | null;
   /**
-   * Reads what an address can claim from the tournament contract. Injected by
-   * `start()` for the same reason as `registrar`: absent, the profile reports
-   * nothing claimable and no test can reach the network.
+   * Reads what an address can claim, summed across every payout contract.
+   * Injected by `start()` for the same reason as `registrar`: absent, the profile
+   * reports nothing claimable and no test can reach the network.
    */
   readClaimable?: ((address: string) => Promise<string | null>) | null;
+  /**
+   * Reads an agent wallet's on-chain balance for the profile page (sub-spec 28,
+   * T174). Injected like `readClaimable`; absent, the page shows `—` rather than
+   * a zero it did not measure (D228).
+   */
+  readBalance?: ((address: string) => Promise<string | null>) | null;
 }
 
 export interface BuiltServer {
@@ -621,20 +627,37 @@ export function buildServer(options: BuildOptions): BuiltServer {
     scope.get('/auth/session', async (request) => {
       const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
       const info = orchestrator.sessionInfo(token);
-      // What each payout address can collect, read once per ADDRESS — the
-      // contract's ledger is per address, so two agents sharing one payout
-      // address share one balance, and reading it twice would invite the page
-      // to show the same prize twice.
-      const read = options.readClaimable;
-      const addresses = [...new Set(info.agents.map((a) => a.payoutAddress).filter(Boolean))] as string[];
-      const owed = new Map(
-        await Promise.all(addresses.map(async (a) => [a, read ? await read(a) : null] as const)),
-      );
+      // Both figures are read once per ADDRESS, not once per agent (sub-spec 28
+      // D229) — the ledger and the balance are both keyed by address, so two
+      // agents sharing one payout address share one balance, and reading it
+      // twice would invite the page to show the same prize twice.
+      //
+      // A null from either reader means "could not read", which the page must
+      // render as unknown rather than zero (D228): a false zero tells an owner
+      // their funding never arrived and costs them a duplicate transfer.
+      const perAddress = async (
+        pick: (a: (typeof info.agents)[number]) => string | null,
+        read: ((address: string) => Promise<string | null>) | null | undefined,
+      ) => {
+        const addresses = [...new Set(info.agents.map(pick).filter(Boolean))] as string[];
+        return new Map(
+          await Promise.all(addresses.map(async (a) => [a, read ? await read(a) : null] as const)),
+        );
+      };
+      const [owed, balances] = await Promise.all([
+        perAddress((a) => a.payoutAddress, options.readClaimable),
+        perAddress((a) => a.walletAddress, options.readBalance),
+      ]);
       return {
         ...info,
         agents: info.agents.map((a) => ({
           ...a,
           claimableWei: a.payoutAddress ? (owed.get(a.payoutAddress) ?? null) : null,
+          // The custodial wallet's balance. The owner funds this address and the
+          // agent spends from it (25 D194, 26 D205), so it is the one number that
+          // answers "can my agent enter the next season?" — and until now the
+          // page showed the address without it, sending owners to BscScan.
+          walletBalanceWei: a.walletAddress ? (balances.get(a.walletAddress) ?? null) : null,
         })),
       };
     });
@@ -880,6 +903,7 @@ export async function start(): Promise<void> {
     logger: true,
     registrar,
     readClaimable: (address) => readClaimable(config, address),
+    readBalance: (address) => readNativeBalance(config, address),
   });
 
   // Catch up on anything a previous process left unregistered, then keep going.
