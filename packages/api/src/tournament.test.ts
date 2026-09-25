@@ -94,7 +94,15 @@ function boot(overrides: Record<string, string> = {}): Harness {
     env: {
       GAME_TIME_LIMIT_MS: '3600000',
       TABLE_SIZE: '4',
-      RAINBOW_STORM_CHANCE: '0.00001',
+      // ZERO, not "very small". The storm tests below INJECT a storm into the
+      // event log and assert on which one was captured, so a genuine storm during
+      // play is contamination, not realism: `captureJackpotFromSession` takes the
+      // first storm in the log, and a real one outranks the injected one. At
+      // 0.00001 that lost a CI run roughly once in a few hundred — rare enough to
+      // read as "unrelated failure" and be re-run away, which is the worst kind.
+      // Storms firing for real are covered by playground-jackpot.test.ts (chance 1)
+      // and storm-frequency.test.ts; here they are noise.
+      RAINBOW_STORM_CHANCE: '0',
       MIN_RANKED_SESSIONS: '1', // one game qualifies, so tests stay short
       ...overrides,
     },

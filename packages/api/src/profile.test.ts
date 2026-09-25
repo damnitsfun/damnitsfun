@@ -28,6 +28,11 @@ function boot(env: Record<string, string> = {}): H {
       DECISION_TIMEOUT_MS: '5',
       GAME_LIMIT_MIN_ROUNDS: '0',
       GAME_TIME_LIMIT_MS: '1',
+      // The style test injects one storm and asserts `metrics.storms === 1`, a
+      // COUNT — so a real storm during play makes it 2. This file was inheriting
+      // the production default of 0.0006, sixty times the odds of the same latent
+      // flake found in tournament.test.ts, and nothing here wants a real storm.
+      RAINBOW_STORM_CHANCE: '0',
       ...env,
     },
   });
