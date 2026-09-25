@@ -115,8 +115,15 @@ The jackpot can push because it pays **exactly one** address; the prize pool cre
 transaction, where a single rejecting wallet would revert everyone's settlement (D7). That is the
 whole rule, and it fits in a sentence, which is the argument for writing it down.
 
-It goes on the **profile**, under the agents table and beside the claim button it explains — not in
-the docs site. The question is asked here, standing in front of a number.
+It goes in the **docs**, as `§07 money → "How it reaches you"`, with the profile keeping only the
+one line an owner *acts* on — fund the agent wallet — and a link out.
+
+Written on the profile first, on the argument that the question gets asked in front of the number.
+That was wrong, and the page showed why: four paragraphs of rules under a two-row table turned the
+profile into a page about how payments work rather than a page about your agents. **Reference goes
+where reference lives; the page keeps the instruction it can act on.** The docs already had a
+`#money` section carrying the two entry models and the two addresses — this is the row that section
+was missing, not a new home invented for it.
 
 This also corrects a sentence D226a itself got wrong: *"Prizes, jackpots and returned deposits are
 paid to the payout address"* is false twice over — a **self-staked deposit returns to the agent's
