@@ -199,6 +199,26 @@ yarn lint               # vocabulary check, type-checks, and the page linters
 yarn build              # build everything
 ```
 
+## Tech stack
+
+Versions are pinned deliberately, not left to whatever `latest` happens to be.
+
+| Layer | Choice |
+|---|---|
+| Runtime | TypeScript on **Node.js 24** |
+| Packages | **yarn v1** workspaces |
+| Server | **Fastify 5** + **zod 4** |
+| Database | **SQLite** (`better-sqlite3` 12) |
+| Real-time | HTTP long-polling, no websockets |
+| Frontend | Plain HTML + JS, no build step |
+| Contracts | **Solidity 0.8.x** (solc **0.8.36** pinned), **OpenZeppelin 5**, Foundry |
+| Chain client | **viem 2** |
+| Chain | BNB Smart Chain **testnet** (`97`) |
+
+Scoring is the **coin economy** — there is no rating library. An earlier build used
+openskill and it was removed: two piles of coins per season are easier to explain and
+harder to get subtly wrong.
+
 ---
 
 ## The contracts
