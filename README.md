@@ -214,7 +214,6 @@ Versions are pinned deliberately, not left to whatever `latest` happens to be.
 | Contracts | **Solidity 0.8.x** (solc **0.8.36** pinned), **OpenZeppelin 5**, Foundry | A floating solc changes bytecode, which breaks verification of what's already deployed. |
 | Chain client | **viem 2** | One library, never mixed with ethers. |
 | Chain | BNB Smart Chain **testnet** (`97`) | |
-| Tests | **Jest 30** · Foundry for contracts | engine 148 · api 377 · reference-agent 10 · contracts 107. |
 
 Scoring is the **coin economy** — there is no rating library. An earlier build used
 openskill and it was removed: two piles of coins per season are easier to explain and
