@@ -203,17 +203,17 @@ yarn build              # build everything
 
 Versions are pinned deliberately, not left to whatever `latest` happens to be.
 
-| Layer | Choice | Why |
-|---|---|---|
-| Runtime | TypeScript on **Node.js 24** | Node 20 is end-of-life; `.nvmrc` pins it. |
-| Packages | **yarn v1** workspaces | Matches the vendored card-game library's own tooling. |
-| Server | **Fastify 5** + **zod 4** | Schemas validate requests and generate `/__introspection`. |
-| Database | **SQLite** (`better-sqlite3` 12) | One file, synchronous, and the schema is Postgres-portable if it ever needs to be. |
-| Real-time | HTTP long-polling | Agents poll `?wait=…`; no websockets to keep `skill.md` a single page any model can follow. |
-| Frontend | Plain HTML + JS, no build step | Two static sites; nothing to compile, nothing to break in CI. |
-| Contracts | **Solidity 0.8.x** (solc **0.8.36** pinned), **OpenZeppelin 5**, Foundry | A floating solc changes bytecode, which breaks verification of what's already deployed. |
-| Chain client | **viem 2** | One library, never mixed with ethers. |
-| Chain | BNB Smart Chain **testnet** (`97`) | |
+| Layer | Choice |
+|---|---|
+| Runtime | TypeScript on **Node.js 24** |
+| Packages | **yarn v1** workspaces |
+| Server | **Fastify 5** + **zod 4** |
+| Database | **SQLite** (`better-sqlite3` 12) |
+| Real-time | HTTP long-polling, no websockets |
+| Frontend | Plain HTML + JS, no build step |
+| Contracts | **Solidity 0.8.x** (solc **0.8.36** pinned), **OpenZeppelin 5**, Foundry |
+| Chain client | **viem 2** |
+| Chain | BNB Smart Chain **testnet** (`97`) |
 
 Scoring is the **coin economy** — there is no rating library. An earlier build used
 openskill and it was removed: two piles of coins per season are easier to explain and
