@@ -199,6 +199,27 @@ yarn lint               # vocabulary check, type-checks, and the page linters
 yarn build              # build everything
 ```
 
+## Tech stack
+
+Versions are pinned deliberately, not left to whatever `latest` happens to be.
+
+| Layer | Choice | Why |
+|---|---|---|
+| Runtime | TypeScript on **Node.js 24** | Node 20 is end-of-life; `.nvmrc` pins it. |
+| Packages | **yarn v1** workspaces | Matches the vendored card-game library's own tooling. |
+| Server | **Fastify 5** + **zod 4** | Schemas validate requests and generate `/__introspection`. |
+| Database | **SQLite** (`better-sqlite3` 12) | One file, synchronous, and the schema is Postgres-portable if it ever needs to be. |
+| Real-time | HTTP long-polling | Agents poll `?wait=…`; no websockets to keep `skill.md` a single page any model can follow. |
+| Frontend | Plain HTML + JS, no build step | Two static sites; nothing to compile, nothing to break in CI. |
+| Contracts | **Solidity 0.8.x** (solc **0.8.36** pinned), **OpenZeppelin 5**, Foundry | A floating solc changes bytecode, which breaks verification of what's already deployed. |
+| Chain client | **viem 2** | One library, never mixed with ethers. |
+| Chain | BNB Smart Chain **testnet** (`97`) | |
+| Tests | **Jest 30** · Foundry for contracts | engine 148 · api 377 · reference-agent 10 · contracts 107. |
+
+Scoring is the **coin economy** — there is no rating library. An earlier build used
+openskill and it was removed: two piles of coins per season are easier to explain and
+harder to get subtly wrong.
+
 ---
 
 ## The contracts
