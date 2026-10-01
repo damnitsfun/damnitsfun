@@ -135,7 +135,8 @@ contract DamnitsTournamentFuzzTest is Test {
         address[] memory winners = new address[](2);
         winners[0] = _payout(90);
         winners[1] = _payout(91);
-        uint256 first = paidIn == 0 ? 0 : uint256(keccak256(abi.encode("split", paidIn))) % (paidIn + 1);
+        uint256 first =
+            paidIn == 0 ? 0 : uint256(keccak256(abi.encode("split", paidIn))) % (paidIn + 1);
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = first;
         amounts[1] = paidIn - first;
@@ -155,7 +156,9 @@ contract DamnitsTournamentFuzzTest is Test {
 
         // THE INVARIANT: money in == money out == settled owed, exactly.
         assertEq(o.owedOut, o.paidIn, "credited owed == paid in (no mint/burn)");
-        assertEq(winners[0].balance + winners[1].balance, o.paidIn, "withdrawals returned everything");
+        assertEq(
+            winners[0].balance + winners[1].balance, o.paidIn, "withdrawals returned everything"
+        );
         assertEq(address(t).balance, 0, "contract ends empty when the pool distributes fully");
 
         (, uint256 pool,,,,) = t.getCompetition(id);
@@ -174,10 +177,7 @@ contract DamnitsTournamentFuzzTest is Test {
      * (The unit suite pins the revert at one shape; this fuzzes the whole
      * envelope around it.)
      */
-    function testFuzz_settleNeverOverDistributes(
-        uint8 rawWinnerCount,
-        uint64 rawBloat
-    ) public {
+    function testFuzz_settleNeverOverDistributes(uint8 rawWinnerCount, uint64 rawBloat) public {
         uint256 k = bound(uint256(rawWinnerCount), 1, 4);
         // How much the ask exceeds the pool: 0 (valid edge) .. +3 wei-ether.
         uint256 bloat = bound(uint256(rawBloat), 0, 3 ether);
@@ -216,7 +216,9 @@ contract DamnitsTournamentFuzzTest is Test {
         }
 
         uint256 sum;
-        for (uint256 i = 0; i < k; i++) sum += amounts[i];
+        for (uint256 i = 0; i < k; i++) {
+            sum += amounts[i];
+        }
 
         vm.prank(operator);
         if (sum > paidIn) {
@@ -305,7 +307,9 @@ contract DamnitsTournamentFuzzTest is Test {
             vm.prank(operator);
             t.closeEntries(id);
             vm.prank(operator);
-            t.settleCompetition(id, _one(_payout(400 + r)), _zero(), address(0), 0, keccak256("root"));
+            t.settleCompetition(
+                id, _one(_payout(400 + r)), _zero(), address(0), 0, keccak256("root")
+            );
 
             // Next season must be open before rolling over.
             bytes32 nextId = _comp(200 + r + 1);
@@ -340,7 +344,7 @@ contract DamnitsTournamentFuzzTest is Test {
         assertEq(sponsorPot, paidOut + inContract, "conservation across settle/award/rollover");
 
         // And the residual jackpot never wanders off the live jackpotPool book.
-        (, , uint256 finalJackpot,,,) = t.getCompetition(_comp(200 + rounds - 1));
+        (,, uint256 finalJackpot,,,) = t.getCompetition(_comp(200 + rounds - 1));
         assertEq(finalJackpot, lastJackpot, "booked residual matches reality");
     }
 }
