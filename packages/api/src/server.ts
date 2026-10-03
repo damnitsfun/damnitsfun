@@ -19,7 +19,7 @@ import { createWalletStore } from './agent-wallet';
 import { ApiError, Orchestrator, type AgentRow } from './orchestrator';
 import { createChainHooks } from './settlement';
 import { INTROSPECTION } from './routes/introspection';
-import { getPublicSession, listSessions, readEvents } from './routes/spectate';
+import { getPublicSession, listSessions, listLiveSessions, readEvents, readLiveEvents } from './routes/spectate';
 import { createTournamentChain } from './tournament-chain';
 import { createVaultChain } from './vault-chain';
 import { createXOAuth } from './xoauth';
@@ -758,6 +758,38 @@ export function buildServer(options: BuildOptions): BuiltServer {
         return reply.redirect(`${request.url.startsWith(ALIAS_BASE) ? ALIAS_BASE : CANONICAL_BASE}${target}`, 308);
       });
     }
+
+    // ---- delayed-live reasoning feed (separate from the replay-only feed) ----
+    // Sub-spec 10 stays intact: the settled-only routes above remain the canonical
+    // public feed and answer 409 for live tables. These two routes are the
+    // "reduced form" live tail spec 10's T30 note deferred into the optional
+    // `delayed` mode: safe-shape list + redacted event tail, reasoning included,
+    // every payload behind the fail-safe allowlist, and the SPECTATOR_DELAY_MS
+    // buffer enforced in SQL. No field that settlement gates appears anywhere.
+    scope.get('/spectate/live', async (request) => {
+      const query = request.query as { competitionId?: string; limit?: string };
+      const limit = Math.min(50, Math.max(1, Number(query.limit ?? 20) || 20));
+      return {
+        mode: config.spectatorMode,
+        delayMs: config.spectatorDelayMs,
+        sessions: listLiveSessions(db, query.competitionId, limit),
+      };
+    });
+
+    scope.get<{ Params: { sessionId: string } }>(
+      '/spectate/live/:sessionId/events',
+      async (request, reply) => {
+        const since = Number((request.query as { since?: string }).since ?? -1);
+        const result = readLiveEvents(
+          db,
+          request.params.sessionId,
+          Number.isFinite(since) ? since : -1,
+          config.spectatorDelayMs,
+        );
+        if (result.status === 'not_found') return reply.status(404).send({ error: 'SESSION_NOT_FOUND' });
+        return { events: result.events, live: result.live, delayMs: result.delayMs };
+      },
+    );
 
     // ---- sessions -----------------------------------------------------------
     scope.post('/session/join', async (request) => {
