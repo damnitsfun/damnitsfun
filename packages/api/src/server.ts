@@ -233,6 +233,16 @@ export function buildServer(options: BuildOptions): BuiltServer {
     sendPage(reply, webIndex),
   );
 
+  // ---- benchmark endpoints at server root (no auth) -------------------------
+  app.get('/benchmark/agents', async () => orchestrator.benchmark());
+  app.get('/benchmark/dataset', async (_request, reply) => {
+    const { csv, filename } = orchestrator.benchmarkDatasetCsv();
+    return reply
+      .type('text/csv; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${filename}"`)
+      .send(csv);
+  });
+
   const cookieSecure = config.publicBaseUrl.startsWith('https://');
 
   // ---- ERC-8004 identity reconciliation (sub-spec 23, D176) -----------------
@@ -402,6 +412,16 @@ export function buildServer(options: BuildOptions): BuiltServer {
     // deliberately does NOT count reaped lobbies as tables or registered-but-never
     // -seated agents as agents — see `Orchestrator.totals`.
     scope.get('/stats/totals', async () => orchestrator.totals());
+
+    // ---- benchmark endpoints (no auth) --------------------------------------
+    scope.get('/benchmark/agents', async () => orchestrator.benchmark());
+    scope.get('/benchmark/dataset', async (_request, reply) => {
+      const { csv, filename } = orchestrator.benchmarkDatasetCsv();
+      return reply
+        .type('text/csv; charset=utf-8')
+        .header('content-disposition', `attachment; filename="${filename}"`)
+        .send(csv);
+    });
 
     // ---- public agent profile (no auth, sub-spec 19 T73) --------------------
     //

@@ -281,6 +281,30 @@ function toApiError(error: unknown): ApiError {
  * time instead of 12%.
  */
 export const TOTALS_CACHE_MS = 300_000;
+export const BENCHMARK_CACHE_MS = 300_000;
+
+export interface BenchmarkAgent {
+  agentId: string;
+  displayName: string;
+  ownerHandle: string | null;
+  played: number;
+  tablesWon: number;
+  winRate: number | null;
+  netCoins: number;
+  sampledMoves: number;
+  medianMoveMs: number | null;
+  p95MoveMs: number | null;
+  timeoutMoves: number;
+  timeoutRate: number | null;
+  reasoningMoves: number;
+}
+
+export interface BenchmarkResponse {
+  totals: { agents: number; tables: number; events: number };
+  generatedAt: string;
+  sampleWindowHours: number;
+  agents: BenchmarkAgent[];
+}
 
 export class Orchestrator {
   private readonly db: Db;
@@ -293,6 +317,8 @@ export class Orchestrator {
    * about not doing it once per visitor per 2.5s for a number that moves slowly.
    */
   private totalsCache: { at: number; value: { agents: number; tables: number; events: number } } | null = null;
+  private benchmarkCache: { at: number; value: BenchmarkResponse } | null = null;
+  private benchmarkCsvCache: { at: number; value: string; filename: string } | null = null;
   private readonly hooks: SessionLifecycleHooks;
   private readonly chain: SettlementChain;
   private readonly tournament: TournamentChain;
@@ -3722,6 +3748,351 @@ export class Orchestrator {
   isLive(sessionId: string): boolean {
     return this.live.has(sessionId);
   }
+
+  /** Clears cached benchmark responses (used in tests). */
+  clearBenchmarkCache(): void {
+    this.benchmarkCache = null;
+    this.benchmarkCsvCache = null;
+  }
+
+  /**
+   * All-time classic standings across all seasons (no competitionId filter).
+   * Follows playgroundStandings() semantics but covers all classic seasons.
+   */
+  allTimeClassicStandings(): Array<{
+    agentId: string;
+    displayName: string;
+    ownerHandle: string | null;
+    coins: number;
+    rebuysUsed: number;
+    netCoins: number;
+    tablesWon: number;
+    played: number;
+  }> {
+    const rebuyCoins = this.config.rebuyCoins;
+    const rows = this.db
+      .prepare(
+        `SELECT a.id AS agentId,
+                a.display_name AS displayName,
+                o.x_handle AS ownerHandle,
+                a.coins AS coins,
+                COALESCE(rb.rebuys, 0) AS rebuysUsed,
+                a.coins - COALESCE(rb.rebuys, 0) * @rebuyCoins AS netCoins,
+                COUNT(DISTINCT s.id) AS played,
+                COUNT(DISTINCT CASE WHEN s.winner_agent_id = a.id THEN s.id END) AS tablesWon
+           FROM agents a
+           LEFT JOIN owners o ON o.id = a.owner_id
+           LEFT JOIN session_players p ON p.agent_id = a.id
+           LEFT JOIN sessions s ON s.id = p.session_id 
+                               AND s.status IN ('settled','archived')
+                               AND EXISTS (SELECT 1 FROM competitions c WHERE c.id = s.competition_id AND c.kind = 'classic')
+           LEFT JOIN (
+             SELECT r.agent_id AS agent_id, SUM(r.used) AS rebuys
+               FROM agent_rebuys r
+               JOIN competitions rc ON rc.id = r.competition_id AND rc.kind = 'classic'
+              GROUP BY r.agent_id
+           ) rb ON rb.agent_id = a.id
+          GROUP BY a.id
+          ORDER BY netCoins DESC, tablesWon DESC, played ASC, a.id ASC`,
+      )
+      .all({ rebuyCoins }) as Array<{
+        agentId: string;
+        displayName: string;
+        ownerHandle: string | null;
+        coins: number;
+        rebuysUsed: number;
+        netCoins: number;
+        tablesWon: number;
+        played: number;
+      }>;
+    return rows;
+  }
+
+  /**
+   * Benchmark data for agents across all competitions (all-time classic standings)
+   * plus quality metrics from a recent sample of settled/archived sessions (up to 30).
+   * Cached for 5 minutes, same pattern as totals().
+   */
+  benchmark(forceFresh = false): BenchmarkResponse {
+    const now = this.clock();
+    if (!forceFresh && this.benchmarkCache && now - this.benchmarkCache.at < BENCHMARK_CACHE_MS) {
+      return this.benchmarkCache.value;
+    }
+
+    const totals = this.totals();
+    const generatedAt = new Date(now).toISOString();
+
+    const agentStandings = this.allTimeClassicStandings();
+
+    const sessionRows = this.db
+      .prepare(
+        `SELECT id, created_at AS createdAt
+           FROM sessions
+          WHERE status IN ('settled', 'archived')
+          ORDER BY rowid DESC
+          LIMIT 30`,
+      )
+      .all() as Array<{ id: string; createdAt: string }>;
+
+    let sampleWindowHours = 24;
+    const agentSampleStats = new Map<string, {
+      sampledMoves: number;
+      timeoutMoves: number;
+      reasoningMoves: number;
+      cardPlayedDeltas: number[];
+      lastCardPlayedTime: number | null;
+      lastSessionId: string | null;
+    }>();
+
+    if (sessionRows.length > 0) {
+      const validTimestamps = sessionRows
+        .map((s) => new Date(s.createdAt).getTime())
+        .filter((t) => !isNaN(t));
+      if (validTimestamps.length > 0) {
+        const earliestMs = Math.min(...validTimestamps);
+        sampleWindowHours = Math.max(1, Math.round(((now - earliestMs) / (3600 * 1000)) * 10) / 10);
+      }
+
+      const sessionIds = sessionRows.map((s) => s.id);
+      const placeholders = sessionIds.map(() => '?').join(',');
+
+      const eventRows = this.db
+        .prepare(
+          `SELECT session_id AS sessionId,
+                  seq,
+                  event_type AS eventType,
+                  json_extract(payload_json, '$.agentId') AS agentId,
+                  payload_json AS payloadJson,
+                  reasoning,
+                  created_at AS createdAt
+             FROM session_events
+            WHERE session_id IN (${placeholders})
+              AND event_type IN ('CARD_PLAYED', 'CARD_DRAWN', 'TURN_PASSED')
+            ORDER BY session_id, seq ASC`,
+        )
+        .all(...sessionIds) as Array<{
+          sessionId: string;
+          seq: number;
+          eventType: string;
+          agentId: string | null;
+          payloadJson: string;
+          reasoning: string | null;
+          createdAt: string;
+        }>;
+
+      for (const row of eventRows) {
+        let agentId = row.agentId;
+        if (!agentId && row.payloadJson) {
+          try {
+            agentId = JSON.parse(row.payloadJson).agentId ?? null;
+          } catch {}
+        }
+        if (!agentId) continue;
+
+        let stats = agentSampleStats.get(agentId);
+        if (!stats) {
+          stats = {
+            sampledMoves: 0,
+            timeoutMoves: 0,
+            reasoningMoves: 0,
+            cardPlayedDeltas: [],
+            lastCardPlayedTime: null,
+            lastSessionId: null,
+          };
+          agentSampleStats.set(agentId, stats);
+        }
+
+        stats.sampledMoves += 1;
+
+        if (typeof row.reasoning === 'string' && row.reasoning.startsWith('auto-action:')) {
+          stats.timeoutMoves += 1;
+        }
+
+        if (typeof row.reasoning === 'string' && row.reasoning.trim().length > 0) {
+          stats.reasoningMoves += 1;
+        }
+
+        if (row.eventType === 'CARD_PLAYED') {
+          const t = new Date(row.createdAt).getTime();
+          if (!isNaN(t)) {
+            if (stats.lastSessionId === row.sessionId && stats.lastCardPlayedTime !== null) {
+              const delta = t - stats.lastCardPlayedTime;
+              if (delta >= 0 && delta <= 120_000) {
+                stats.cardPlayedDeltas.push(delta);
+              }
+            }
+            stats.lastCardPlayedTime = t;
+            stats.lastSessionId = row.sessionId;
+          }
+        }
+      }
+    }
+
+    const agents: BenchmarkAgent[] = agentStandings.map((a) => {
+      const stats = agentSampleStats.get(a.agentId);
+      const sampledMoves = stats?.sampledMoves ?? 0;
+      const timeoutMoves = stats?.timeoutMoves ?? 0;
+      const reasoningMoves = stats?.reasoningMoves ?? 0;
+      const timeoutRate = sampledMoves > 0 ? timeoutMoves / sampledMoves : null;
+
+      let medianMoveMs: number | null = null;
+      let p95MoveMs: number | null = null;
+      if (stats && stats.cardPlayedDeltas.length > 0) {
+        const sorted = [...stats.cardPlayedDeltas].sort((x, y) => x - y);
+        const mid = Math.floor(sorted.length / 2);
+        medianMoveMs = sorted.length % 2 !== 0 ? sorted[mid]! : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
+        const p95Idx = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95));
+        p95MoveMs = sorted[p95Idx]!;
+      }
+
+      const winRate = a.played > 0 ? a.tablesWon / a.played : null;
+
+      return {
+        agentId: a.agentId,
+        displayName: a.displayName,
+        ownerHandle: a.ownerHandle,
+        played: a.played,
+        tablesWon: a.tablesWon,
+        winRate,
+        netCoins: a.netCoins,
+        sampledMoves,
+        medianMoveMs,
+        p95MoveMs,
+        timeoutMoves,
+        timeoutRate,
+        reasoningMoves,
+      };
+    });
+
+    const value: BenchmarkResponse = {
+      totals,
+      generatedAt,
+      sampleWindowHours,
+      agents,
+    };
+
+    this.benchmarkCache = { at: now, value };
+    return value;
+  }
+
+  /**
+   * Benchmark dataset CSV export.
+   * Part (a): summary per agent
+   * Part (b): moves from the same sample window (capped at 10,000)
+   */
+  benchmarkDatasetCsv(forceFresh = false): { csv: string; filename: string } {
+    const now = this.clock();
+    if (!forceFresh && this.benchmarkCsvCache && now - this.benchmarkCsvCache.at < BENCHMARK_CACHE_MS) {
+      return { csv: this.benchmarkCsvCache.value, filename: this.benchmarkCsvCache.filename };
+    }
+
+    const data = this.benchmark(forceFresh);
+    const d = new Date(now);
+    const yyyymmdd = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const filename = `benchmark-${yyyymmdd}.csv`;
+
+    const lines: string[] = [];
+
+    // Part (a): summary per agent
+    lines.push('agentId,displayName,ownerHandle,played,tablesWon,winRate,netCoins,sampledMoves,medianMoveMs,p95MoveMs,timeoutMoves,timeoutRate,reasoningMoves');
+    for (const a of data.agents) {
+      lines.push([
+        escapeCsv(a.agentId),
+        escapeCsv(a.displayName),
+        escapeCsv(a.ownerHandle),
+        escapeCsv(a.played),
+        escapeCsv(a.tablesWon),
+        escapeCsv(a.winRate),
+        escapeCsv(a.netCoins),
+        escapeCsv(a.sampledMoves),
+        escapeCsv(a.medianMoveMs),
+        escapeCsv(a.p95MoveMs),
+        escapeCsv(a.timeoutMoves),
+        escapeCsv(a.timeoutRate),
+        escapeCsv(a.reasoningMoves),
+      ].join(','));
+    }
+
+    lines.push('');
+
+    // Part (b): moves from the same sample window of up to 30 sessions, hard-capped at 10,000
+    const sessionRows = this.db
+      .prepare(
+        `SELECT id
+           FROM sessions
+          WHERE status IN ('settled', 'archived')
+          ORDER BY rowid DESC
+          LIMIT 30`,
+      )
+      .all() as Array<{ id: string }>;
+
+    let moveRows: Array<{
+      sessionId: string;
+      seq: number;
+      eventType: string;
+      agentId: string | null;
+      payloadJson: string;
+      reasoning: string | null;
+    }> = [];
+
+    if (sessionRows.length > 0) {
+      const sessionIds = sessionRows.map((s) => s.id);
+      const placeholders = sessionIds.map(() => '?').join(',');
+
+      moveRows = this.db
+        .prepare(
+          `SELECT session_id AS sessionId,
+                  seq,
+                  event_type AS eventType,
+                  json_extract(payload_json, '$.agentId') AS agentId,
+                  payload_json AS payloadJson,
+                  reasoning
+             FROM session_events
+            WHERE session_id IN (${placeholders})
+              AND event_type IN ('CARD_PLAYED', 'CARD_DRAWN', 'TURN_PASSED')
+            ORDER BY session_id, seq ASC
+            LIMIT 10001`,
+        )
+        .all(...sessionIds) as typeof moveRows;
+    }
+
+    const MAX_MOVES = 10_000;
+    const truncated = moveRows.length > MAX_MOVES;
+    if (truncated) {
+      lines.push('# truncated at 10000 rows (sample window)');
+    }
+    lines.push('sessionId,seq,event_type,agentId,reasoning');
+
+    const slice = truncated ? moveRows.slice(0, MAX_MOVES) : moveRows;
+    for (const r of slice) {
+      let agentId = r.agentId;
+      if (!agentId && r.payloadJson) {
+        try {
+          agentId = JSON.parse(r.payloadJson).agentId ?? null;
+        } catch {}
+      }
+      lines.push([
+        escapeCsv(r.sessionId),
+        escapeCsv(r.seq),
+        escapeCsv(r.eventType),
+        escapeCsv(agentId),
+        escapeCsv(r.reasoning),
+      ].join(','));
+    }
+
+    const csv = lines.join('\n');
+    this.benchmarkCsvCache = { at: now, value: csv, filename };
+    return { csv, filename };
+  }
+}
+
+function escapeCsv(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replaceAll('"', '""')}"`;
+  }
+  return str;
 }
 
 export { toApiError };
