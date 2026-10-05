@@ -113,15 +113,18 @@ async function playOneMove(
  */
 function hiddenCardFragments(db: Db, sessionId: string): { fragments: Set<string>; seeds: Set<string> } {
   const hidden = new Set<string>();
-  const played = new Set<string>();
+  const faceUp = new Set<string>();
   const seeds = new Set<string>();
   const rows = db
     .prepare(`SELECT payload_json, event_type FROM session_events WHERE session_id = ?`)
     .all(sessionId) as Array<{ payload_json: string; event_type: string }>;
   for (const row of rows) {
     const p = JSON.parse(row.payload_json) as Record<string, any>;
+    if (row.event_type === 'SESSION_STARTED' && p.discard) {
+      faceUp.add(JSON.stringify(p.discard));
+    }
     if (row.event_type === 'CARD_PLAYED') {
-      if (p.card) played.add(JSON.stringify(p.card));
+      if (p.card) faceUp.add(JSON.stringify(p.card));
       continue; // face-up payload: nothing here is hidden
     }
     for (const hand of Object.values(p.hands ?? {})) {
@@ -131,7 +134,7 @@ function hiddenCardFragments(db: Db, sessionId: string): { fragments: Set<string
     if (typeof p.seedReveal === 'string' && p.seedReveal) seeds.add(p.seedReveal);
     if (typeof p.seed === 'string' && p.seed) seeds.add(p.seed);
   }
-  for (const s of played) hidden.delete(s);
+  for (const s of faceUp) hidden.delete(s);
   return { fragments: hidden, seeds };
 }
 
