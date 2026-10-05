@@ -333,3 +333,147 @@ export function readEvents(db: Db, sessionId: string, since: number): ReadEvents
 
   return { status: 'ok', events: records.map((r) => toSpectatorEvent(r, true)), settled: true };
 }
+
+// ---------------------------------------------------------------------------
+// Delayed-live reasoning feed — the "reduced form" live tail that sub-spec 10
+// (T30 note: "it moves, in reduced form, into the optional `delayed` mode")
+// deferred rather than forbidden. The replay-only invariant above is untouched:
+// the settled-only routes stay the canonical public feed, and everything here
+// is a SEPARATE, poorer surface for in-progress tables.
+//
+// Its security contract (narrower than the old pre-spec-10 live tail, which was
+// the fail-open denylist this file was hardened against):
+//  - Payloads NEVER pass through verbatim while a table runs — every event is
+//    mapped through {@link redactPayload} (the fail-safe allowlist), exactly as
+//    `toSpectatorEvent(_, false)` does.
+//  - `reasoning` is the point of the feed (demo day: watch agents think); it is
+//    the agent's own published per-move text, not hidden state.
+//  - Events are served only once older than the caller-supplied delay
+//    (SPECTATOR_DELAY_MS), enforced by an ISO cutoff bound as a SQL parameter
+//    (`created_at <= cutoff`) — the store writes ISO-8601 strings, and SQLite's
+//    TEXT comparison orders them correctly. Computing the cutoff once per call
+//    keeps the comparison on exactly the same clock/format as the inserts.
+//  - The window still closes the race between "move applied" and "response
+//    flushed": an event created inside the last `delayMs` is withheld.
+//  - No summary field that settlement gates (`seedReveal`, `resultHash`,
+//    `settleTxHash`) exists on the live shape at all.
+// ---------------------------------------------------------------------------
+
+/** The live-list shape: seat identity + progress only. No hidden-field carriers. */
+export interface LiveSessionSummary {
+  sessionId: string;
+  competitionId: string;
+  competitionKind: 'classic' | 'tournament';
+  status: SessionStatus;
+  tableSize: number;
+  seats: Array<{
+    seatIndex: number;
+    agentId: string;
+    displayName: string;
+    ownerHandle: string | null;
+  }>;
+  startedAt: string | null;
+  eventCount: number;
+}
+
+function liveSummaryFromRow(db: Db, row: Record<string, unknown>, eventCount: number): LiveSessionSummary {
+  const seats = db
+    .prepare(
+      `SELECT p.seat_index AS seatIndex, p.agent_id AS agentId, a.display_name AS displayName,
+              o.x_handle AS ownerHandle
+         FROM session_players p
+         JOIN agents a ON a.id = p.agent_id
+         LEFT JOIN owners o ON o.id = a.owner_id
+        WHERE p.session_id = ? ORDER BY p.seat_index`,
+    )
+    .all(row.id as string) as LiveSessionSummary['seats'];
+
+  const competitionKind =
+    ((db.prepare(`SELECT kind FROM competitions WHERE id = ?`).get(row.competition_id) as
+      | { kind: 'classic' | 'tournament' }
+      | undefined
+    )?.kind) ?? 'classic';
+
+  return {
+    sessionId: row.id as string,
+    competitionId: row.competition_id as string,
+    competitionKind,
+    status: row.status as SessionStatus,
+    tableSize: row.table_size as number,
+    seats,
+    startedAt: (row.started_at as string | null) ?? null,
+    eventCount,
+  };
+}
+
+/**
+ * Tables currently playing (`seated`/`in_progress`), safe fields only. Deliberately
+ * does NOT reuse `listSessions({ includeLive })`: that option's contract reserves
+ * it for authenticated ops callers with full summaries, which this public route
+// must never serve — the live list carries the lean shape above, nothing more.
+ */
+export function listLiveSessions(db: Db, competitionId?: string, limit = 20): LiveSessionSummary[] {
+  const clauses = [`status IN ('seated', 'in_progress')`];
+  const params: unknown[] = [];
+  if (competitionId) {
+    clauses.push('competition_id = ?');
+    params.push(competitionId);
+  }
+  // A lobby that never dealt has nothing to watch (same exclusion the settled
+  // list makes) — keep the live list free of empty felt.
+  clauses.push(`EXISTS (SELECT 1 FROM session_events e WHERE e.session_id = sessions.id)`);
+  const rows = db
+    .prepare(`SELECT * FROM sessions WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT ?`)
+    .all(...params, limit) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => {
+    const eventCount = (
+      db.prepare(`SELECT COUNT(*) AS n FROM session_events WHERE session_id = ?`).get(row.id) as {
+        n: number;
+      }
+    ).n;
+    return liveSummaryFromRow(db, row, eventCount);
+  });
+}
+
+export type ReadLiveEventsResult =
+  | { status: 'ok'; events: SpectatorEvent[]; live: boolean; delayMs: number }
+  | { status: 'not_found' };
+
+/**
+ * Redacted live tail of an in-progress table. `since` keeps it incremental
+ * (same contract as the settled events route). While the table runs, payloads
+ * are ALWAYS the allowlist projection (`toSpectatorEvent(_, false)`) — there is
+ * no settled shortcut on this path. A finished session answers `live: false`
+ * with an empty tail: the caller's signal to fall back to the replay feed.
+ */
+export function readLiveEvents(db: Db, sessionId: string, since: number, delayMs: number): ReadLiveEventsResult {
+  const row = db.prepare(`SELECT status FROM sessions WHERE id = ?`).get(sessionId) as
+    | { status: SessionStatus }
+    | undefined;
+  if (!row) return { status: 'not_found' };
+
+  if (isCompleted(row.status)) return { status: 'ok', events: [], live: false, delayMs };
+  if (row.status === 'lobby') return { status: 'ok', events: [], live: true, delayMs };
+
+  const records = db
+    .prepare(
+      `SELECT session_id AS sessionId, seq, event_type AS eventType, payload_json AS payloadJson,
+              reasoning, created_at AS createdAt
+         FROM session_events
+        WHERE session_id = ? AND seq > ? AND created_at <= ?
+        ORDER BY seq`,
+    )
+    .all(
+      sessionId,
+      since,
+      new Date(Date.now() - Math.floor(delayMs)).toISOString(),
+    ) as SessionEventRecord[];
+
+  return {
+    status: 'ok',
+    events: records.map((r) => toSpectatorEvent(r, false)),
+    live: true,
+    delayMs,
+  };
+}
