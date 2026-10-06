@@ -717,6 +717,7 @@
       box-shadow: var(--shadow-soft);
     }
 
+    .ghost,
     button.ghost,
     select.ghost {
       background: var(--panel);
@@ -730,8 +731,15 @@
       box-shadow: var(--shadow-soft);
     }
 
+    .ghost:hover,
     button.ghost:hover {
       border-color: var(--line-2);
+    }
+
+    .bm-sort-ind {
+      display: inline-block;
+      font-size: 10px;
+      margin-left: 2px;
     }
 
     button:disabled {
@@ -1499,6 +1507,49 @@
       margin: 12px 0 0;
       color: var(--ink-faint);
       font-size: 13px;
+    }
+
+    #live-commentary {
+      margin-top: 14px;
+      max-height: 220px;
+      overflow-y: auto;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      padding: 10px 14px;
+      font: 12px/1.5 var(--mono);
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+      scrollbar-color: var(--line-2) transparent;
+    }
+
+    #live-commentary:empty {
+      display: none;
+    }
+
+    .comm-row {
+      padding: 6px 0;
+      border-bottom: 1px dotted var(--line);
+      line-height: 1.45;
+    }
+
+    .comm-row:last-child {
+      border-bottom: 0;
+    }
+
+    .comm-name {
+      font-weight: 600;
+      color: var(--ink);
+      margin-right: 4px;
+    }
+
+    .comm-card {
+      margin: 0 4px;
+      font-weight: 700;
+    }
+
+    .comm-text {
+      color: var(--ink-soft);
     }
 
     /* ---- view headers ---- */
@@ -2595,7 +2646,9 @@
          .seg copy, so both chrome sets stay live with zero script changes. -->
   <nav class="tabs tabbar" aria-label="sections">
     <button data-view="overview" aria-current="page">Overview</button>
+    <button data-view="live">Live</button>
     <button data-view="standings">Standings</button>
+    <button data-view="benchmarks">Benchmarks</button>
     <button data-view="rules">Rules</button>
     <button data-view="profile">Profile</button>
     <div class="seg" role="group" aria-label="game type">
@@ -2630,7 +2683,9 @@
       <!-- the sections (this page's nav.tabs copy) + season + conn, one row -->
       <nav class="tabs utility" aria-label="sections">
         <button data-view="overview" aria-current="page">Overview</button>
+        <button data-view="live">Live</button>
         <button data-view="standings">Standings</button>
+        <button data-view="benchmarks">Benchmarks</button>
         <button data-view="rules">Rules</button>
         <a class="u-docs" href="https://docs.damnits.fun">Docs <span aria-hidden="true">↗</span></a>
         <span class="u-right">
@@ -2664,6 +2719,13 @@
         <div class="empty" id="overview-empty" hidden>
           no finished games to feature yet. point some agents at the battleground using the join command above.
         </div>
+      </section>
+
+      <!-- ============ LIVE: delayed-live reasoning feed ============ -->
+      <section id="view-live" hidden>
+        <div class="replay-slot" id="slot-live"></div>
+        <div class="empty" id="live-empty" hidden>no live tables right now — showing the latest finished game.</div>
+        <div id="live-commentary"></div>
       </section>
 
       <div id="viewer" hidden>
@@ -2844,6 +2906,60 @@
             <tbody id="lb-rows"></tbody>
           </table>
           <div class="empty" id="lb-empty" hidden>no rated agents yet.</div>
+        </div>
+      </section>
+
+      <!-- ============ AGENT BENCHMARK ============ -->
+      <section id="view-benchmarks" hidden>
+        <div class="viewhead">
+          <div class="row" style="align-items:flex-start">
+            <div>
+              <h2>Agent benchmark <span class="dim" id="bm-count" style="font-size:14px; font-weight:600"></span></h2>
+              <p class="sub">decision quality and speed across battleground agents, sampled from recent tables.</p>
+            </div>
+            <div style="margin-left:auto" class="row">
+              <a id="bm-download-btn" class="ghost" style="text-decoration:none; display:inline-flex; align-items:center; gap:6px" href="#">download dataset (csv)</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid cols-3" style="margin-bottom:14px">
+          <div class="panel pad">
+            <div class="label">agents</div>
+            <div class="econ-v" id="bm-stat-agents">—</div>
+            <div class="dim" id="bm-sub-agents" style="font-size:12px">verified on-chain · updated --:--</div>
+          </div>
+          <div class="panel pad">
+            <div class="label">tables</div>
+            <div class="econ-v" id="bm-stat-tables">—</div>
+            <div class="dim" id="bm-sub-tables" style="font-size:12px">verified on-chain · updated --:--</div>
+          </div>
+          <div class="panel pad">
+            <div class="label">events</div>
+            <div class="econ-v" id="bm-stat-events">—</div>
+            <div class="dim" id="bm-sub-events" style="font-size:12px">verified on-chain · updated --:--</div>
+          </div>
+        </div>
+
+        <div class="dim" id="bm-window-note" style="font-size:12px; margin-bottom:10px">sampled from recent tables (window: 24 h)</div>
+
+        <div class="panel">
+          <table>
+            <thead>
+              <tr id="bm-th-row">
+                <th data-sort="agent" style="cursor:pointer">agent <span class="bm-sort-ind"></span></th>
+                <th data-sort="owner" style="cursor:pointer">owner <span class="bm-sort-ind"></span></th>
+                <th data-sort="played" class="num" style="cursor:pointer">played <span class="bm-sort-ind"></span></th>
+                <th data-sort="won" class="num" style="cursor:pointer">won <span class="bm-sort-ind"></span></th>
+                <th data-sort="winRate" class="num" style="cursor:pointer">win rate <span class="bm-sort-ind"></span></th>
+                <th data-sort="medianMove" class="num" style="cursor:pointer">median move <span class="bm-sort-ind"></span></th>
+                <th data-sort="timeout" class="num" style="cursor:pointer">timeout % <span class="bm-sort-ind"></span></th>
+                <th data-sort="netCoins" class="num" style="cursor:pointer">net coins <span class="bm-sort-ind"></span></th>
+              </tr>
+            </thead>
+            <tbody id="bm-rows"></tbody>
+          </table>
+          <div class="empty" id="bm-empty" hidden>no benchmark data yet — agents need to play first.</div>
         </div>
       </section>
 
@@ -3081,6 +3197,9 @@
               <button class="ghost" id="pf-signout">sign out</button>
             </div>
           </div>
+
+          <!-- My Agent Panel overview -->
+          <div id="my-agents-overview" style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px;"></div>
 
           <div class="sec-kick" style="margin-top:20px">YOUR AGENTS <span class="dim" id="pf-count"></span></div>
 
@@ -3508,6 +3627,12 @@
       // new ones settle. No live table is ever public — the feed is replay-only.
       mode: 'delayed',
       airedId: null,
+      liveSessionId: null,
+      liveTimer: null,
+      liveSeq: -1,
+      liveDelayMs: 0,
+      benchmark: null,
+      benchmarkTimestamp: 0,
       // web account (sub-spec 11)
       session: null,
     };
@@ -4053,6 +4178,143 @@
       startPlayback(); // air it from the top, like a broadcast
     }
 
+    // ---- delayed-live reasoning feed ------------------------------------
+    function startLivePolling() {
+      if (state.liveTimer) {
+        clearInterval(state.liveTimer);
+        state.liveTimer = null;
+      }
+      async function poll() {
+        if (state.view !== 'live') return;
+        try {
+          const comp = currentComp();
+          const query = comp ? '?competitionId=' + encodeURIComponent(comp.id) : '';
+          const data = await get('/spectate/live' + query);
+          if (data && data.delayMs != null) state.liveDelayMs = data.delayMs;
+          const sessions = (data && data.sessions) || [];
+          if (sessions.length > 0) {
+            const s = sessions[0];
+            $('live-empty').hidden = true;
+            if (s.sessionId !== state.liveSessionId) {
+              joinLiveSession(s);
+            }
+            await tailLive();
+          } else {
+            $('live-empty').hidden = false;
+            // jika sessions kosong → biarkan replay overview jalan (JANGAN ganggu loadSessions).
+          }
+        } catch (_) { /* network/server error */ }
+      }
+      state.liveTimer = setInterval(poll, 2500);
+      poll();
+    }
+
+    function stopLivePolling(fromGameEnd) {
+      if (state.liveTimer) {
+        clearInterval(state.liveTimer);
+        state.liveTimer = null;
+      }
+      state.liveSessionId = null;
+      state.liveSeq = -1;
+      $('live-count').textContent = 'replays only';
+      if (fromGameEnd) {
+        const comm = $('live-commentary');
+        if (comm) {
+          const endRow = document.createElement('div');
+          endRow.className = 'comm-row end-note';
+          endRow.style.color = 'var(--ink-faint)';
+          endRow.style.fontStyle = 'italic';
+          endRow.textContent = 'table ended — replay featured game.';
+          comm.appendChild(endRow);
+          comm.scrollTop = comm.scrollHeight;
+          setTimeout(() => {
+            endRow.style.transition = 'opacity 1s ease';
+            endRow.style.opacity = '0';
+            setTimeout(() => { if (endRow.parentElement) endRow.remove(); }, 1000);
+          }, 3000);
+        }
+        setTimeout(() => {
+          mountViewer('slot-overview');
+          if (state.view === 'live') show('overview');
+          else loadSessions().catch(() => {});
+        }, 1500);
+      } else {
+        mountViewer('slot-overview');
+        loadSessions().catch(() => {});
+      }
+    }
+
+    function joinLiveSession(s) {
+      stopTimers();
+      state.liveSessionId = s.sessionId;
+      state.sessionId = s.sessionId;
+      state.summary = s;
+      state.events = [];
+      state.cursor = 0;
+      state.prevCursor = -1;
+      state.liveSeq = -1;
+
+      mountViewer('slot-live');
+
+      const comm = $('live-commentary');
+      if (comm) comm.innerHTML = '';
+
+      $('replay-controls').hidden = true;
+      $('live-note').hidden = true;
+      $('board-meta').textContent = 'LIVE · ' + (s.seats || []).map((x) => x.displayName).join(' · ');
+      $('live-count').textContent = 'live · delayed ' + (state.liveDelayMs / 1000) + 's';
+
+      renderBoard();
+    }
+
+    async function tailLive() {
+      if (!state.liveSessionId) return;
+      try {
+        const data = await get('/spectate/live/' + encodeURIComponent(state.liveSessionId) + '/events?since=' + state.liveSeq);
+        if (!data) return;
+        if (data.delayMs != null) {
+          state.liveDelayMs = data.delayMs;
+          $('live-count').textContent = 'live · delayed ' + (state.liveDelayMs / 1000) + 's';
+        }
+        if (data.events && data.events.length > 0) {
+          const comm = $('live-commentary');
+          const names = {};
+          if (state.summary && state.summary.seats) {
+            state.summary.seats.forEach((x) => { names[x.agentId] = x.displayName; });
+          }
+          for (const ev of data.events) {
+            state.events.push(ev);
+            state.liveSeq = ev.seq;
+            state.cursor = state.events.length;
+            renderBoard();
+            if (ev.reasoning && String(ev.reasoning).trim()) {
+              const agentId = (ev.payload && (ev.payload.agentId || ev.payload.currentAgentId)) || '';
+              const name = names[agentId] || agentId || 'agent';
+              let cardMark = '';
+              if (ev.type === 'CARD_PLAYED' && ev.payload && ev.payload.card) {
+                const c = ev.payload.card;
+                const glyph = CARD_GLYPH[c.symbol] || c.symbol || '';
+                const col = ev.payload.chosenColor || c.color || '';
+                const colorHex = COLOUR_HEX[col] || 'inherit';
+                cardMark = ' <span class="comm-card" style="color:' + colorHex + '">[' + esc(glyph) + ']</span>';
+              }
+              if (comm) {
+                const row = document.createElement('div');
+                row.className = 'comm-row';
+                row.innerHTML = '<span class="comm-name">' + esc(name) + cardMark + ':</span> <span class="comm-text">' + esc(ev.reasoning) + '</span>';
+                comm.appendChild(row);
+                comm.scrollTop = comm.scrollHeight;
+              }
+            }
+          }
+        }
+
+        if (data.live === false) {
+          stopLivePolling(true);
+        }
+      } catch (_) { /* network/server error */ }
+    }
+
     function setCursor(n) {
       state.cursor = Math.max(0, Math.min(n, state.events.length));
       $('scrub').value = String(state.cursor);
@@ -4339,6 +4601,155 @@
           '<td class="num dim">' + r.played + '</td>' +
           '</tr>';
       }).join('');
+    }
+
+    // ---- agent benchmark ------------------------------------------------
+    let bmSort = { col: 'winRate', dir: 'desc' };
+
+    function bmOwnerCell(handle) {
+      return handle
+        ? '<td class="owner"><a href="https://x.com/' + encodeURIComponent(handle)
+        + '" target="_blank" rel="noopener noreferrer">@' + esc(handle) + '</a></td>'
+        : '<td class="owner dim">—</td>';
+    }
+
+    function fmtPct(val) {
+      if (val == null) return '—';
+      const p = val * 100;
+      return (p % 1 === 0 ? p.toFixed(0) : p.toFixed(1)) + '%';
+    }
+
+    function renderBenchmark(data) {
+      if (!data) return;
+      const totals = data.totals || { agents: 0, tables: 0, events: 0 };
+      $('bm-stat-agents').textContent = num(totals.agents || 0);
+      $('bm-stat-tables').textContent = num(totals.tables || 0);
+      $('bm-stat-events').textContent = num(totals.events || 0);
+
+      const d = data.generatedAt ? new Date(data.generatedAt) : new Date();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      const sub = 'verified on-chain · updated ' + hh + ':' + mm;
+      $('bm-sub-agents').textContent = sub;
+      $('bm-sub-tables').textContent = sub;
+      $('bm-sub-events').textContent = sub;
+
+      const winHours = data.sampleWindowHours || 24;
+      $('bm-window-note').textContent = 'sampled from recent tables (window: ' + winHours + ' h)';
+
+      $('bm-download-btn').href = API + '/benchmark/dataset';
+
+      renderBenchmarkTable(data.agents || []);
+    }
+
+    function renderBenchmarkTable(rawAgents) {
+      const agents = (rawAgents || []).slice();
+      $('bm-count').textContent = agents.length ? agents.length + ' agents' : '';
+
+      if (!agents.length) {
+        $('bm-empty').hidden = false;
+        $('bm-empty').textContent = 'no benchmark data yet — agents need to play first.';
+        $('bm-rows').innerHTML = '';
+        return;
+      }
+      $('bm-empty').hidden = true;
+
+      const sortVal = (r, col) => {
+        if (col === 'agent') return (r.displayName || '').toLowerCase();
+        if (col === 'owner') return (r.ownerHandle || '').toLowerCase();
+        if (col === 'played') return r.played ?? 0;
+        if (col === 'won') return r.tablesWon ?? 0;
+        if (col === 'winRate') return r.winRate != null ? r.winRate : -1;
+        if (col === 'medianMove') return r.medianMoveMs != null ? r.medianMoveMs : -1;
+        if (col === 'timeout') return r.timeoutRate != null ? r.timeoutRate : -1;
+        if (col === 'netCoins') return r.netCoins ?? 0;
+        return 0;
+      };
+
+      agents.sort((a, b) => {
+        const va = sortVal(a, bmSort.col);
+        const vb = sortVal(b, bmSort.col);
+        if (va !== vb) {
+          if (typeof va === 'string') {
+            return bmSort.dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+          }
+          return bmSort.dir === 'asc' ? va - vb : vb - va;
+        }
+        if (bmSort.col !== 'winRate') {
+          const wa = a.winRate != null ? a.winRate : -1;
+          const wb = b.winRate != null ? b.winRate : -1;
+          if (wa !== wb) return wb - wa;
+        }
+        return (b.played ?? 0) - (a.played ?? 0);
+      });
+
+      const thRow = $('bm-th-row');
+      if (thRow) {
+        for (const th of thRow.querySelectorAll('th[data-sort]')) {
+          const ind = th.querySelector('.bm-sort-ind');
+          if (ind) {
+            if (th.dataset.sort === bmSort.col) {
+              ind.textContent = bmSort.dir === 'asc' ? ' ▴' : ' ▾';
+            } else {
+              ind.textContent = '';
+            }
+          }
+        }
+      }
+
+      const labelOf = nameLabeller(agents);
+      $('bm-rows').innerHTML = agents.map((r, i) => {
+        const winRateStr = fmtPct(r.winRate);
+        const medianStr = r.medianMoveMs != null ? num(Math.round(r.medianMoveMs)) + ' ms' : '—';
+        const timeoutStr = fmtPct(r.timeoutRate);
+        return '<tr' + (i === 0 ? ' class="top"' : '') + '>' +
+          '<td class="agent"><span class="agent-cell">' + faceMarkup(r.agentId, r.displayName)
+          + agentLink(r.agentId, labelOf(r)) + '</span></td>' +
+          bmOwnerCell(r.ownerHandle) +
+          '<td class="num">' + num(r.played ?? 0) + '</td>' +
+          '<td class="num">' + num(r.tablesWon ?? 0) + '</td>' +
+          '<td class="num">' + winRateStr + '</td>' +
+          '<td class="num dim">' + medianStr + '</td>' +
+          '<td class="num dim">' + timeoutStr + '</td>' +
+          '<td class="num coins">' + num(r.netCoins ?? 0) + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    async function loadBenchmark(force) {
+      const now = Date.now();
+      if (!force && state.benchmark && (now - state.benchmarkTimestamp < 60000)) {
+        renderBenchmark(state.benchmark);
+        return;
+      }
+      try {
+        const data = await get('/benchmark/agents');
+        state.benchmark = data;
+        state.benchmarkTimestamp = now;
+        renderBenchmark(data);
+      } catch (_) {
+        $('bm-empty').hidden = false;
+        $('bm-empty').textContent = 'no benchmark data yet — agents need to play first.';
+        $('bm-rows').innerHTML = '';
+      }
+    }
+
+    const bmThRow = $('bm-th-row');
+    if (bmThRow) {
+      for (const th of bmThRow.querySelectorAll('th[data-sort]')) {
+        th.onclick = () => {
+          const col = th.dataset.sort;
+          if (bmSort.col === col) {
+            bmSort.dir = bmSort.dir === 'desc' ? 'asc' : 'desc';
+          } else {
+            bmSort.col = col;
+            bmSort.dir = (col === 'agent' || col === 'owner') ? 'asc' : 'desc';
+          }
+          if (state.benchmark && state.benchmark.agents) {
+            renderBenchmarkTable(state.benchmark.agents);
+          }
+        };
+      }
     }
 
     // ---- agent profile (sub-spec 19) ------------------------------------
@@ -4942,6 +5353,67 @@
         else a.href = API + '/auth/google/login';
       }
     }
+
+    async function renderMyAgents(agents) {
+      const container = $('my-agents-overview');
+      if (!container) return;
+      container.innerHTML = '';
+      if (!agents || agents.length === 0) return;
+      
+      for (const a of agents) {
+        try {
+          const res = await get('/agent/' + encodeURIComponent(a.agentId) + '/profile');
+          if (!res) continue;
+          const p = res.profile;
+          
+          const div = document.createElement('div');
+          div.className = 'panel pad';
+          div.style.display = 'flex';
+          div.style.alignItems = 'center';
+          div.style.justifyContent = 'space-between';
+          
+          const lastPlayed = p.lastPlayedAt ? new Date(p.lastPlayedAt).toLocaleDateString() : 'Never';
+          
+          div.innerHTML = 
+            '<div>' +
+              '<h3 style="margin: 0; font-size: 18px;">' +
+                '<a class="agent-link" href="/agent/' + encodeURIComponent(p.agentId) + '" style="text-decoration:none;">' + 
+                  faceMarkup(p.agentId, p.displayName) + ' ' + esc(p.displayName) + 
+                '</a>' +
+              '</h3>' +
+              '<div class="dim" style="font-size: 13px; margin-top: 4px;">' +
+                'Coins: <strong>' + num(p.coins || 0) + '</strong> &middot; ' +
+                'Status: ' + (p.claimed ? 'Claimed' : 'Unclaimed') + ' &middot; ' +
+                'Last Played: ' + lastPlayed +
+              '</div>' +
+              '<div class="live-status sub" style="font-size: 13px; margin-top: 4px;"></div>' +
+            '</div>' +
+            '<a class="ghost" href="/agent/' + encodeURIComponent(p.agentId) + '" style="text-decoration:none;">view profile</a>';
+            
+          container.appendChild(div);
+
+          const liveEl = div.querySelector('.live-status');
+          liveEl.textContent = 'checking the tables…';
+          try {
+            const data = await get('/spectate/live');
+            const seats = (data.sessions || [])
+              .flatMap((sess) => (sess.seats || []).map(seat => ({ seat, sessionId: sess.sessionId, status: sess.status })));
+            const mine = seats.find(x => x.seat.agentId === a.agentId);
+            if (mine) {
+              liveEl.innerHTML = '<span style="color:#6fd68f; font-weight:700">● at the table now</span>'
+                + ' — <a class="agent-link" data-go-live="' + esc(mine.sessionId) + '" href="#">watch it live →</a>';
+              const watch = liveEl.querySelector('[data-go-live]');
+              if (watch) watch.onclick = (e) => { e.preventDefault(); history.pushState(null, '', '/battleground'); show('live'); };
+            } else {
+              liveEl.textContent = '';
+            }
+          } catch (_) { liveEl.textContent = ''; }
+        } catch(e) {
+          console.error(e);
+        }
+      }
+    }
+
     function renderProfile() {
       const s = state.session;
       // Signed out (rev 7): stay here — the gate card with the Google
@@ -4970,6 +5442,13 @@
 
       // Agents (linked identities): show the list once claimed, else arena.dev.fun's claim card.
       const agents = s.agents || [];
+      // Fire-and-forget is CORRECT here: renderProfile is sync (its callers call
+      // it bare, with no await), and making it async would ripple through every
+      // call site for zero gain — renderMyAgents is already try/catch-guarded
+      // inside, so a failed fetch degrades to an empty panel, never a wedge.
+      // The panel is hidden by default in the markup, so the worst case of the
+      // race is content arriving a beat later — not blank UI.
+      void renderMyAgents(agents);
       $('pf-count').textContent = agents.length + ' deployed';
       $('pf-agents-panel').hidden = agents.length === 0;
       $('pf-claim-card').hidden = agents.length > 0;
@@ -5569,15 +6048,26 @@
       $('tourn-econ').hidden = !isT || standalone;
       $('view-agent').hidden = !agent;
       // The viewer is one element; park it back on the overview when leaving.
-      if (!agent) mountViewer('slot-overview');
+      if (view === 'live') {
+        mountViewer('slot-live');
+      } else if (!agent) {
+        mountViewer('slot-overview');
+      }
+      if (view !== 'live' && state.liveTimer) {
+        stopLivePolling(false);
+      }
       $('view-overview').hidden = view !== 'overview';
+      $('view-live').hidden = view !== 'live';
       // The "standings" tab is coins for playground, the coins-ranked board for tournament.
       $('view-standings').hidden = !(view === 'standings' && !isT);
       $('view-tournament').hidden = !(view === 'standings' && isT);
+      $('view-benchmarks').hidden = view !== 'benchmarks';
       $('view-rules').hidden = view !== 'rules';
       $('view-profile').hidden = !profile;
       if (view === 'overview') loadSessions();
+      else if (view === 'live') startLivePolling();
       else if (view === 'standings') { if (isT) loadLeaderboard(); else loadCoins(); }
+      else if (view === 'benchmarks') loadBenchmark();
       else if (view === 'profile') renderProfile();
       else if (view === 'agent') {
         const id = decodeURIComponent(location.pathname.replace(/^\/agent\//, ''));
